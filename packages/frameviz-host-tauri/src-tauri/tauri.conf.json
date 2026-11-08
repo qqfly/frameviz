@@ -1,0 +1,79 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FrameViz",
+  "version": "0.4.0",
+  "identifier": "dev.qqfly.frameviz.viewer",
+  "build": {
+    "beforeBuildCommand": "node ../../scripts/prepare_web_viewer_dist.mjs",
+    "beforeDevCommand": "node src-tauri/dev-servers.mjs",
+    "devUrl": "http://localhost:8080/",
+    "frontendDist": "../../../packages/frameviz-web-viewer/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "fullscreen": false,
+        "height": 800,
+        "resizable": true,
+        "title": "FrameViz",
+        "width": 1200,
+        "visible": false,
+        "center": true,
+        "minWidth": 800,
+        "minHeight": 600,
+        "url": "launcher.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "copyright": "Copyright (c) 2026 qqfly",
+    "targets": [
+      "deb",
+      "dmg"
+    ],
+    "icon": [
+      "./icons/tauri/32x32.png",
+      "./icons/tauri/128x128.png",
+      "./icons/tauri/128x128@2x.png",
+      "./icons/tauri/icon.icns",
+      "./icons/tauri/icon.ico"
+    ],
+    "longDescription": "FrameViz is a lightweight WebSocket-based 3D visualization server for robotics and algorithm debugging.",
+    "shortDescription": "3D Visualization Server",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-2",
+          "libssl3"
+        ]
+      }
+    },
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null,
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}

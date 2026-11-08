@@ -1,0 +1,2 @@
+# Install the explicit local FrameViz 0.4.0 wheel first; no registry name is assumed.
+websockets>=11.0

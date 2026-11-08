@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frameviz"
+version = "0.4.0"
+description = "FrameViz Python client"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES/*.txt"]
+authors = [{name = "qqfly"}]
+requires-python = ">=3.9"
+dependencies = [
+  "websocket-client>=1.6.0",
+  "numpy>=1.20.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-asyncio>=0.21",
+  "pytest-cov>=4.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["frameviz*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

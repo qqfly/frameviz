@@ -1,0 +1,29 @@
+{
+  "productName": "URDFRobotViewer",
+  "identifier": "dev.qqfly.frameviz.urdf-robot-app",
+  "build": {
+    "beforeDevCommand": "node ./scripts/tauri-dev.mjs",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "URDF Robot Viewer",
+        "width": 1400,
+        "height": 900,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "copyright": "Copyright (c) 2026 qqfly"
+  },
+  "version": "0.4.0"
+}

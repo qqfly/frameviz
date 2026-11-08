@@ -1,0 +1,33 @@
+{
+  "productName": "FrameVizExternalApp",
+  "identifier": "dev.qqfly.frameviz.external-app",
+  "build": {
+    "beforeDevCommand": "node ./scripts/tauri-dev.mjs",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5174",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "FrameViz External App",
+        "width": 1280,
+        "height": 820,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "../python/backend_external_app.py",
+      "resources"
+    ],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "copyright": "Copyright (c) 2026 qqfly"
+  },
+  "version": "0.4.0"
+}

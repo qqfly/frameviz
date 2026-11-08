@@ -1,0 +1,98 @@
+# ==================== OS ====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==================== IDEs ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+bin/
+.cache/
+
+# ==================== Node.js ====================
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+packages/frameviz-web-viewer/dist/
+build/
+.npm
+.eslintcache
+.parcel-cache/
+
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ==================== Rust / Tauri ====================
+target/
+*.pdb
+
+# ==================== Tauri Build ====================
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/dist/
+src-tauri/gen/
+**/src-tauri/gen/
+
+# ==================== Logs ====================
+logs/
+*.log
+
+# ==================== Environment ====================
+.env
+.env.local
+.env.*.local
+
+# ==================== Misc ====================
+*.bak
+*.tmp
+*.temp
+
+# ==================== Test ====================
+test_reports/
+
+# ==================== Local runtime ===================
+.frameviz/
+
+# Local task notes
+.ai_review*/
+AGENTS.md
+
+# Release artifacts
+release-final/
+release-local/
+
+.validation/
+.frameviz/
+
+# Native distribution outputs
+*.app/
+*.dmg
+*.pkg

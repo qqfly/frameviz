@@ -1,0 +1,77 @@
+@PACKAGE_INIT@
+
+# FrameViz C++ SDK CMake Config
+# Usage: find_package(frameviz-cpp REQUIRED)
+
+include(CMakeFindDependencyMacro)
+
+# Find dependencies
+# Try to find nlohmann_json from system
+find_dependency(nlohmann_json 3.11 QUIET)
+# zlib is required when ixwebsocket is built with permessage-deflate enabled
+find_dependency(ZLIB QUIET)
+
+# If not found, use FetchContent
+if(NOT nlohmann_json_FOUND)
+    message(STATUS "nlohmann_json not found, using FetchContent")
+    include(FetchContent)
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(json)
+endif()
+
+# Try to find ixwebsocket from same install location
+find_dependency(ixwebsocket QUIET PATHS "${CMAKE_CURRENT_LIST_DIR}/../ixwebsocket")
+
+# If not found, use FetchContent
+if(NOT TARGET ixwebsocket::ixwebsocket)
+    message(STATUS "ixwebsocket not found, using FetchContent")
+    include(FetchContent)
+    if(EXISTS "/tmp/IXWebSocket/CMakeLists.txt")
+        FetchContent_Declare(
+            ixwebsocket
+            SOURCE_DIR /tmp/IXWebSocket
+        )
+    else()
+        FetchContent_Declare(
+            ixwebsocket
+            GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+            GIT_TAG v11.4.4
+            GIT_SHALLOW TRUE
+        )
+    endif()
+    FetchContent_MakeAvailable(ixwebsocket)
+
+    # Create alias if needed
+    if(TARGET ixwebsocket AND NOT TARGET ixwebsocket::ixwebsocket)
+        add_library(ixwebsocket::ixwebsocket ALIAS ixwebsocket)
+    endif()
+endif()
+
+# Ensure ixwebsocket carries zlib on static builds if available
+if(TARGET ixwebsocket::ixwebsocket AND ZLIB_FOUND)
+    set_property(TARGET ixwebsocket::ixwebsocket APPEND PROPERTY
+        INTERFACE_LINK_LIBRARIES ZLIB::ZLIB
+    )
+endif()
+
+# Include targets
+include("${CMAKE_CURRENT_LIST_DIR}/frameviz-cppTargets.cmake")
+
+# Create frameviz::cpp alias for compatibility with build interface
+if(TARGET frameviz::frameviz-cpp AND NOT TARGET frameviz::cpp)
+    add_library(frameviz::cpp ALIAS frameviz::frameviz-cpp)
+endif()
+
+# Manually link nlohmann_json to frameviz::frameviz-cpp for install interface
+if(TARGET frameviz::frameviz-cpp)
+    set_property(TARGET frameviz::frameviz-cpp APPEND PROPERTY
+        INTERFACE_LINK_LIBRARIES nlohmann_json::nlohmann_json
+    )
+endif()
+
+check_required_components(frameviz-cpp)

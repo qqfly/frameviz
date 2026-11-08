@@ -1,0 +1,20 @@
+[package]
+name = "simple-slider-app"
+version = "0.4.0"
+description = "FrameViz Simple Slider App (Embedded UI)"
+authors = ["qqfly"]
+edition = "2021"
+license = "MIT"
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+frameviz-server = { path = "../../../../packages/frameviz-server" }
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

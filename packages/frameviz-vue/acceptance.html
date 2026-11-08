@@ -1,0 +1,11 @@
+<!doctype html><html><head><title>FrameViz embedding acceptance</title><style>body{margin:0;background:#eee}#viewer{height:620px}button{margin:12px}</style></head><body><div id="app"></div><script type="module">
+import {createApp,ref,h} from 'vue';
+import {FrameVizViewer} from './dist/index.js';
+import './dist/style.css';
+const mounted=ref(true); window.acceptance={};
+createApp({setup(){return()=>h('div',[
+ h('button',{id:'toggle',onClick:()=>mounted.value=!mounted.value},mounted.value?'Unmount viewer':'Mount viewer'),
+ mounted.value?h(FrameVizViewer,{id:'viewer',name:'acceptance-vue',autoStartHost:false,
+ onReady:core=>window.acceptance.core=core,onRegistered:info=>window.acceptance.info=info,
+ onError:error=>window.acceptance.error=error.message}):null]);}}).mount('#app');
+</script></body></html>

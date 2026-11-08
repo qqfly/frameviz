@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FrameViz Response Envelope",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "type",
+    "id",
+    "ok",
+    "result",
+    "error"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "0.4.0"
+    },
+    "type": {
+      "const": "resp"
+    },
+    "id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "result": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,29 @@
+{
+  "productName": "SimpleSliderApp",
+  "identifier": "dev.qqfly.frameviz.simple-slider-app",
+  "build": {
+    "beforeDevCommand": "node ./scripts/tauri-dev.mjs",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5174",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "FrameViz Simple Slider",
+        "width": 1200,
+        "height": 800,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "copyright": "Copyright (c) 2026 qqfly"
+  },
+  "version": "0.4.0"
+}

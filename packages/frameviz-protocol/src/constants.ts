@@ -1,0 +1,14 @@
+export const PROTOCOL_VERSION = "0.4.0" as const;
+
+export const DEFAULT_WS_HOST = "127.0.0.1";
+export const DEFAULT_WS_PORT = 9527;
+
+export const ERROR_CODES = [
+  "ERR_INVALID_ARGS",
+  "ERR_NOT_FOUND",
+  "ERR_INVALID_SCOPE",
+  "ERR_BUFFER_SIZE_MISMATCH",
+  "ERR_BUFFER_RANGE",
+  "ERR_BUFFER_UPLOAD_TIMEOUT",
+  "ERR_BUFFER_UPLOAD_CONFLICT",
+] as const;

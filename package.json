@@ -1,0 +1,29 @@
+{
+  "name": "frameviz",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:all": "bash scripts/release/preflight.sh",
+    "test:watch": "vitest",
+    "clean": "bash scripts/clean-all.sh",
+    "clean:cpp": "bash scripts/clean-cpp.sh",
+    "clean:py": "bash scripts/clean-py.sh",
+    "clean:cache": "bash scripts/clean-cache.sh",
+    "verify:full": "bash scripts/release/full-verify.sh",
+    "release:pack-js-sdk": "bash scripts/release/pack-js-sdk-tarballs.sh",
+    "release:build-devkit": "bash scripts/release/build-devkit-bundle.sh"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.2.0",
+    "@vitest/ui": "^1.2.0",
+    "jsdom": "^23.0.0"
+  },
+  "license": "MIT",
+  "author": "qqfly"
+}

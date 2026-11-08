@@ -1,0 +1,42 @@
+name: CI
+on:
+  workflow_call:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install -e 'packages/frameviz-py[dev]' build playwright websockets
+      - run: node scripts/sync-version.mjs --check
+      - run: python scripts/check_source.py
+      - run: node scripts/prepare_web_viewer_dist.mjs && pnpm --filter @frameviz/vue build
+      - run: pnpm test
+      - run: cargo build --locked --manifest-path packages/frameviz-server/Cargo.toml
+      - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py -q -ra
+      - run: cargo test --locked --manifest-path packages/frameviz-server/Cargo.toml
+      - run: cmake -S packages/frameviz-cpp -B .cache/cpp-release -DCMAKE_BUILD_TYPE=Release -DFRAMEVIZ_BUILD_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - run: cmake --build .cache/cpp-release -j 4
+      - run: ctest --test-dir .cache/cpp-release --output-on-failure
+      - run: cmake --install .cache/cpp-release --prefix "$PWD/.cache/sdk"
+      - run: cmake -S tests/acceptance/cpp -B .cache/installed-consumer -DCMAKE_PREFIX_PATH="$PWD/.cache/sdk"
+      - run: cmake --build .cache/installed-consumer -j 2
+      - run: FRAMEVIZ_ASSET_TEST_BINARY="$PWD/.cache/installed-consumer/asset_harness" FRAMEVIZ_CPP_FIND_HOST="$PWD/.cache/installed-consumer/find_host" python -m pytest tests/acceptance/test_cpp_assets.py tests/acceptance/test_cpp_root.py -q

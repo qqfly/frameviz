@@ -1,0 +1,12 @@
+FrameViz
+Copyright (c) 2026 qqfly
+First-party source is licensed under MIT; see LICENSE.
+
+Third-party source retains its original notices and licenses:
+- nlohmann/json 3.11.3: Niels Lohmann, MIT; bundled C++ header.
+- cpp-httplib 0.15.3: Yuji Hirose / yhirose, MIT; bundled example header.
+- Three.js and its examples/controls: Three.js authors, MIT; rendering dependency.
+- IXWebSocket 11.4.5: Machine Zone, Inc., BSD-3-Clause; C++ transport dependency.
+Other dependencies retain their own license terms. This notice does not
+relicense third-party code or claim authorship of it. See THIRD_PARTY_LICENSES
+and the dependency inventory for the precise release artifact.

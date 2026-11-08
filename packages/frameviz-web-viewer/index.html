@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>FrameViz Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #ffffff;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    #container {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #status {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 100;
+    }
+
+    #status.connected {
+      background: rgba(0, 128, 0, 0.7);
+    }
+
+    #status.disconnected {
+      background: rgba(128, 0, 0, 0.7);
+    }
+
+    #overlay-2d {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    #info {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 4px;
+      font-size: 12px;
+      max-width: 400px;
+    }
+
+    #shortcuts {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 100;
+      display: none;
+      /* Hidden by default, press H to show */
+    }
+
+    #shortcuts.visible {
+      display: block;
+    }
+
+    #shortcuts kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      font-family: monospace;
+      margin-right: 4px;
+    }
+
+    #render-mode {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container"></div>
+  <div id="overlay-2d"></div>
+  <div id="status" class="disconnected">🔴 Disconnected</div>
+  <div id="shortcuts">
+    <strong>快捷键</strong><br>
+    <kbd>H</kbd> 显示/隐藏此面板<br>
+    <kbd>Space</kbd> Home视角 (适应所有对象)<br>
+    <strong>视角切换 (Ctrl+数字):</strong><br>
+    <kbd>Ctrl+0</kbd> Home <kbd>Ctrl+1</kbd> 正面 <kbd>Ctrl+2</kbd> 左侧<br>
+    <kbd>Ctrl+3</kbd> 顶部 <kbd>Ctrl+4</kbd> 后面 <kbd>Ctrl+5</kbd> 右侧 <kbd>Ctrl+6</kbd> 底部<br>
+    <kbd>W</kbd> 切换渲染模式 (solid/wireframe/points)<br>
+    <div id="render-mode">Mode: ■ solid</div>
+    <div id="gizmo-mode" style="display:none">Gizmo: ↔ translate</div>
+  </div>
+  <div id="info">
+    <strong>FrameViz Web Viewer</strong><br>
+    <small>按 <kbd
+        style="background:rgba(255,255,255,0.2);padding:1px 4px;border-radius:2px;font-family:monospace;">H</kbd>
+      显示快捷键</small><br>
+    <span id="objects">Objects: 0</span>
+  </div>
+
+  <script type="module">
+    import { FrameVizCore, applySceneSnapshot as replaySnapshot } from '@frameviz/core';
+
+    const PROTOCOL_VERSION = '0.4.0';
+    const container = document.getElementById('container');
+    const overlay2d = document.getElementById('overlay-2d');
+    const statusEl = document.getElementById('status');
+    const objectsEl = document.getElementById('objects');
+    const renderModeEl = document.getElementById('render-mode');
+    const gizmoModeEl = document.getElementById('gizmo-mode');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const injectedViewId = window.__FRAMEVIZ_VIEW_ID__;
+    const injectedWsPort = window.__FRAMEVIZ_WS_PORT__;
+    const injectedPerfMode = window.__FRAMEVIZ_PERFORMANCE_MODE__;
+    const injectedBackground = window.__FRAMEVIZ_BACKGROUND__;
+    const isTauri = typeof window.__TAURI__ !== 'undefined';
+    const disableConnect = window.__FRAMEVIZ_DISABLE_CONNECT__ ||
+      (isTauri && !injectedViewId && !urlParams.get('view_id'));
+    let viewId = injectedViewId || urlParams.get('view_id') || 'v_1';
+    const wsPortParam = urlParams.get('ws_port');
+    const wsPort = Number(injectedWsPort || wsPortParam || 9527) || 9527;
+    const performanceMode = injectedPerfMode || urlParams.get('performance_mode') || 'balanced';
+    const backgroundParam = injectedBackground || urlParams.get('background');
+    let sceneId = null;
+
+    // Parse background color from URL param (hex like "1e1e2a" or "0x1e1e2a")
+    function parseBackgroundColor(bg) {
+      if (!bg) return null;
+      const hex = bg.replace(/^(0x|#)/, '');
+      const num = parseInt(hex, 16);
+      if (isNaN(num)) return null;
+      return num;
+    }
+    const initialBackground = parseBackgroundColor(backgroundParam);
+
+    document.title = `FrameViz - ${viewId}`;
+
+    const renderModes = ['solid', 'wireframe', 'points'];
+    let currentRenderMode = 'solid';
+    const GIZMO_MODES = ['translate', 'rotate', 'scale'];
+    let currentGizmoModeIndex = 0;
+    let gizmoAttachedHandle = null;
+
+    let ws = null;
+    let core = null;
+    let commandIdCounter = 0;
+    const pendingBinaryQueue = [];
+
+    function updateRenderModeDisplay() {
+      if (!renderModeEl) return;
+      const icons = { solid: '■', wireframe: '▤', points: '⋮⋮' };
+      renderModeEl.textContent = `Mode: ${icons[currentRenderMode]} ${currentRenderMode}`;
+    }
+
+    function updateGizmoModeDisplay() {
+      if (!gizmoModeEl) return;
+      if (!gizmoAttachedHandle) {
+        gizmoModeEl.style.display = 'none';
+        return;
+      }
+      const icons = { translate: '↔', rotate: '↻', scale: '⤢' };
+      const mode = GIZMO_MODES[currentGizmoModeIndex] || 'translate';
+      gizmoModeEl.textContent = `Gizmo: ${icons[mode]} ${mode}`;
+      gizmoModeEl.style.display = 'block';
+    }
+
+    function updateObjectCount() {
+      if (!objectsEl || !core) return;
+      objectsEl.textContent = `Objects: ${core.getObjectCount({ grouped: true })}`;
+    }
+
+    function toggleShortcutsPanel() {
+      const panel = document.getElementById('shortcuts');
+      if (panel) {
+        panel.classList.toggle('visible');
+      }
+    }
+
+    function sendEnvelope(envelope) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify(envelope));
+    }
+
+    function sendEvent(name, data) {
+      const payload = { ...data };
+      if (payload.view_id === undefined && viewId) {
+        payload.view_id = viewId;
+      }
+      sendEnvelope({
+        protocol_version: PROTOCOL_VERSION,
+        type: 'event',
+        name,
+        data: payload,
+      });
+    }
+
+    function sendCommand(name, args) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      commandIdCounter += 1;
+      sendEnvelope({
+        protocol_version: PROTOCOL_VERSION,
+        type: 'cmd',
+        id: `viewer_cmd_${commandIdCounter}`,
+        name,
+        args: args || {},
+      });
+    }
+
+    function setView(view, fitAll = false) {
+      if (core) {
+        core.handleCommand('set_view', { view, fit_all: fitAll }, {});
+      }
+      sendCommand('set_view', { view_id: viewId, view, fit_all: fitAll });
+    }
+
+    function resetView() {
+      setView('home', true);
+    }
+
+    function cycleRenderMode() {
+      const index = renderModes.indexOf(currentRenderMode);
+      currentRenderMode = renderModes[(index + 1) % renderModes.length];
+      updateRenderModeDisplay();
+      if (core) {
+        core.handleCommand('set_render_mode', { mode: currentRenderMode }, {});
+      }
+      sendCommand('set_render_mode', { view_id: viewId, mode: currentRenderMode });
+    }
+
+    function applySceneSnapshot(snapshot) {
+      if (!core) return;
+      sceneId = snapshot.scene_id;
+      replaySnapshot(core, snapshot);
+      updateObjectCount();
+    }
+
+    function restoreObject(obj) {
+      if (!core || !obj) return;
+      const data = obj.data || {};
+      let command = null;
+      let args = { scene_id: obj.scene_id };
+
+      switch (obj.object_type) {
+        case 'primitive':
+          command = 'add_primitive';
+          args = {
+            ...args,
+            type: data.type,
+            params: data.params || {},
+            pose: obj.pose,
+            color: obj.color,
+          };
+          break;
+        case 'points':
+          command = 'add_points';
+          args = {
+            ...args,
+            positions: data.positions,
+            colors: data.colors,
+            size: data.size,
+            group_id: obj.group_id,
+          };
+          break;
+        case 'lines':
+          command = 'add_lines';
+          args = {
+            ...args,
+            positions: data.positions,
+            indices: data.indices,
+            width: data.width,
+            color: obj.color,
+          };
+          break;
+        case 'mesh':
+          command = 'add_mesh';
+          args = {
+            ...args,
+            vertices: data.vertices,
+            faces: data.faces,
+            faces_format: data.faces_format,
+            normals: data.normals,
+            colors: data.colors,
+            color: obj.color,
+          };
+          break;
+        case 'instances':
+          command = 'add_instances';
+          args = {
+            ...args,
+            type: data.type,
+            positions: data.positions,
+            quats: data.quats,
+            scales: data.scales,
+            colors: data.colors,
+            params: data.params,
+            color: obj.color,
+          };
+          break;
+        case 'loaded_mesh':
+          command = 'load_mesh';
+          args = {
+            ...args,
+            url: data.url,
+            scale: data.scale,
+            pose: obj.pose,
+            color: obj.color,
+          };
+          break;
+        case 'text3d':
+          command = 'add_text_3d';
+          args = {
+            ...args,
+            text: data.text,
+            pos: obj.pose?.pos,
+            font_size: data.font_size,
+            color: data.color,
+            background_color: data.background_color,
+          };
+          break;
+        default:
+          return;
+      }
+
+      core.handleCommand(command, args, { handle: obj.handle });
+      if (obj.visible === false) {
+        core.handleCommand('set_visible', { handle: obj.handle, visible: false }, {});
+      }
+      if (obj.pose && !['add_primitive', 'load_mesh', 'add_text_3d'].includes(command)) {
+        core.handleCommand('set_transform', { handle: obj.handle, pose: obj.pose }, {});
+      }
+    }
+
+    function handleSyncMessage(msg) {
+      if (!core) return;
+      if (!core.acceptRevision(msg.revision)) return;
+      const { command, args, result } = msg;
+      core.handleCommand(command, args, result || {});
+      updateUiState(command, args || {});
+      updateObjectCount();
+    }
+
+    function updateUiState(command, args) {
+      if (command === 'set_render_mode') {
+        currentRenderMode = args.mode || currentRenderMode;
+        updateRenderModeDisplay();
+      }
+      if (command === 'attach_gizmo') {
+        gizmoAttachedHandle = args.handle || null;
+        const mode = (args.mode || 'translate').split('+')[0];
+        currentGizmoModeIndex = GIZMO_MODES.indexOf(mode);
+        updateGizmoModeDisplay();
+      }
+      if (command === 'set_gizmo_mode') {
+        const mode = (args.mode || GIZMO_MODES[currentGizmoModeIndex] || 'translate').split('+')[0];
+        currentGizmoModeIndex = GIZMO_MODES.indexOf(mode);
+        updateGizmoModeDisplay();
+      }
+      if (command === 'detach_gizmo') {
+        gizmoAttachedHandle = null;
+        updateGizmoModeDisplay();
+      }
+      if (command === 'clear_scene' || command === 'destroy_scene') {
+        gizmoAttachedHandle = null;
+        updateGizmoModeDisplay();
+      }
+      if (command === 'destroy_scene') {
+        sceneId = null;
+        statusEl.textContent = `🟢 ${viewId} (no scene)`;
+        core?.clearBuffers();
+        pendingBinaryQueue.length = 0;
+      }
+    }
+
+    function handleDirectCommand(name, args) {
+      if (!core) return;
+      if (name === 'upload_buffer_chunk') {
+        handleUploadChunk(args);
+        return;
+      }
+
+      const directCommands = new Set([
+        'set_transform',
+        'set_object_transforms',
+        'set_color',
+        'set_visible',
+        'update_text_3d',
+        'remove_text_3d',
+        'remove_object',
+        'clear_scene',
+        'destroy_scene',
+        'set_view',
+        'reset_camera',
+        'set_render_mode',
+        'set_performance_mode',
+        'set_camera_pose',
+        'set_camera_controls',
+        'attach_gizmo',
+        'set_gizmo_mode',
+        'detach_gizmo',
+        'set_pick_config',
+        'clear_pick_highlight',
+        'get_picked_info',
+        'get_pick_config',
+        'update_text_2d',
+        'remove_text_2d',
+      ]);
+
+      if (!directCommands.has(name)) {
+        return;
+      }
+
+      core.handleCommand(name, args || {}, {});
+      updateUiState(name, args || {});
+      updateObjectCount();
+    }
+
+    function decodeBase64(data) {
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function handleUploadChunk(args) {
+      if (!core) return;
+      if (args.data_base64) {
+        const data = decodeBase64(args.data_base64);
+        core.storeBufferData(args.buffer_id, args.offset_bytes || 0, data);
+        console.log(`[FrameViz] Stored buffer ${args.buffer_id} bytes=${data.byteLength}`);
+        return;
+      }
+      if (typeof args.chunk_bytes === 'number') {
+        console.log(`[FrameViz] Prepared buffer ${args.buffer_id} for binary restore (${args.chunk_bytes} bytes)`);
+      } else {
+        console.log(`[FrameViz] Prepared buffer ${args.buffer_id} for binary restore`);
+      }
+      pendingBinaryQueue.push({
+        buffer_id: args.buffer_id,
+        offset_bytes: args.offset_bytes || 0,
+      });
+    }
+
+    function handleBinaryMessage(data) {
+      if (!core) return;
+      const pending = pendingBinaryQueue.shift();
+      if (!pending) return;
+
+      if (data instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(data);
+        core.storeBufferData(pending.buffer_id, pending.offset_bytes, bytes);
+        console.log(`[FrameViz] Stored buffer ${pending.buffer_id} bytes=${bytes.byteLength}`);
+        return;
+      }
+
+      if (data instanceof Blob) {
+        data.arrayBuffer().then((buffer) => {
+          const bytes = new Uint8Array(buffer);
+          core.storeBufferData(pending.buffer_id, pending.offset_bytes, bytes);
+          console.log(`[FrameViz] Stored buffer ${pending.buffer_id} bytes=${bytes.byteLength}`);
+        });
+      }
+    }
+
+    function handleTextMessage(text) {
+      let msg = null;
+      try {
+        msg = JSON.parse(text);
+      } catch {
+        return;
+      }
+
+      if (msg.type === 'init') {
+        if (core) core.sceneRevision = 0;
+        if (msg.view_id && msg.view_id !== viewId) {
+          viewId = msg.view_id;
+          document.title = `FrameViz - ${viewId}`;
+        }
+        sceneId = msg.scene_id;
+        core?.setViewId(viewId);
+        statusEl.textContent = `🟢 ${viewId} → ${sceneId}`;
+        statusEl.className = 'connected';
+        return;
+      }
+
+      if (msg.type === 'scene_snapshot') {
+        applySceneSnapshot(msg);
+        return;
+      }
+
+      if (msg.type === 'sync') {
+        handleSyncMessage(msg);
+        return;
+      }
+
+      if (msg.type === 'cmd') {
+        handleDirectCommand(msg.name, msg.args || {});
+      }
+    }
+
+    function connect() {
+      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}`;
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+      console.log(`[FrameViz] Connecting as view=${viewId}`);
+
+      ws.onopen = () => {
+        const token = window.__FRAMEVIZ_AUTH_TOKEN__ || new URLSearchParams(location.hash.slice(1)).get('token');
+        if (!token) { statusEl.textContent = 'Authentication token required'; ws.close(); return; }
+        ws.send(JSON.stringify({ type: 'auth', token }));
+        statusEl.textContent = `🟢 ${viewId} (waiting...)`;
+        statusEl.className = 'connected';
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'frameviz-ready', viewId }, window.location.origin);
+        }
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = '🔴 Disconnected';
+        statusEl.className = 'disconnected';
+        console.log('[FrameViz] Disconnected, retrying in 2s...');
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('[FrameViz] WebSocket error:', err);
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          handleTextMessage(event.data);
+        } else {
+          handleBinaryMessage(event.data);
+        }
+      };
+    }
+
+    function animate() {
+      if (core) {
+        core.render();
+      }
+      requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('resize', () => {
+      core?.resize();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const key = e.key.toLowerCase();
+      sendEvent('key_down', {
+        view_id: viewId,
+        key: e.key,
+        code: e.code,
+        ctrl: e.ctrlKey,
+        shift: e.shiftKey,
+        alt: e.altKey,
+        meta: e.metaKey,
+      });
+
+      if (!e.ctrlKey && !e.metaKey && key === 'h') {
+        toggleShortcutsPanel();
+      }
+    });
+
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'keydown') {
+        const { key, ctrlKey, metaKey } = e.data;
+        const hasCtrl = ctrlKey || metaKey;
+        const k = key.toLowerCase();
+        if (!hasCtrl && k === 'h') {
+          toggleShortcutsPanel();
+        }
+      }
+    });
+
+    let parentOrigin = '*';
+    window.addEventListener('message', async (event) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || !data.type) return;
+
+      if (data.type === 'frameviz-ping') {
+        parentOrigin = event.origin;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          event.source.postMessage({ type: 'frameviz-ready' }, parentOrigin);
+        }
+      } else if (data.type === 'frameviz-get-scene-id') {
+        // Respond with current scene_id and view_id
+        if (sceneId && viewId) {
+          event.source.postMessage({
+            type: 'frameviz-scene-id',
+            sceneId: sceneId,
+            viewId: viewId
+          }, event.origin);
+          console.log(`[FrameViz] Sent scene_id=${sceneId}, view_id=${viewId} to parent`);
+        } else {
+          // scene_id not ready yet, send retry signal
+          console.warn('[FrameViz] scene_id or view_id not ready yet, asking parent to retry');
+          event.source.postMessage({
+            type: 'frameviz-scene-id-not-ready'
+          }, event.origin);
+        }
+      } else if (data.type === 'frameviz-command') {
+        const { id, cmd, params } = data;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          event.source.postMessage({
+            type: 'frameviz-response',
+            id,
+            response: { status: 'error', message: 'WebSocket not connected' },
+          }, parentOrigin);
+          return;
+        }
+
+        const msgId = String(Date.now()) + '_' + String(Math.random()).slice(2, 8);
+        const message = {
+          protocol_version: PROTOCOL_VERSION,
+          type: 'cmd',
+          id: msgId,
+          name: cmd,
+          args: params || {},
+        };
+
+        const responsePromise = new Promise((resolve) => {
+          let response = null;
+          let syncReceived = false;
+
+          const handler = (e) => {
+            try {
+              const msg = JSON.parse(e.data);
+              if (msg.type === 'resp' && msg.id === msgId) {
+                response = msg;
+                if (syncReceived || ['set_transform', 'set_color', 'set_visible', 'update_text_3d', 'clear_scene', 'destroy_scene'].includes(cmd)) {
+                  ws.removeEventListener('message', handler);
+                  resolve(response);
+                }
+              }
+
+              if (msg.type === 'sync' && msg.command === cmd) {
+                handleSyncMessage(msg);
+                if (response) {
+                  syncReceived = true;
+                  ws.removeEventListener('message', handler);
+                  resolve(response);
+                }
+              }
+            } catch {
+              return;
+            }
+          };
+
+          ws.addEventListener('message', handler);
+          setTimeout(() => {
+            ws.removeEventListener('message', handler);
+            resolve(response || { status: 'error', message: 'timeout' });
+          }, 10000);
+        });
+
+        ws.send(JSON.stringify(message));
+        const response = await responsePromise;
+        event.source.postMessage({ type: 'frameviz-response', id, response }, parentOrigin);
+      }
+    });
+
+    if (!disableConnect) {
+      core = new FrameVizCore({
+        container,
+        overlay: overlay2d,
+        viewId,
+        performanceMode,
+        background: initialBackground,  // Pass background from URL param
+        onEvent: (name, data) => sendEvent(name, data),
+        onCommand: (name, args) => sendCommand(name, args),
+      });
+      window.__FRAMEVIZ_CORE__ = core;
+      core.setViewId(viewId);
+      window.addEventListener('beforeunload', () => {
+        if (core && typeof core.dispose === 'function') {
+          core.dispose();
+        }
+      });
+      connect();
+      animate();
+      updateRenderModeDisplay();
+
+      console.log('[FrameViz] Web viewer ready');
+    } else {
+      console.log('[FrameViz] Viewer disabled for background window');
+    }
+  </script>
+</body>
+
+</html>

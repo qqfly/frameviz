@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FrameViz Command Envelope",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "type",
+    "id",
+    "name",
+    "args"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "0.4.0"
+    },
+    "type": {
+      "const": "cmd"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "args": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

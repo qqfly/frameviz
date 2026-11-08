@@ -1,0 +1,5 @@
+node_modules/
+dist/
+cpp/build/
+src-tauri/target/
+src-tauri/resources/cpp/

@@ -1,0 +1,24 @@
+name: Candidate source archive
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+  source:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/check_source.py
+      - run: python scripts/release/export_source.py /tmp/frameviz-source
+      - run: tar -C /tmp -czf /tmp/frameviz-source.tar.gz frameviz-source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frameviz-source-candidate
+          path: /tmp/frameviz-source.tar.gz
+# No tag push, registry upload, signing, or public GitHub release action.
