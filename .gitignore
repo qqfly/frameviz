@@ -96,3 +96,6 @@ release-local/
 *.app/
 *.dmg
 *.pkg
+
+# Built acceptance frontend
+dist-acceptance/
