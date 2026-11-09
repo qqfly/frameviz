@@ -10,6 +10,9 @@
 | **02_camera_views** | 多视图与相机控制 |
 | **03_interaction** | Gizmo、拾取、事件 |
 | **04_robotics** | 简单机械臂动画、Octomap |
+| **05_developer_features** | README 对应的固定输入案例：网格、实例更新、拾取/Gizmo、模型标注 |
+
+[README 功能图鉴与短动图](../README.zh-CN.md)展示各类输入和 API；[Vue 嵌入案例](vue/README.md)提供组件布局和 Python 场景启动脚本。
 
 ## C++ 示例（`examples/cpp/`）
 

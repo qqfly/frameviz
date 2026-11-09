@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>FrameViz Vue embedding</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fa;color:#182536;font-family:system-ui,sans-serif}
+header{padding:22px 28px;background:white;border-bottom:1px solid #dce3ec}h1{font-size:23px;margin:0 0 5px}p{margin:0;color:#63748b;font-size:14px}
+main{display:flex;padding:18px;gap:18px;height:500px}aside{width:200px;padding:18px;background:white;border-radius:10px}
+button{width:100%;padding:10px;margin:12px 0;border:1px solid #cbd7e7;border-radius:6px;background:#edf4ff;color:#2459a0;cursor:pointer}
+.stage{position:relative;flex:1;background:white;border:1px solid #dce3ec;border-radius:10px;overflow:hidden}.viewer{height:100%;width:100%}
+.empty{padding:100px 35px;color:#63748b}code{font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+</style></head><body><div id="app"></div><script type="module">
+import {createApp, ref, h} from 'vue';
+import {FrameVizViewer} from '@frameviz/vue';
+import '../../packages/frameviz-vue/dist/style.css';
+
+// A trusted local bootstrap supplies the Host token at runtime; never commit it.
+const sessionToken = new URLSearchParams(location.hash.slice(1)).get('token') || '';
+const viewId = new URLSearchParams(location.search).get('view_id') || undefined;
+const mounted = ref(true);
+const status = ref('Connecting');
+window.showcase = {}; // Capture diagnostics; the scene is populated by the Python SDK.
+createApp({setup(){return()=>h('div',[
+  h('header',[h('h1','Embed in your Vue application'),h('p','Python scene data · Vue component · your own surrounding UI')]),
+  h('main',[
+    h('aside',[
+      h('strong','Application panel'),
+      h('button',{id:'toggle-viewer',onClick:()=>{mounted.value=!mounted.value;status.value=mounted.value?'Connecting':'Unmounted';}},mounted.value?'Hide viewer':'Show viewer'),
+      h('p',{id:'connection-state'},status.value),
+      h('br'),h('code','<FrameVizViewer :auth-token="sessionToken" :show-axes="false" />'),
+    ]),
+    h('section',{class:'stage'},mounted.value?h(FrameVizViewer,{
+      class:'viewer',name:'readme-vue',viewId,authToken:sessionToken,
+      autoStartHost:false,showAxes:false,showGrid:false,background:0xffffff,
+      onReady:core=>window.showcase.core=core,
+      onRegistered:info=>{window.showcase.info=info;status.value='Connected';},
+      onError:error=>{window.showcase.error=error.message;status.value='Connection error';},
+    }):h('div',{class:'empty'},'Viewer unmounted. The rest of your application stays available.')),
+  ]),
+]);}}).mount('#app');
+</script></body></html>

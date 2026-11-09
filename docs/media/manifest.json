@@ -1,0 +1,116 @@
+{
+  "format": 1,
+  "project": "FrameViz",
+  "version": "0.4.0",
+  "host_source_commit": "ca4f146b304ba051890435ea249f3b04baf3ec56",
+  "host_executable_sha256": "9c85b62b72e37c013e95ce1a329c8102be319095655d3172c7f7f18aeb4ccaac",
+  "renderer": "Real packaged Host embedded Viewer / real Vue component, Chromium software WebGL",
+  "media_license": "First-party generated scenes/captions, project MIT; no third-party models or recordings.",
+  "encoding": "PNG for catalogue; mixed/lossy WebP q90 with sharp YUV for short loops. No MP4/GIF deliveries.",
+  "files": [
+    {
+      "file": "appearance.webp",
+      "bytes": 194396,
+      "sha256": "93aa6f02921231f0a7fefc7a8afa35021ca334918d0d51e06c050dd26e57078f",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 15,
+      "duration_seconds": 7.266666666666667,
+      "sources": [
+        "examples/python/01_basic_primitives/use_colors_and_transparency.py",
+        "examples/python/01_basic_primitives/use_batch_transforms_and_view_status.py",
+        "examples/python/01_basic_primitives/use_resource_cleanup.py"
+      ]
+    },
+    {
+      "file": "drawables-overview.png",
+      "bytes": 178077,
+      "sha256": "2dce2c122fa0d42498a99b33a5a5b9153e60ac14d0a25ae4e359899d94d2d613",
+      "width": 2560,
+      "height": 1300,
+      "sample_fps": null,
+      "duration_seconds": null,
+      "sources": [
+        "packages/frameviz-py/frameviz/viz.py",
+        "packages/frameviz-cpp/include/frameviz/viz.hpp"
+      ]
+    },
+    {
+      "file": "instancing.webp",
+      "bytes": 1370672,
+      "sha256": "86231a071797e6bc5a94c9c1341e5ddbdc9da623859ca70d43a0b30345e5bab4",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 6.333333333333333,
+      "sources": [
+        "examples/python/05_developer_features/showcase.py",
+        "examples/python/01_basic_primitives/use_instancing.py"
+      ]
+    },
+    {
+      "file": "labels-model.webp",
+      "bytes": 322398,
+      "sha256": "e69d1c7cbe30feae396a9c0d20a610563041f73a6ff66402604a9dcde2c3fad0",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 4.75,
+      "sources": [
+        "examples/python/05_developer_features/showcase.py"
+      ]
+    },
+    {
+      "file": "mesh-colors.webp",
+      "bytes": 496766,
+      "sha256": "1ffb0c01c6143efdd23f3745d08bd3c880662a10ee01ea015f9cd04c0c8812e7",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 4.583333333333333,
+      "sources": [
+        "examples/python/05_developer_features/showcase.py",
+        "examples/python/01_basic_primitives/use_mesh_color_modes.py"
+      ]
+    },
+    {
+      "file": "multi-view.webp",
+      "bytes": 312922,
+      "sha256": "1b74a3c4120e9b415c891ee1446c53435b0d507b477ec4e5cae7a4884958d9e3",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 4.75,
+      "sources": [
+        "examples/python/02_camera_views/use_multi_view_demo.py"
+      ]
+    },
+    {
+      "file": "picking-gizmo.webp",
+      "bytes": 252700,
+      "sha256": "61057e65092d2a9c504887afeafcc6b2a0b16a1ce036cb0e4c63d52f744c598a",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 4.416666666666667,
+      "sources": [
+        "examples/python/05_developer_features/showcase.py",
+        "examples/python/03_interaction/use_picking_demo.py",
+        "examples/python/03_interaction/use_gizmo_demo.py"
+      ]
+    },
+    {
+      "file": "vue-embedding.webp",
+      "bytes": 324786,
+      "sha256": "c326c63c572b2e769c2501ebc5ea992a4d5579bdf4d23d1c0ccd94696067a06d",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 4.416666666666667,
+      "sources": [
+        "examples/vue/embedded_viewer.html",
+        "examples/vue/open_scene.py"
+      ]
+    }
+  ]
+}

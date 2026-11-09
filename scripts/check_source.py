@@ -5,6 +5,10 @@ import hashlib,json,re,os
 from update_source_manifest import ROOT,source_files
 errors=[];files=list(source_files())
 for rel,p in files:
+ if p.suffix.lower()=='.webp':
+  data=p.read_bytes()
+  if len(data)<12 or data[:4]!=b'RIFF' or data[8:12]!=b'WEBP' or int.from_bytes(data[4:8],'little')!=len(data)-8:errors.append(f'Invalid WebP asset: {rel}')
+  continue
  if p.suffix.lower() in {'.png','.ico','.icns'}:continue
  try:text=p.read_text()
  except UnicodeError:errors.append(f'Unapproved binary {rel}');continue
