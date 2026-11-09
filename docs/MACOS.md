@@ -6,8 +6,8 @@ The current native preview targets Apple Silicon (M-series) Macs. Its executable
 
 1. Verify the downloaded DMG's SHA-256 against the accompanying checksums.
 2. Open the DMG and drag FrameViz.app to Applications. If an installation already exists, preserve it separately before replacing it.
-3. Launch FrameViz. The startup window shows the local service endpoint and a Python example. The standalone App embeds its viewer and does not require Node, Rust, Python or the source checkout just to run.
-4. Python/C++ programs create scenes in separate viewer windows. Use the App menu to quit; scenes belong to the current Host session and are not persisted across Host restart.
+3. Open FrameViz once to complete macOS's first-open approval. The welcome window appears on the first manual launch. Closing it leaves the App waiting in the background; later manual launches stay in the background. Help → 使用指南 reopens the guide. The standalone App embeds its viewer and does not require Node, Rust, Python or the source checkout just to run.
+4. Python discovers a verified FrameViz bundle in `~/Applications/FrameViz.app` or `/Applications/FrameViz.app`, starts it silently if needed, and opens a scene window. An already running Host is reused. Use the App menu to quit; scenes belong to the current Host session and are not persisted across Host restart.
 
 The current private preview uses an ad-hoc local signature and has not been submitted for Apple notarization. Downloaded copies can be blocked by Gatekeeper. After checking the source and checksum, if you choose to allow this preview, first attempt to open the App, then use System Settings → Privacy & Security → Open Anyway for this App. Managed Macs may not permit this exception. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
@@ -22,7 +22,13 @@ python3 -m venv .venv
 .venv/bin/python -m pip install /path/to/SDK/Python/frameviz-0.4.0-py3-none-any.whl
 ```
 
-Keep the App running and use:
+When upgrading from the 2026-11-08 private preview, explicitly replace its SDK with the wheel from this new preview. Both previews use protocol/package version 0.4.0; the preview date and SHA-256 identify the exact build:
+
+```sh
+.venv/bin/python -m pip install --force-reinstall --no-deps /path/to/new/SDK/Python/frameviz-0.4.0-py3-none-any.whl
+```
+
+After App installation and first-open approval, run Python directly; no App-path variable is needed:
 
 ```python
 import frameviz as fv
@@ -35,7 +41,7 @@ finally:
     viz.close()
 ```
 
-The SDK reads the current user's matching discovery record. If an executable must be configured explicitly, use FRAMEVIZ_TAURI_APP=/Applications/FrameViz.app. Do not mix the 0.4.0 Host with older SDKs.
+The SDK reads the current user's matching discovery record. Automatic installation lookup checks the bundle identifier, declared executable and executable location; it does not launch unrelated apps by name. `FRAMEVIZ_TAURI_APP` remains an optional override for custom locations. Do not mix the 0.4.0 Host with older SDKs. A Host started and owned by the Python process is cleaned up when Python exits; a manually started App is left running. SDK background starts do not consume the first manual welcome. The welcome preference is separate from host.json and retained across Host shutdown.
 
 ## C++ and Vue
 
@@ -62,7 +68,7 @@ FRAMEVIZ_APP_EXECUTABLE=/path/to/FrameViz.app/Contents/MacOS/frameviz \
 python3 -m pytest tests/acceptance/test_macos_app.py -q
 ```
 
-The observer uses public CoreGraphics window metadata filtered by the launched PID. It does not attach to installed apps by name. Use a temporary HOME/discovery/log path for every additional runtime check. `native_acceptance.py` accepts FRAMEVIZ_NATIVE_APP_EXECUTABLE; `browser_acceptance.py` accepts FRAMEVIZ_ACCEPTANCE_APP_EXECUTABLE to exercise the packaged Host and embedded HTTP viewer with Node absent from its PATH. Full native pointer/keyboard use and the other Mac's installation remain separate manual checks.
+The observer uses public CoreGraphics window metadata filtered by the launched PID. With existing Accessibility permission it presses that process's native close button; no permission prompt is requested. It does not attach to installed apps by name. Startup checks cover welcome-once, headless startup and continued service after closing the welcome. Use a temporary HOME/discovery/log path for every additional runtime check. `native_acceptance.py` accepts FRAMEVIZ_NATIVE_APP_EXECUTABLE; `browser_acceptance.py` accepts FRAMEVIZ_ACCEPTANCE_APP_EXECUTABLE to exercise the packaged Host and embedded HTTP viewer with Node absent from its PATH. Full native pointer/keyboard use and the other Mac's installation remain separate manual checks.
 
 ## Open source and signing
 

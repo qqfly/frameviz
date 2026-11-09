@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from .client import DEFAULT_WS_URL
 from ._internal import (
     _get_repo_root,
+    _get_macos_app_executable,
     _get_tauri_app_candidates,
     _get_tauri_exec_candidates,
     _get_appimage_candidates,
@@ -47,8 +48,8 @@ def find_host_executable() -> Optional[Path]:
 
     if sys.platform == "darwin":
         for app in _get_tauri_app_candidates(repo_root):
-            app_bin = app / "Contents" / "MacOS" / "FrameViz"
-            if app_bin.exists():
+            app_bin = _get_macos_app_executable(app)
+            if app_bin is not None:
                 return app_bin
 
     for candidate in _get_tauri_exec_candidates(repo_root):

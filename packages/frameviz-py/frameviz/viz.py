@@ -36,6 +36,7 @@ from ._internal import (
     _AUTO_WS_LOG_PATH,
     _AUTO_WS_PROCESS,
     _get_repo_root,
+    _get_macos_app_executable,
     _get_tauri_app_candidates,
     _get_tauri_exec_candidates,
     _get_appimage_candidates,
@@ -2648,7 +2649,11 @@ def _try_open_tauri(view_id: Optional[str] = None) -> bool:
     Returns:
         True if Tauri app was successfully launched, False otherwise.
     """
-    args: List[str] = []
+    # Background bootstrap must not display onboarding or create a second Host
+    # while the process we just started is still bringing up its control socket.
+    if not view_id and any(proc.poll() is None for proc in _AUTO_TAURI_PROCS):
+        return True
+    args: List[str] = ["--headless"]
     if view_id:
         args = ["--view-id", view_id]
 
@@ -2661,10 +2666,7 @@ def _try_open_tauri(view_id: Optional[str] = None) -> bool:
 
     if sys.platform == "darwin":
         for app_path in _get_tauri_app_candidates(repo_root):
-            app_bin = app_path / "Contents" / "MacOS" / "FrameViz"
-            if _launch_exec(app_bin, args):
-                return True
-            if app_path.exists() and _launch_macos_app(str(app_path), args):
+            if _launch_tauri_path(app_path, args):
                 return True
 
         for bin_path in _get_tauri_exec_candidates(repo_root):
@@ -2870,10 +2872,8 @@ def _launch_tauri_path(path: Path, args: List[str]) -> bool:
     if not path.exists():
         return False
     if sys.platform == "darwin" and path.suffix == ".app":
-        inner_bin = path / "Contents" / "MacOS" / "FrameViz"
-        if _launch_exec(inner_bin, args):
-            return True
-        return _launch_macos_app(str(path), args)
+        inner_bin = _get_macos_app_executable(path)
+        return inner_bin is not None and _launch_exec(inner_bin, args)
     return _launch_exec(path, args)
 
 

@@ -16,6 +16,7 @@ use tokio::sync::watch;
 use include_dir::{include_dir, Dir};
 
 mod control;
+mod startup;
 use frameviz_server::websocket;
 use frameviz_server::{HttpServerConfig, cleanup_stale_discovery, update_discovery_http_port};
 
@@ -403,14 +404,30 @@ fn main() {
         .setup(move |app| {
             control::start_control_server(app.handle().clone(), control_port);
 
+            let menu = tauri::menu::Menu::default(app.handle())?;
+            let guide = tauri::menu::MenuItem::with_id(app.handle(), "show_welcome", "使用指南", true, None::<&str>)?;
+            if let Some(item) = menu.get(tauri::menu::HELP_SUBMENU_ID) {
+                if let Some(help) = item.as_submenu() { help.append(&guide)?; }
+            } else {
+                menu.append(&guide)?;
+            }
+            app.set_menu(menu)?;
+
             // A normal App launch has a visible entry point. SDK/headless launches
             // retain their existing background/view-window behavior.
             if let Some(window) = app.get_webview_window("main") {
-                if args.headless || app.state::<AppState>().view_id().is_some() {
+                let preferences = startup::preferences_path();
+                let seen = preferences.as_deref().map(startup::welcome_seen).unwrap_or(false);
+                if args.headless || app.state::<AppState>().view_id().is_some() || seen {
                     window.hide()?;
                 } else {
                     window.show()?;
                     window.set_focus()?;
+                    if let Some(path) = preferences {
+                        if let Err(error) = startup::mark_welcome_seen(&path) {
+                            eprintln!("[FrameViz] Could not save welcome preference: {error}");
+                        }
+                    }
                 }
             }
 
@@ -461,23 +478,19 @@ fn main() {
 
             Ok(())
         })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "show_welcome" {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let app = window.app_handle();
-                // When the last window is closing, shut down the servers
-                if app.webview_windows().len() <= 1 {
-                    let state = app.state::<AppState>();
-                    // Shutdown WebSocket server
-                    if let Some(ref tx) = state.ws_shutdown_tx {
-                        println!("[FrameViz] Sending shutdown signal to WebSocket server");
-                        let _ = tx.send(true);
-                    }
-                    // Shutdown HTTP server
-                    if let Some(ref tx) = state.http_shutdown_tx {
-                        println!("[FrameViz] Sending shutdown signal to HTTP server");
-                        let _ = tx.send(true);
-                    }
-                    app.exit(0);
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })

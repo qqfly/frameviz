@@ -61,6 +61,7 @@ def test_autostart_does_not_select_an_unrelated_path_command(tmp_path,monkeypatc
  binary=tmp_path/'frameviz';binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o755)
  monkeypatch.setenv('PATH',str(tmp_path));monkeypatch.delenv('FRAMEVIZ_HOST_PATH',raising=False)
  monkeypatch.setattr(host,'_get_repo_root',lambda:None)
+ monkeypatch.setattr(host,'_get_tauri_app_candidates',lambda root:[])
  assert host.find_host_executable() is None
 
 
@@ -68,6 +69,7 @@ def test_no_unconfigured_application_name_launch(monkeypatch):
  import frameviz.viz as viz
  monkeypatch.setattr(viz.sys,'platform','darwin');monkeypatch.delenv('FRAMEVIZ_TAURI_APP',raising=False)
  monkeypatch.setattr(viz,'_get_repo_root',lambda:None)
+ monkeypatch.setattr(viz,'_get_tauri_app_candidates',lambda root:[])
  monkeypatch.setattr(viz,'_launch_macos_app',lambda *args:pytest.fail('Unexpected global app-name launch'))
  assert not viz._try_open_tauri()
 

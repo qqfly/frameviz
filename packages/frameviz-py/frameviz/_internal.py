@@ -13,6 +13,7 @@ import atexit
 import builtins
 import json
 import os
+import plistlib
 import signal
 import shlex
 import socket
@@ -169,6 +170,26 @@ def _get_repo_root() -> Optional[Path]:
     return None
 
 
+def _get_macos_app_executable(app: Path) -> Optional[Path]:
+    """Resolve a FrameViz bundle's declared executable without a name lookup."""
+    try:
+        with (app / 'Contents/Info.plist').open('rb') as stream:
+            info = plistlib.load(stream)
+        name = info.get('CFBundleExecutable')
+        if (info.get('CFBundleIdentifier') != 'dev.qqfly.frameviz.viewer'
+                or info.get('CFBundlePackageType') != 'APPL'
+                or name not in ('frameviz', 'FrameViz')):
+            return None
+        directory = app / 'Contents/MacOS'
+        binary = directory / name
+        if (binary.is_file() and os.access(binary, os.X_OK)
+                and binary.resolve().is_relative_to(directory.resolve())):
+            return binary
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
 def _get_tauri_app_candidates(repo_root: Optional[Path]) -> List[Path]:
     if not sys.platform == "darwin":
         return []
@@ -180,6 +201,9 @@ def _get_tauri_app_candidates(repo_root: Optional[Path]) -> List[Path]:
             repo_root
             / "packages/frameviz-host-tauri/src-tauri/target/debug/bundle/macos/FrameViz.app",
         ] + candidates
+    for app in [Path.home() / 'Applications/FrameViz.app', Path('/Applications/FrameViz.app')]:
+        if _get_macos_app_executable(app) is not None and app not in candidates:
+            candidates.append(app)
     return candidates
 
 
