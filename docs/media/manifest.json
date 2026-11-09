@@ -100,17 +100,20 @@
       ]
     },
     {
-      "file": "vue-embedding.webp",
-      "bytes": 324786,
-      "sha256": "c326c63c572b2e769c2501ebc5ea992a4d5579bdf4d23d1c0ccd94696067a06d",
+      "file": "vue-sliders.webp",
+      "bytes": 925850,
+      "sha256": "8978634503b8e7ce566326c47aa3ca28d4a1df4185654e208878dc0896c51a0f",
       "width": 960,
       "height": 600,
       "sample_fps": 12,
-      "duration_seconds": 4.416666666666667,
+      "duration_seconds": 10.666666666666666,
       "sources": [
-        "examples/vue/embedded_viewer.html",
-        "examples/vue/open_scene.py"
-      ]
+        "examples/apps/simple_slider/src/App.vue",
+        "examples/apps/simple_slider/src/components/ControlPanel.vue",
+        "examples/apps/simple_slider/python/backend_simple_slider.py",
+        "examples/apps/simple_slider/python/run_browser_demo.py"
+      ],
+      "capture_notes": "Camera, helper-axis removal, background; debug handle/footer hidden and header used as dataflow caption. Application control logic is unchanged."
     }
   ]
 }

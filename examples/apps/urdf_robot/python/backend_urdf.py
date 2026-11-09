@@ -766,6 +766,7 @@ async def main() -> None:
         lambda ws: handle_client(ws, group),
         WS_HOST,
         WS_PORT,
+        subprotocols=["frameviz-business"],
         ping_interval=20,
     )
 

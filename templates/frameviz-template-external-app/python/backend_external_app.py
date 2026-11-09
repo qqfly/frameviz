@@ -461,6 +461,7 @@ async def run_backend(args: argparse.Namespace) -> None:
         backend.handle_client,
         args.ws_host,
         args.ws_port,
+        subprotocols=["frameviz-business"],
         ping_interval=20,
     )
 

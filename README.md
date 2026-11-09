@@ -150,18 +150,28 @@ viz.add_text_2d("Status: ready", x=32, y=540, color="black")
 
 Run `python examples/python/05_developer_features/showcase.py labels --model-url http://127.0.0.1:8000/model.stl` with your own HTTP-served model. The clip uses a generated tetrahedron, not a third-party model.
 
-### Embed in Vue
+### Vue controls → Python backend → 3D scene
 
-Place the component in your application's layout. Supply the Host credential at runtime from your trusted local bootstrap:
+Embed the viewer beside real application controls. This uses the existing [Simple Slider application](examples/apps/simple_slider/README.md): X/Y/Z sliders move the box, a fourth slider rotates it, and Reset restores its initial pose.
 
 ```vue
-<FrameVizViewer name="main" :auth-token="sessionToken"
-  :auto-start-host="false" :show-axes="false" :show-grid="false" />
+<ControlPanel :box-handle="boxHandle" @update-transform="handleUpdateTransform" />
+<FrameVizViewer name="simple_slider_viewer" :view-id="viewId" />
 ```
 
-![Vue component, Python updates, unmount and remount](docs/media/vue-embedding.webp)
+The panel sends `set_box_pose` to the authenticated Python business backend, which calls `viz.set_transform(handle, pos=..., quat=...)`. The viewer renders the Host's updated scene. Host and business credentials are separate and supplied at runtime.
 
-The clip shows Python updating the scene and a real Vue unmount/remount. Restoration is within the **same running Host**, not after Host restart. See the [runnable example](examples/vue/README.md), [Vue setup](packages/frameviz-vue/README.md), and [external application template](templates/frameviz-template-external-app/README.md).
+![Vue sliders moving and rotating an object through the Python backend](docs/media/vue-sliders.webp)
+
+After source dependencies, the Python SDK and matching App/Host are available:
+
+```sh
+python -m pip install -r examples/apps/simple_slider/python/requirements.txt
+pnpm --filter simple-slider-app build
+python examples/apps/simple_slider/python/run_browser_demo.py
+```
+
+The launcher opens the local page with fresh temporary credentials; press Enter in its terminal to stop the demo. See [startup details and dataflow](examples/apps/simple_slider/README.md), [control panel](examples/apps/simple_slider/src/components/ControlPanel.vue), [Python backend](examples/apps/simple_slider/python/backend_simple_slider.py), and [Vue SDK](packages/frameviz-vue/README.md). The [minimal component example](examples/vue/README.md) remains available for initial embedding. The robot joint-control application is another integration example; its shipped public meshes are placeholder fixtures, not a physical robot model.
 
 ## C++ and further examples
 

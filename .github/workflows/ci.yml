@@ -31,7 +31,7 @@ jobs:
       - run: node scripts/prepare_web_viewer_dist.mjs && pnpm --filter @frameviz/vue build
       - run: pnpm test
       - run: cargo build --locked --manifest-path packages/frameviz-server/Cargo.toml
-      - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py tests/acceptance/test_readme_media.py -q -ra
+      - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py tests/acceptance/test_readme_media.py tests/acceptance/test_example_business_handshake.py -q -ra
       - run: cargo test --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: cmake -S packages/frameviz-cpp -B .cache/cpp-release -DCMAKE_BUILD_TYPE=Release -DFRAMEVIZ_BUILD_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
       - run: cmake --build .cache/cpp-release -j 4

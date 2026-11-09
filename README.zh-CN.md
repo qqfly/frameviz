@@ -150,18 +150,28 @@ viz.add_text_2d("Status: ready", x=32, y=540, color="black")
 
 用你自己通过 HTTP 提供的模型运行 `python examples/python/05_developer_features/showcase.py labels --model-url http://127.0.0.1:8000/model.stl`。动图使用程序生成的四面体，不包含第三方模型。
 
-### 嵌入 Vue 应用
+### Vue 滑动条 → Python 后端 → 三维场景
 
-把组件放进自己的页面布局，由可信的本地启动流程在运行时提供 Host 凭据：
+将 Viewer 放到实际应用的控制面板旁。本案例直接复用[现有 Simple Slider 应用](examples/apps/simple_slider/README.md)：X/Y/Z 滑动条修改盒子位置，第四个滑动条控制旋转，“重置”恢复初始位姿。
 
 ```vue
-<FrameVizViewer name="main" :auth-token="sessionToken"
-  :auto-start-host="false" :show-axes="false" :show-grid="false" />
+<ControlPanel :box-handle="boxHandle" @update-transform="handleUpdateTransform" />
+<FrameVizViewer name="simple_slider_viewer" :view-id="viewId" />
 ```
 
-![Vue 组件、Python 更新及卸载重挂](docs/media/vue-embedding.webp)
+控制面板向经过认证的 Python 业务后端发送 `set_box_pose`，后端调用 `viz.set_transform(handle, pos=..., quat=...)`，Viewer 显示 Host 更新后的场景。Host 与业务通道使用独立凭据，由启动流程在运行时提供。
 
-动图展示 Python 更新场景，以及真实 Vue 组件卸载与重挂。恢复的是**同一运行中 Host** 的场景，不代表 Host 重启后的持久恢复。参见[可运行嵌入案例](examples/vue/README.md)、[Vue 接入](packages/frameviz-vue/README.md)、[独立应用模板](templates/frameviz-template-external-app/README.md)。
+![Vue 滑动条通过 Python 后端控制对象位移和旋转](docs/media/vue-sliders.webp)
+
+准备好源码依赖、Python SDK 和匹配的 App/Host 后：
+
+```sh
+python -m pip install -r examples/apps/simple_slider/python/requirements.txt
+pnpm --filter simple-slider-app build
+python examples/apps/simple_slider/python/run_browser_demo.py
+```
+
+启动器会打开带有临时凭据的本地页面；在启动终端按 Enter 结束本次演示。参见[启动说明与交互链路](examples/apps/simple_slider/README.md)、[控制面板](examples/apps/simple_slider/src/components/ControlPanel.vue)、[Python 后端](examples/apps/simple_slider/python/backend_simple_slider.py)和 [Vue SDK](packages/frameviz-vue/README.md)。[最小组件接入示例](examples/vue/README.md)仍保留，便于初次嵌入。机器人关节应用是另一类接入示例，其当前公开模型为占位几何，并非真实物理机器人模型。
 
 ## C++ 与更多案例
 

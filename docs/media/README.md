@@ -23,8 +23,10 @@ The root [English](../../README.md) and [Chinese](../../README.zh-CN.md) READMEs
 | Picking / Gizmo | [showcase.py picking](../../examples/python/05_developer_features/showcase.py), [original Gizmo example](../../examples/python/03_interaction/use_gizmo_demo.py) |
 | Shared cameras | [multiple-view example](../../examples/python/02_camera_views/use_multi_view_demo.py); recorder uses two browser views of one scene |
 | Model / labels | [showcase.py labels](../../examples/python/05_developer_features/showcase.py), with a generated HTTP-served STL |
-| Vue embedding | [runnable Vue page and Python bootstrap](../../examples/vue/README.md) |
+| Vue sliders | [existing Simple Slider app](../../examples/apps/simple_slider/README.md): actual pointer control → authenticated Python backend → SDK transforms |
 
 The recordings adapt camera, palette, input size and pacing for documentation; they are not unmodified executions of every original example. Captures were driven by Python, with the actual Vue component for embedding. The C++ API names were checked against its header; these media do not establish new C++ or native-platform acceptance.
 
 Run the linked examples using their README commands, apply the camera/helper settings above, capture the viewer viewport, and export with libwebp's `img2webp`. The manifest records the exact captured Host build. Local recording logs and earlier attempts remain outside the distributable source. Re-record after runtime changes rather than implying these files show a newer Host build.
+
+The Vue loop records the existing Simple Slider app, including real pointer drags for X/Y/Z, Z rotation and Reset. Its original drawn axes are removed for recording, the helper axes are hidden, and the camera is fixed. The diagnostic footer/handle are hidden and the heading is a recording caption. The application control logic is unchanged; Python business entry points now explicitly negotiate the `frameviz-business` subprotocol required by browsers.

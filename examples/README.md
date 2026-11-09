@@ -12,7 +12,7 @@
 | **04_robotics** | 简单机械臂动画、Octomap |
 | **05_developer_features** | README 对应的固定输入案例：网格、实例更新、拾取/Gizmo、模型标注 |
 
-[README 功能图鉴与短动图](../README.zh-CN.md)展示各类输入和 API；[Vue 嵌入案例](vue/README.md)提供组件布局和 Python 场景启动脚本。
+[README 功能图鉴与短动图](../README.zh-CN.md)展示各类输入和 API；[Vue 滑动条应用](apps/simple_slider/README.md)展示控件与场景联动，[最小 Vue 接入](vue/README.md)提供组件起步示例。
 
 ## C++ 示例（`examples/cpp/`）
 
@@ -42,7 +42,7 @@ cmake --build .
 | 分类 | 说明 |
 |------|------|
 | **simple_slider** | 后端控最小示例（Vue + Tauri + C++ backend） |
-| **urdf_robot** | 生产级示例（Vue + Tauri + Python/C++ backend） |
+| **urdf_robot** | 合成六轴关节与 Visual/Collision 视图示例（Vue + Tauri + Python/C++ backend） |
 
 ```bash
 # 发布包：直接运行独立应用（.dmg/.deb）
