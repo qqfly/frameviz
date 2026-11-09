@@ -51,7 +51,7 @@ The SDK is already pip-installable from a wheel or source. A public `pip install
 
 ## Developer examples
 
-These are real SDK → Host → viewer captures. Origin helper axes are hidden; the Axes drawing example and functional Gizmo handles remain visible. Data is synthetic; the recordings are not performance benchmarks. [Capture notes and source mapping](docs/media/README.md).
+These are real SDK → Host → viewer captures. Origin helper axes are hidden; the Axes drawing example and functional Gizmo handles remain visible. Basic scenes use synthetic data; SO-101 uses the credited external model with synthetic joint inputs. The recordings are not performance benchmarks. [Capture notes and source mapping](docs/media/README.md).
 
 ### Color, transparency, visibility, and pose
 
@@ -172,6 +172,17 @@ python examples/apps/simple_slider/python/run_browser_demo.py
 ```
 
 The launcher opens the local page with fresh temporary credentials; press Enter in its terminal to stop the demo. See [startup details and dataflow](examples/apps/simple_slider/README.md), [control panel](examples/apps/simple_slider/src/components/ControlPanel.vue), [Python backend](examples/apps/simple_slider/python/backend_simple_slider.py), and [Vue SDK](packages/frameviz-vue/README.md). The [minimal component example](examples/vue/README.md) remains available for initial embedding. The robot joint-control application is another integration example; its shipped public meshes are placeholder fixtures, not a physical robot model.
+
+
+### SO-101 robot model and joint controls
+
+Use an articulated robot model with the same viewer and object-pose APIs. This recording shows **five SO-101 arm joints plus its gripper**, operated from Vue controls, with reset to the initial pose. SO-101 is an officially supported [LeRobot platform](https://huggingface.co/docs/lerobot/so101).
+
+![SO-101 arm joint sliders and gripper control in FrameViz](docs/media/so101-joint-controls.webp)
+
+Model: [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101), fixed revision `98a70c569c4c1b6da467a20012f766ee1f8dc521`, [Apache-2.0 license](docs/media/LICENSE-so101-model.txt). **Model files are not included in this repository.** Only the recorded WebP and attribution are distributed. The short loop plays at 1.5× speed; this is not a rendering-rate measurement.
+
+The recording reuses the [joint panel](examples/apps/urdf_robot/src/components/ControlPanel.vue) with an external capture adapter: it reads the model's MJCF joint definitions and sends STL URLs and per-part poses to FrameViz. Its kinematics were compared with MuJoCo `mj_forward`; FrameViz renders the result. This media update does not add a built-in MJCF/URDF importer or a bundled SO-101 application. [Capture provenance](docs/media/README.md#so-101-external-model).
 
 ## C++ and further examples
 

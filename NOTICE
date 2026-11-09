@@ -10,3 +10,9 @@ Third-party source retains its original notices and licenses:
 Other dependencies retain their own license terms. This notice does not
 relicense third-party code or claim authorship of it. See THIRD_PARTY_LICENSES
 and the dependency inventory for the precise release artifact.
+
+README media includes an SO-101 model rendering derived from MuJoCo Menagerie,
+The Robot Studio SO101 description, revision
+98a70c569c4c1b6da467a20012f766ee1f8dc521, under Apache-2.0.
+Model files are not bundled. See docs/media/README.md and
+docs/media/LICENSE-so101-model.txt for source attribution and license.

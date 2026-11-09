@@ -5,7 +5,7 @@
   "host_source_commit": "ca4f146b304ba051890435ea249f3b04baf3ec56",
   "host_executable_sha256": "9c85b62b72e37c013e95ce1a329c8102be319095655d3172c7f7f18aeb4ccaac",
   "renderer": "Real packaged Host embedded Viewer / real Vue component, Chromium software WebGL",
-  "media_license": "First-party generated scenes/captions, project MIT; no third-party models or recordings.",
+  "media_license": "First-party captures/layouts are MIT. The SO-101 capture includes model-derived content under Apache-2.0; see LICENSE-so101-model.txt and README.md for attribution. Raw third-party model files are not bundled.",
   "encoding": "PNG for catalogue; mixed/lossy WebP q90 with sharp YUV for short loops. No MP4/GIF deliveries.",
   "files": [
     {
@@ -114,6 +114,32 @@
         "examples/apps/simple_slider/python/run_browser_demo.py"
       ],
       "capture_notes": "Camera, helper-axis removal, background; debug handle/footer hidden and header used as dataflow caption. Application control logic is unchanged."
+    },
+    {
+      "file": "so101-joint-controls.webp",
+      "bytes": 1690106,
+      "sha256": "29b1af876f30d9f5d15a7acf2f28b493a71c43876ddad1fe4b2370171be675a2",
+      "width": 960,
+      "height": 600,
+      "sample_fps": 12,
+      "duration_seconds": 13.25,
+      "playback_speed": 1.5,
+      "sources": [
+        "examples/apps/urdf_robot/src/components/ControlPanel.vue",
+        "packages/frameviz-py/frameviz/viz.py",
+        "packages/frameviz-vue/src/components/FrameVizViewer.vue"
+      ],
+      "model": {
+        "name": "The Robot Studio SO101",
+        "repository": "https://github.com/google-deepmind/mujoco_menagerie",
+        "commit": "98a70c569c4c1b6da467a20012f766ee1f8dc521",
+        "path": "robotstudio_so101",
+        "license": "Apache-2.0",
+        "license_file": "LICENSE-so101-model.txt",
+        "description_sha256": "982c02c027ec0c62d3459d0a6eb00dfb7dc13a451992e72ce99addc71f209805",
+        "files_in_repository": false
+      },
+      "capture_notes": "Real FrameViz rendering and Vue joint panel with capture-only MJCF transform adapter outside the repository. Five arm joints plus gripper. Original capture is played at 1.5x for a short loop; not a rendering/update-rate claim. Fixed camera and hidden origin helpers."
     }
   ]
 }

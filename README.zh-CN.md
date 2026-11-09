@@ -51,7 +51,7 @@ SDK 已支持通过 pip 安装 wheel 或源码；包含完整运行时的公共 
 
 ## 开发者功能案例
 
-下面是实际 SDK → Host → Viewer 的短动图。采集时隐藏世界原点的辅助轴；主动绘制的 Axes 图元和交互需要的 Gizmo 手柄仍保留。数据为合成数据，动图不构成性能测试。[采集规范与源码对应](docs/media/README.md)。
+下面是实际 SDK → Host → Viewer 的短动图。采集时隐藏世界原点的辅助轴；主动绘制的 Axes 图元和交互需要的 Gizmo 手柄仍保留。基础场景使用合成数据；SO-101 使用有来源声明的外部模型与合成关节输入。动图不构成性能测试。[采集规范与源码对应](docs/media/README.md)。
 
 ### 颜色、透明度、显隐与位姿
 
@@ -172,6 +172,17 @@ python examples/apps/simple_slider/python/run_browser_demo.py
 ```
 
 启动器会打开带有临时凭据的本地页面；在启动终端按 Enter 结束本次演示。参见[启动说明与交互链路](examples/apps/simple_slider/README.md)、[控制面板](examples/apps/simple_slider/src/components/ControlPanel.vue)、[Python 后端](examples/apps/simple_slider/python/backend_simple_slider.py)和 [Vue SDK](packages/frameviz-vue/README.md)。[最小组件接入示例](examples/vue/README.md)仍保留，便于初次嵌入。机器人关节应用是另一类接入示例，其当前公开模型为占位几何，并非真实物理机器人模型。
+
+
+### SO-101 机械臂模型与关节控件
+
+用同一套 Viewer 和对象位姿 API 显示真实机械臂模型。本动图展示通过 Vue 控件操作 **SO-101 的五个手臂关节和夹爪**，最后恢复初始姿态。SO-101 是 [LeRobot 官方支持的平台](https://huggingface.co/docs/lerobot/so101)。
+
+![FrameViz 中的 SO-101 关节滑条与夹爪控制](docs/media/so101-joint-controls.webp)
+
+模型来自 [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101)，固定版本 `98a70c569c4c1b6da467a20012f766ee1f8dc521`，采用 [Apache-2.0 许可](docs/media/LICENSE-so101-model.txt)。**模型文件不进入本仓库**，仅提供录制的 WebP 和来源声明。短循环采用 1.5 倍速回放，不代表渲染或更新速率。
+
+采集复用现有[关节面板](examples/apps/urdf_robot/src/components/ControlPanel.vue)，由仓库外的适配器读取 MJCF 关节定义，向 FrameViz 提交 STL URL 与各部件位姿。适配器的运动学已与 MuJoCo `mj_forward` 对照，画面由 FrameViz 渲染。本次媒体更新不新增内置 MJCF/URDF 导入器或配套 SO-101 应用。[采集来源说明](docs/media/README.md#so-101-external-model)。
 
 ## C++ 与更多案例
 
