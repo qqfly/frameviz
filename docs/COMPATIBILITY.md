@@ -25,3 +25,5 @@ After authentication, Python clients dispatch callbacks serially on a dedicated 
 Closing stops new callback dispatch and wakes pending waits. Closing within a callback is supported. A callback already executing cannot be forcibly interrupted; a reconnect is refused while a prior callback thread is still running. Application state shared with callbacks needs the application's own synchronization.
 
 A Python callback exception writes its complete traceback to standard error and does not stop later handlers/events. Closing during a callback stops any remaining callbacks for that event and subsequent queued events. Application-requested shutdown takes precedence over continuing dispatch.
+
+`viz.keep_running()` keeps a standalone Python script alive until the connection closes or Ctrl+C is pressed, then closes that Viz and its connection. Automatic callbacks stay on the dispatcher; `auto_events=False` uses manual dispatch in the calling thread. Closing a browser tab does not itself terminate the Host session. `spin()` remains available for applications managing their own cleanup.
