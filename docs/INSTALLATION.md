@@ -46,3 +46,31 @@ An explicit `FRAMEVIZ_TAURI_APP` overrides the automatic application search. `fr
 This describes the discovery contract, not a claim that a particular Ubuntu installation or graphics driver has passed desktop acceptance. Clean Ubuntu 22.04/24.04 `.deb` installation and native-window checks are separate from simulated discovery tests.
 
 Apple Silicon native preview installation, signing status, paired SDKs and source reproduction are documented in [MACOS.md](MACOS.md).
+
+## Standalone Host and browser
+
+The standalone `frameviz-server` binary serves the bundled Viewer without Tauri, a display server, Node.js, or a source checkout at run time. Both WebSocket and HTTP listeners bind only to `127.0.0.1`. Start it in your normal user account:
+
+```sh
+./frameviz-server --ws-port 9527 --http-port 8080
+```
+
+With no HTTP port argument it chooses a free port. The original positional WebSocket port (`./frameviz-server 9527`) is still accepted. The printed Viewer URL includes the WebSocket port and a temporary authentication token in its `#token=...` fragment. Keep the complete link private; the token is not sent as an HTTP query parameter. The current user's discovery file contains both ports so local Python clients can find them automatically. Startup fails if a requested port cannot be bound or the standalone Host cannot write its discovery file.
+
+For a remote machine, keep the default loopback binding and forward **both** ports:
+
+```sh
+ssh -N -L 8080:127.0.0.1:8080 -L 9527:127.0.0.1:9527 user@remote-machine
+```
+
+Open the Host's printed URL on your local machine. If you choose different local ports, change the URL's HTTP port and `ws_port` query value to the forwarded local ports. No public network listener is enabled. A link without a valid token cannot read the scene or send commands.
+
+To build the standalone executable from source, prepare its embedded Viewer first:
+
+```sh
+pnpm install --frozen-lockfile
+node scripts/prepare_web_viewer_dist.mjs
+cargo build --locked --release --manifest-path packages/frameviz-server/Cargo.toml
+```
+
+The executable is `packages/frameviz-server/target/release/frameviz-server`. Copying that single binary is sufficient for the Viewer assets; normal platform runtime-library requirements still apply. Cross-machine SSH and native Ubuntu desktop acceptance remain separate from a local browser test.

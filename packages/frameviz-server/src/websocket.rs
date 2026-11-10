@@ -75,6 +75,15 @@ pub struct ServerDiagnostics {
     log_writer: Option<LogWriter>,
     log_path: Option<PathBuf>,
     discovery_path: Option<PathBuf>,
+    http_port: Option<u16>,
+}
+
+impl ServerDiagnostics {
+    /// Publish the standalone Viewer's HTTP port in the initial discovery record.
+    pub fn with_http_port(mut self, port: u16) -> Self {
+        self.http_port = Some(port);
+        self
+    }
 }
 
 pub fn select_available_port_avoiding(
@@ -102,6 +111,7 @@ pub fn build_diagnostics(port: u16) -> ServerDiagnostics {
         log_writer,
         log_path,
         discovery_path,
+        http_port: None,
     }
 }
 
@@ -190,12 +200,28 @@ type SharedState = Arc<Mutex<ServerState>>;
 pub async fn run_server(
     port: u16,
     diagnostics: ServerDiagnostics,
-    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("127.0.0.1:{}", port);
     let listener = TcpListener::bind(&addr).await?;
+    run_server_on_listener(listener, diagnostics, shutdown_rx).await
+}
+
+/// Run on an already-bound socket so standalone startup can reserve WebSocket
+/// before allocating the HTTP port, without a port-probe/rebind race.
+pub async fn run_server_on_listener(
+    listener: TcpListener,
+    diagnostics: ServerDiagnostics,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let addr = listener.local_addr()?;
+    let port = addr.port();
     println!("[WS] Server listening on ws://{}", addr);
 
+    let http_port = diagnostics.http_port;
+    if http_port.is_some() && diagnostics.discovery_path.is_none() {
+        return Err("Cannot resolve the standalone Host state directory".into());
+    }
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<LogEntry>();
     let state = Arc::new(Mutex::new(ServerState::new(Host::new(Some(log_tx)), diagnostics)));
 
@@ -205,8 +231,12 @@ pub async fn run_server(
             writer.log("info", "ws_server_started", json!({ "addr": addr }));
         }
         if let Some(path) = &state_guard.discovery_path {
-            // HTTP port will be updated later by update_discovery_http_port if HTTP server is started
-            if let Err(err) = write_discovery_file(path, port, state_guard.log_path.as_ref(), &state_guard.auth_token, None) {
+            // Standalone knows its HTTP port before accepting clients. Embedded
+            // callers can still use update_discovery_http_port as before.
+            if let Err(err) = write_discovery_file(path, port, state_guard.log_path.as_ref(), &state_guard.auth_token, http_port) {
+                if http_port.is_some() {
+                    return Err(format!("Cannot write standalone Host discovery: {err}").into());
+                }
                 if let Some(writer) = &state_guard.log_writer {
                     writer.log(
                         "warn",
@@ -1476,6 +1506,10 @@ fn write_discovery_file(
 
     fs::write(path, payload.to_string())?;
     apply_restrictive_discovery_permissions(path)?;
+
+    if let Some(http_port) = http_port {
+        println!("[FrameViz] Viewer URL: http://127.0.0.1:{http_port}/?ws_port={port}#token={auth_token}");
+    }
 
     Ok(())
 }
