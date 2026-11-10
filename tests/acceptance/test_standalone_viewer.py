@@ -117,16 +117,26 @@ def test_real_browser_mouse_picking_dragging_and_authentication(standalone):
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.goto(url + '#token=' + info['token'])
                 page.wait_for_function('(h)=>window.__FRAMEVIZ_CORE__?.objects.has(h)', arg=handle)
-                viz.set_camera_pose((0,0,10),(0,0,0),up=(0,1,0))
+                # Keep this startup/interaction test away from OrbitControls'
+                # polar singularity; retain the same numerical tolerance.
+                viz.set_camera_pose((0,-8,6),(0,0,0),up=(0,0,1))
                 viz.set_pick_config(enabled=True, mode='object', button=0, ctrl_modifier=False)
                 camera = viz.get_camera_pose()
-                assert all(abs(actual-expected)<1e-5 for actual,expected in zip(camera['eye'],[0,0,10])), camera
-                page.mouse.click(500,360)
+                assert all(abs(actual-expected)<1e-5 for actual,expected in zip(camera['eye'],[0,-8,6])), camera
+                assert viz.get_pick_config()['enabled']
+                # A command response does not imply the browser has rendered a
+                # frame. Wait on actual animation frames, not a longer sleep.
+                page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                center = page.evaluate('''(h)=>{const c=window.__FRAMEVIZ_CORE__,m=c.getSceneManager(),
+                  r=m.renderer.domElement.getBoundingClientRect(),o=c.objects.get(h),
+                  p=o.getWorldPosition(o.position.clone()).project(m.camera);
+                  return {x:r.x+(p.x+1)*r.width/2,y:r.y+(1-p.y)*r.height/2};}''',handle)
+                page.mouse.click(center['x'],center['y'])
                 picked = client.wait_for_event('picked', timeout=3, filter_fn=lambda data:data.get('handle')==handle)
                 assert picked and picked['handle'] == handle
                 viz.attach_gizmo(handle, mask=1)
                 page.wait_for_function('window.__FRAMEVIZ_CORE__.gizmoManager.controls')
-                page.wait_for_timeout(120)
+                page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
                 picker = page.evaluate('''()=>{const c=window.__FRAMEVIZ_CORE__,controls=c.gizmoManager.controls;
                   const rect=c.getSceneManager().renderer.domElement.getBoundingClientRect(),camera=c.getSceneManager().camera;
                   const points=[];controls._gizmo.picker.traverse(o=>{if(o.name==='TR_X'&&o.geometry){o.geometry.computeBoundingBox();

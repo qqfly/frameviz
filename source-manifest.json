@@ -477,7 +477,7 @@
     "tests/acceptance/test_portable.py": "2d4e8fcd9f71f53e12213bf852c4a0e20399590f04b0e354b2851b7cc5448321",
     "tests/acceptance/test_readme_media.py": "36578d9b9e81e7db6447a34a9c2be800d2840d43247bb7fe63df8712f48991fa",
     "tests/acceptance/test_standalone.py": "febaafc24502d6eaa85f57bf903d59f4bf994f3a06b475f4b3d5e9b4cd35482f",
-    "tests/acceptance/test_standalone_viewer.py": "d9e1464fc7674a2553369bb45fbfc8b9f6534d8b0746207360b3c7571f8876ee",
+    "tests/acceptance/test_standalone_viewer.py": "114746b0e65b7e5f1ecbe2873e381a08168194bd352c9fc5cfcbaa9e3e78d5ed",
     "tests/acceptance/cpp/CMakeLists.txt": "9e80d9de991d898633e4143c27b09c25d3d1901f7eea1bb97c44e102d02111bb",
     "tests/acceptance/cpp/asset_harness.cpp": "a96f22d2224d2f8f0b11e876276c5113bf45de63f668cc3d2af72c6c3e0d8e68",
     "tests/acceptance/cpp/find_host.cpp": "3f5ec5b35ae3057d500ce2535444d0531ee6816324547189b00d220b72d36d89",
