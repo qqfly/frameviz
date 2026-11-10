@@ -155,3 +155,25 @@ def test_closed_managed_page_is_replaced_and_closing_old_viz_is_safe(browser_run
         if third: third.close()
         if second: second.close()
         first.close()
+
+
+def test_navigating_away_replaces_page_and_back_restores_original_scene(browser_runtime):
+    context, opened, errors = browser_runtime
+    first = fv.open(window_mode=1, timeout=3)
+    second = None
+    try:
+        handle = first.add_box()
+        page = opened[0]
+        page.wait_for_function('h=>window.__FRAMEVIZ_CORE__?.objects.has(h)', arg=handle)
+        page.goto('about:blank')
+        second = fv.open(window_mode=1, timeout=3)
+        assert len(opened) == len(context.pages) == 2
+        page.go_back()
+        page.wait_for_function('h=>window.__FRAMEVIZ_CORE__?.objects.has(h)', arg=handle)
+        assert parse_qs(urlsplit(page.url).query)['view_id'] == [first.view_id]
+        assert first.get_camera_pose()['eye']
+        assert first.is_object_alive(handle)
+        assert not errors
+    finally:
+        if second: second.close()
+        first.close()
