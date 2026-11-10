@@ -31,6 +31,14 @@ One Host owns each state directory. To run multiple Hosts, give every process an
 
 ## Linux runtime discovery
 
+`fv.open()` first authenticates a compatible running runtime. Only a missing local service may trigger startup; an incompatible version or a rejected token is reported without launching a replacement. Automatic search uses an explicit `FRAMEVIZ_HOST_PATH`/`FRAMEVIZ_TAURI_APP`, then known installed locations, then compatible source builds. An incompatible live discovery record is preserved.
+
+On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, the standalone executable is preferred. Its installed locations are `/usr/bin/frameviz-server`, `/usr/local/bin/frameviz-server`, and `~/.local/bin/frameviz-server`; arbitrary `PATH` entries remain excluded. With no display, `fv.open()` prints a private browser link and returns the scene context. With a desktop it prefers Tauri and uses a browser if a window cannot be opened. The Viewer address is read after startup, including automatically assigned ports.
+
+Use `fv.open(window_mode=1)` to force the browser path. `window_mode=0` keeps page opening manual. A live runtime started outside the SDK is never stopped by SDK cleanup. If no runtime can be found, the error gives platform-specific runtime installation and source-build guidance; installing a Python wheel alone does not install the native runtime.
+
+Browser links use only the Viewer address advertised for the connected runtime. A missing or mismatched address is an error, rather than a guess at a development server port. Failed view opening releases only the scene/view created by that call. Discovery updates replace a private file atomically; updates and shutdown preserve records owned by another runtime.
+
 Install the FrameViz runtime `.deb` once, then install the Python SDK wheel into each virtual environment that needs it. With a desktop session, the normal entry point is:
 
 ```python
