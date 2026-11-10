@@ -1,7 +1,7 @@
 import { ref, computed, shallowRef } from 'vue'
 import type { Ref, ShallowRef } from 'vue'
 import { applySceneSnapshot, decodeBufferBase64, type FrameVizCore } from '@frameviz/core'
-import { PROTOCOL_VERSION } from '@frameviz/protocol'
+import { PROTOCOL_VERSION, hostVersionError } from '@frameviz/protocol'
 import type { ViewerInfo, ConnectionState } from '../types'
 
 type PendingRequest = {
@@ -164,7 +164,8 @@ export function useFrameViz(options: UseFrameVizOptions = {}) {
                     const message = JSON.parse(event.data)
                     if (message.type === 'auth_resp') {
                         clearTimeout(authTimer)
-                        if (message.protocol_version !== PROTOCOL_VERSION) { state.stopped = true; reject(new Error('Host protocol version mismatch')); socket.close(); return }
+                        const versionError = hostVersionError(message.protocol_version)
+                        if (versionError) { state.stopped = true; reject(new Error(versionError)); socket.close(); return }
                         if (!message.ok) { state.stopped = true; reject(new Error('Authentication failed')); socket.close(); return }
                         state.isConnected.value = true
                         state.connectionError.value = null

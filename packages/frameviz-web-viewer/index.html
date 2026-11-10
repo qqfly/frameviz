@@ -126,6 +126,7 @@
 
   <script type="module">
     import { FrameVizCore, applySceneSnapshot as replaySnapshot } from '@frameviz/core';
+    import { hostVersionError } from '@frameviz/protocol';
 
     const PROTOCOL_VERSION = '0.4.0';
     const container = document.getElementById('container');
@@ -490,6 +491,7 @@
       }
     }
 
+    let connectionStopped = false;
     function handleTextMessage(text) {
       let msg = null;
       try {
@@ -498,6 +500,16 @@
         return;
       }
 
+      if (msg.type === 'auth_resp') {
+        const error = msg.ok ? hostVersionError(msg.protocol_version) : 'Authentication failed: invalid token';
+        if (error) {
+          connectionStopped = true;
+          statusEl.textContent = error;
+          statusEl.className = 'disconnected';
+          ws.close();
+        }
+        return;
+      }
       if (msg.type === 'init') {
         if (core) core.sceneRevision = 0;
         if (msg.view_id && msg.view_id !== viewId) {
@@ -527,6 +539,7 @@
     }
 
     function connect() {
+      if (connectionStopped) return;
       const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}`;
       ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
@@ -544,6 +557,7 @@
       };
 
       ws.onclose = () => {
+        if (connectionStopped) return;
         statusEl.textContent = '🔴 Disconnected';
         statusEl.className = 'disconnected';
         console.log('[FrameViz] Disconnected, retrying in 2s...');

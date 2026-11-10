@@ -10,6 +10,8 @@
  */
 
 #include "frameviz/discovery.hpp"
+#include "frameviz/protocol_version.hpp"
+#include <stdexcept>
 
 #include <algorithm>
 #include <cctype>
@@ -219,6 +221,8 @@ std::string resolveWsUrl(const std::string &url) {
   if (url.empty() || isDefaultLocalWsUrl(url)) {
     auto discovered = getWsUrlFromDiscovery();
     if (discovered.has_value() && !discovered->empty()) {
+      auto info = readDiscoveryFile();
+      if (info && !isProtocolCompatible(info->version)) throw std::runtime_error(hostVersionError(info->version));
       return *discovered;
     }
   }

@@ -1,6 +1,6 @@
 import { ERROR_CODES, PROTOCOL_VERSION } from "./constants.js";
 
-export type ProtocolVersion = typeof PROTOCOL_VERSION;
+export type ProtocolVersion = `${number}.${number}.${number}`;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
 // P3-2: Branded Types to prevent ID type confusion at compile time

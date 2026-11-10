@@ -1,6 +1,10 @@
 # Compatibility
 
-Protocol 0.4.0 is the only supported Host/SDK/viewer combination. Package version fields follow `version.json`; mixed installations, missing command versions, and unsupported versions are rejected. Public Python/npm package names and a remote repository URL are not reserved by this source tree.
+Host, SDK and Viewer are compatible within one **major.minor** protocol series: for example, `0.4.0` and `0.4.9` interoperate. Patch releases must preserve commands and their semantics. A different major or minor is rejected before a command can change state. The error identifies which side to upgrade: an older Host requires a runtime upgrade, and an older SDK/Viewer requires a client upgrade.
+
+Versions use canonical `major.minor.patch` numeric strings, with each component at most nine digits. Missing values, leading zeroes, prerelease/build suffixes and malformed values are rejected. The discovery record keeps the exact Host version, while discovery reuse and authentication use the same series rule. A live but incompatible Host's discovery file is preserved; it is not stale merely because its version differs.
+
+Package version fields follow `version.json`; the minimum compatible version is the start of the current series (`major.minor.0`). Public Python/npm package names and a remote repository URL are not reserved by this source tree.
 
 Scenes and views recover across viewer reconnects only while the same Host is alive. The revision is a Host-wide state sequence; equal revisions or gaps across different scenes are not a per-stream loss detector. Host restart persistence and full interaction-state persistence are not implemented.
 

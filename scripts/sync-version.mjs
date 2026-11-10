@@ -8,10 +8,19 @@ const configPath=path.join(root,'version.json'),config=JSON.parse(fs.readFileSyn
 if(args.includes('--bump')) {
  const value=args[args.indexOf('--bump')+1]
  if(!/^\d+\.\d+\.\d+$/.test(value))throw new Error('Use a plain semantic version')
- config.protocol_version=value;config.min_compatible_version=value
+ config.protocol_version=value;config.min_compatible_version=value.split('.').slice(0,2).join('.')+'.0'
  fs.writeFileSync(configPath,JSON.stringify(config,null,2)+'\n')
 }
 const version=config.protocol_version,min=config.min_compatible_version,errors=[]
+if(min!==version.split('.').slice(0,2).join('.')+'.0')errors.push('min_compatible_version must be major.minor.0')
+for(const name of ['command','response','event']) {
+ const file=path.join(root,`packages/frameviz-protocol/schemas/envelope-${name}.json`)
+ const schema=JSON.parse(fs.readFileSync(file,'utf8'))
+ const [major,minor]=version.split('.')
+ const expected={type:'string',pattern:`^${major}\\.${minor}\\.(0|[1-9][0-9]{0,8})$`}
+ if(check) {if(JSON.stringify(schema.properties.protocol_version)!==JSON.stringify(expected))errors.push(file+': version series pattern')}
+ else {schema.properties.protocol_version=expected;fs.writeFileSync(file,JSON.stringify(schema,null,2)+'\n')}
+}
 function edit(file,patterns) {
  let text=fs.readFileSync(path.join(root,file),'utf8')
  for(const [pattern,replacement] of patterns) {

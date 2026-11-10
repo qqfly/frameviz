@@ -16,6 +16,7 @@
 
 mod host;
 mod registry;
+pub mod version;
 mod server;
 pub mod websocket;
 pub mod handlers;

@@ -1,4 +1,5 @@
 import { PROTOCOL_VERSION } from "./constants.js";
+import { isProtocolCompatible } from "./version.js";
 import type {
   CommandEnvelope,
   Envelope,
@@ -23,7 +24,7 @@ const hasBoolean = (value: Record<string, unknown>, key: string): boolean =>
   typeof value[key] === "boolean";
 
 const isProtocolVersion = (value: Record<string, unknown>): boolean =>
-  value.protocol_version === PROTOCOL_VERSION;
+  isProtocolCompatible(value.protocol_version, PROTOCOL_VERSION);
 
 const hasOnlyKeys = (value: Record<string, unknown>, keys: string[]): boolean => {
   const allowed = new Set(keys);
