@@ -23,31 +23,35 @@ Version **0.4.0**, private preview. Copyright **qqfly**, [MIT](LICENSE). Third-p
 
 Coordinates and dimensions come from your application. Quaternions use **`[x, y, z, w]`**. See the [API contract](docs/API_Definition.md), [Python signatures](packages/frameviz-py/frameviz/viz.py), and [C++ signatures](packages/frameviz-cpp/include/frameviz/viz.hpp).
 
-## Quick start: Apple Silicon Mac + Python
+## Quick start
 
-Install the matching private-preview App from the [repository's releases](https://github.com/qqfly/frameviz/releases), open it once to complete macOS's first-open approval, then install its paired Python wheel:
+Install the runtime once, then install its paired Python SDK wheel in each project environment:
+
+| Environment | Runtime | Viewer |
+|---|---|---|
+| Apple Silicon Mac | Private-preview `FrameViz.app` from the [releases](https://github.com/qqfly/frameviz/releases) | Native window by default |
+| Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./frameviz_*.deb` | Native window by default |
+| Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install /path/to/SDK/Python/frameviz-0.4.0-py3-none-any.whl
+python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
 ```
+
+In IPython or a Python session:
 
 ```python
 import frameviz as fv
-
-viz = fv.open(title="My first scene")
-viz.set_view_config(show_axes=False)
-box = viz.add_box(size=(1, 1, 1), color=(0.2, 0.5, 0.87))
-viz.set_camera_pose(eye=(4, -6, 4), target=(0, 0, 0))
-viz.set_transform(box, pos=(0.5, 0, 0))
-input("Press Enter to close...")
-viz.close()
+viz = fv.open()
+viz.add_box()
 ```
 
-Python discovers and starts the App in the standard Applications locations; no App-path variable is needed. The first manual launch shows the guide; later launches wait in the background. The current App is locally signed and **not Apple-notarized**. See [Mac installation](docs/MACOS.md) for exact packages, Gatekeeper steps, and upgrades.
+A running compatible runtime is reused; otherwise Python starts a known installation automatically. No runtime path, port or token needs to be entered. In a standalone script, call `viz.spin()` to keep the process alive, then `viz.close()` when finished. Use `fv.open(window_mode=1)` to force a browser, or `window_mode=0` to manage pages yourself. Without a Linux desktop, the private link is printed automatically.
 
-The SDK is already pip-installable from a wheel or source. A public `pip install frameviz` release with a bundled runtime is **planned, not a supported delivery today**. [Current pip options and distribution plan](docs/PYTHON_DISTRIBUTION.md).
+The existing Mac preview is ad-hoc signed and **not Apple-notarized**. Ubuntu build/container checks and native desktop/GPU acceptance are different results; the latest artifact and test records determine which has run. See [installation and source builds](docs/INSTALLATION.md), [Mac first-open steps](docs/MACOS.md), and [troubleshooting](docs/TROUBLESHOOTING.md).
+
+The SDK is pip-installable from a wheel or source. Public `pip install frameviz` is not an advertised installation entry yet; the current delivery keeps runtime installation separate. [Python distribution](docs/PYTHON_DISTRIBUTION.md).
 
 ## Developer examples
 

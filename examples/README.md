@@ -1,6 +1,6 @@
 # FrameViz 示例
 
-本目录包含 FrameViz 的使用示例，按语言与场景分类。
+本目录包含 FrameViz 的使用示例，按语言与场景分类。先按[安装说明](../docs/INSTALLATION.md)安装运行环境和配套 SDK。Python 的 `fv.open()` 会自动发现、启动并打开场景；无需启动 pnpm 开发服务器。强制浏览器用 `window_mode=1`，无桌面 Linux 会打印私有链接。[故障排查](../docs/TROUBLESHOOTING.md)。
 
 ## Python 示例（`examples/python/`）
 
@@ -16,7 +16,7 @@
 
 ## C++ 示例（`examples/cpp/`）
 
-C++ 示例与 Python 示例**完全对等**，涵盖相同功能：
+C++ 示例覆盖相同的主要绘制与交互场景；具体接口支持见 [API 对照](../docs/API_SUPPORT.md)：
 
 | 分类 | 说明 |
 |------|------|

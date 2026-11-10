@@ -9,7 +9,7 @@ FrameViz 示例 - 多视图与场景管理（含浏览器窗口）
 - 演示无边框窗口 (window_decorations=False)
 
 运行方式:
-1. 启动 Tauri: pnpm -C packages/frameviz-host-tauri tauri:dev
+1. 安装 FrameViz 运行环境和配套 Python SDK，脚本会自动启动。
 2. 运行脚本: python examples/python/02_camera_views/use_multi_view_demo.py
 """
 

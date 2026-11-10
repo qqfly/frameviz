@@ -4,9 +4,8 @@ FrameViz 基础示例 - Hello World
 展示最简单的 FrameViz 使用方式：连接、绘制、关闭。
 
 运行前请确保：
-1. 启动 FrameViz (Tauri): pnpm -C packages/frameviz-host-tauri tauri:dev
-2. 浏览器模式（可选）: python3 -m http.server 8080
-   然后打开 http://localhost:8080/packages/frameviz-web-viewer/
+先安装 FrameViz 运行环境和配套 Python SDK；fv.open() 会自动发现并启动。
+需要浏览器时使用 fv.open(window_mode=1)。安装与故障排查见 docs/INSTALLATION.md。
 """
 
 import frameviz as fv
@@ -23,10 +22,7 @@ def main():
         print(f"    ✓ 已连接! scene={viz.scene_id}, view={viz.view_id}")
     except Exception as e:
         print(f"    ✗ 连接失败: {e}")
-        print("\n请确保已启动 FrameViz:")
-        print("  1. pnpm -C packages/frameviz-host-tauri tauri:dev")
-        print("  2. 浏览器模式（可选）: python3 -m http.server 8080")
-        print("     浏览器打开 http://localhost:8080/packages/frameviz-web-viewer/")
+        print("\n请按 docs/INSTALLATION.md 安装运行环境及配套 SDK；无需启动开发服务器。")
         return
     
     # 2. 绘制基础图元

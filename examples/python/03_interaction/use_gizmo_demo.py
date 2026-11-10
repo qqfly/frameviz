@@ -14,8 +14,8 @@ FrameViz 交互模式示例 - Gizmo 控制器
     - 按 X/Y/Z 键: 切换对应轴的遮罩 (精细控制)
 
 使用方法:
-    1. 启动 FrameViz: pnpm -C packages/frameviz-host-tauri tauri:dev
-    2. 浏览器模式（可选）: http://127.0.0.1:8080/packages/frameviz-web-viewer/
+    1. 安装 FrameViz 运行环境和配套 Python SDK（见 docs/INSTALLATION.md）。
+    2. fv.open() 自动启动；需要浏览器时使用 window_mode=1。
     3. 运行此脚本: python examples/python/03_interaction/use_gizmo_demo.py
 """
 

@@ -23,31 +23,35 @@
 
 坐标与尺寸由你的应用提供；四元数按 **`[x, y, z, w]`** 排列。输入约定见 [API 文档](docs/API_Definition.md)，具体语言签名见 [Python](packages/frameviz-py/frameviz/viz.py) 与 [C++](packages/frameviz-cpp/include/frameviz/viz.hpp)。
 
-## 快速开始：Apple 芯片 Mac + Python
+## 快速开始
 
-从[私有仓库的 Releases](https://github.com/qqfly/frameviz/releases) 安装匹配的预览版 App，首次手动打开完成 macOS 的允许打开操作，再在你的项目环境安装配套 wheel：
+先安装一次运行环境，再在每个 Python 项目环境里安装配套 SDK：
+
+| 环境 | 运行环境 | 显示方式 |
+|---|---|---|
+| Apple 芯片 Mac | [私有 Releases](https://github.com/qqfly/frameviz/releases) 中的预览版 `FrameViz.app` | 默认原生窗口 |
+| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./frameviz_*.deb` | 默认原生窗口 |
+| 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install /path/to/SDK/Python/frameviz-0.4.0-py3-none-any.whl
+python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
 ```
+
+在 IPython 或 Python 会话中运行：
 
 ```python
 import frameviz as fv
-
-viz = fv.open(title="My first scene")
-viz.set_view_config(show_axes=False)
-box = viz.add_box(size=(1, 1, 1), color=(0.2, 0.5, 0.87))
-viz.set_camera_pose(eye=(4, -6, 4), target=(0, 0, 0))
-viz.set_transform(box, pos=(0.5, 0, 0))
-input("按 Enter 关闭...")
-viz.close()
+viz = fv.open()
+viz.add_box()
 ```
 
-Python 会自动查找并启动标准 Applications 目录里的 App，无需设置 App 路径变量。首次手动启动显示使用指南，之后在后台待命。当前 App 使用本地签名，**尚未 Apple 公证**；具体包、允许打开方式和升级步骤见 [Mac 使用说明](docs/MACOS.md)。
+Python 会复用兼容的运行环境，或自动找到并启动已安装的程序，无需手填路径、端口或令牌。独立脚本末尾用 `viz.spin()` 保持运行，结束时调用 `viz.close()`。`fv.open(window_mode=1)` 强制使用浏览器，`window_mode=0` 留给应用自己管理页面。无 Linux 桌面时会自动打印私有链接。
 
-SDK 已支持通过 pip 安装 wheel 或源码；包含完整运行时的公共 `pip install frameviz` **尚未作为正式交付提供**。[当前 pip 用法与后续简化方案](docs/PYTHON_DISTRIBUTION.md)。
+已有 Mac 预览版使用临时签名，**尚未经过 Apple 公证**。Ubuntu 构建/容器安装检查与原生桌面、显卡实机体验分开验收，具体以对应产物和测试记录为准。参见[安装与源码构建](docs/INSTALLATION.md)、[Mac 首次打开](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
+
+SDK 已能通过 pip 安装 wheel 或源码。公共 `pip install frameviz` 暂未作为受支持的入口；当前方案将运行环境与 SDK 分开安装。[Python 分发说明](docs/PYTHON_DISTRIBUTION.md)。
 
 ## 开发者功能案例
 
