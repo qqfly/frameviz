@@ -2,12 +2,11 @@
 FrameViz 验证示例 - add_lines.indices 行为
 
 运行前请确保：
-1. 启动 FrameViz (Tauri): pnpm -C packages/frameviz-host-tauri tauri:dev
-2. 浏览器模式（可选）: python3 -m http.server 8080
-   然后打开 http://localhost:8080/packages/frameviz-web-viewer/
+先安装 FrameViz 运行环境和配套 Python SDK；fv.open() 会自动发现并启动。
+需要浏览器时使用 fv.open(window_mode=1)。安装与故障排查见 docs/INSTALLATION.md。
 
 使用方法：
-python3 examples/01_basic_primitives/use_lines_indices.py
+python3 examples/python/01_basic_primitives/use_lines_indices.py
 
 观察要点：
 1) 左侧绿色图形仅显示 2 条线段（使用 indices）。

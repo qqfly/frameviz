@@ -2,15 +2,14 @@
 FrameViz 验证示例 - 大 buffer 快照（二进制恢复）
 
 运行前请确保（建议使用浏览器模式）：
-1. 启动 FrameViz (Tauri): pnpm -C packages/frameviz-host-tauri tauri:dev
-2. 启动 HTTP 服务器 (从项目根目录): python3 -m http.server 8080
-3. 打开浏览器: http://localhost:8080/packages/frameviz-web-viewer/
+先安装 FrameViz 运行环境和配套 Python SDK；无需额外 HTTP 服务器。
+脚本使用 fv.open(window_mode=1) 打开运行环境自带的浏览器页面。
 
 Tauri 模式也可运行，但需要能刷新 WebView：
 FRAMEVIZ_TAURI_DEVTOOLS=1 pnpm -C packages/frameviz-host-tauri tauri:dev
 
 使用方法：
-python3 examples/01_basic_primitives/use_snapshot_large_buffer.py
+python3 examples/python/01_basic_primitives/use_snapshot_large_buffer.py
 
 观察要点：
 1) 初次渲染能看到大点云。

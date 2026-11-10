@@ -41,7 +41,7 @@ finally:
     viz.close()
 ```
 
-The SDK reads the current user's matching discovery record. Automatic installation lookup checks the bundle identifier, declared executable and executable location; it does not launch unrelated apps by name. `FRAMEVIZ_TAURI_APP` remains an optional override for custom locations. Do not mix the 0.4.0 Host with older SDKs. A Host started and owned by the Python process is cleaned up when Python exits; a manually started App is left running. SDK background starts do not consume the first manual welcome. The welcome preference is separate from host.json and retained across Host shutdown.
+The SDK reads the current user's matching discovery record. Automatic installation lookup checks the bundle identifier, declared executable and executable location; it does not launch unrelated apps by name. `FRAMEVIZ_TAURI_APP` remains an optional override for custom locations. Protocol versions with the same major and minor number accept different patches; incompatible versions report which side needs upgrading. A Host started and owned by the Python process is cleaned up when Python exits; a manually started App is left running. SDK background starts do not consume the first manual welcome. The welcome preference is separate from host.json and retained across Host shutdown.
 
 ## C++ and Vue
 
