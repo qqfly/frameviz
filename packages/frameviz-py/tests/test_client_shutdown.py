@@ -74,3 +74,36 @@ def test_close_captures_socket_before_receiver_teardown_clears_it():
     finally:
         wake.set()
         receiver.join(timeout=1)
+
+
+def test_close_does_not_remove_socket_before_selector_observes_shutdown():
+    """Model epoll losing its wakeup when another thread removes the fd first."""
+    client = FrameVizClient()
+    allow_select = threading.Event()
+    release = threading.Event()
+    fd_closed = threading.Event()
+
+    class Receiver(threading.Thread):
+        def join(self, timeout=None):
+            # Schedule the receiver at the join boundary deterministically.
+            allow_select.set()
+            return super().join(timeout)
+
+    def receive():
+        allow_select.wait()
+        if fd_closed.is_set():
+            release.wait()  # No fd remains in epoll to deliver the wakeup.
+
+    transport = MagicMock()
+    transport.close.side_effect = fd_closed.set
+    receiver = Receiver(target=receive, daemon=True)
+    client._ws = transport
+    client._ws_thread = receiver
+    receiver.start()
+    try:
+        client.close()
+        assert not receiver.is_alive(), 'The fd was removed before the receiver observed shutdown'
+    finally:
+        release.set()
+        allow_select.set()
+        receiver.join(timeout=1)
