@@ -2237,6 +2237,21 @@ class Viz:
         """Block and process events until connection closes."""
         self._client.spin()
 
+    def keep_running(self) -> None:
+        """Keep a script alive until disconnection or Ctrl+C, then close it.
+
+        Callbacks run on the background dispatcher by default. In manual mode
+        this call dispatches them on the calling thread. Unexpected errors are
+        propagated after cleanup. Closing a browser tab alone does not end the
+        Host session.
+        """
+        try:
+            self.spin()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.close()
+
     def poll_events(self) -> None:
         """Process queued events without blocking."""
         self._client.poll_events()
