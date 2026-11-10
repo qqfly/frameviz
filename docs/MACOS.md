@@ -77,3 +77,12 @@ MIT controls reuse of the project's first-party source; it does not bypass macOS
 Developer ID signing identifies the developer and exposes the certificate's registered identity. Apple notarization is a separate check; Developer ID signing alone does not ensure Gatekeeper will accept a downloaded App. An organization can sign with its own identity, while an individual's certificate can reveal their legal name. Keep all private keys, signing configuration and notarization credentials outside the repository.
 
 For ordinary end-user distribution, use Developer ID signing plus notarization after the maintainer selects that workflow. See [Tauri signing](https://v2.tauri.app/distribute/sign/macos/) and [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution). The local preview remains an explicitly unnotarized test build.
+
+
+## Developer ID build
+
+The separate `scripts/release/build-macos-signed.sh /new/absolute/output` builder requires two explicit settings: `FRAMEVIZ_SIGNING_IDENTITY` selects an installed **Developer ID Application** certificate; `FRAMEVIZ_NOTARY_PROFILE` names an existing `notarytool` Keychain profile. Create and manage the certificate/profile outside the repository, following [Apple's notarization instructions](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution). The certificate's registered identity is visible in the signed artifact.
+
+The builder collects notices before signing, enables the hardened runtime and timestamp, submits and staples the App, then signs, submits and staples its DMG. A rejected notarization response stops the build and stays in the output directory. It writes to a new directory and does not replace installed Apps or old previews. No ad-hoc signature is substituted when credentials are absent. The existing ad-hoc preview builder remains separate.
+
+This build path has not yet completed Developer ID/notarization acceptance: no usable identity or repository signing secret was visible during setup. After providing credentials, run it, preserve both Apple responses, and download the resulting DMG on the other Mac for first-open acceptance. A script or a local Gatekeeper assessment cannot substitute for that second-machine result.
