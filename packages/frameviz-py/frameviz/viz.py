@@ -31,6 +31,7 @@ import numpy as np
 
 from .client import DEFAULT_WS_URL, FrameVizClient, PROTOCOL_VERSION
 from .discovery import get_discovery_path, get_viewer_url_from_discovery
+from .exceptions import ConnectionError as FrameVizConnectionError, TimeoutError as FrameVizTimeoutError, ProtocolError
 from ._internal import (
     _AUTO_WS_LOG_HANDLE,
     _AUTO_WS_LOG_PATH,
@@ -100,20 +101,24 @@ def _register_auto_tauri_atexit() -> None:
     atexit.register(_stop_auto_tauri_processes)
 
 
-def _get_viewer_url() -> str:
+def _get_viewer_url(expected_ws_url: Optional[str] = None) -> Optional[str]:
     """
-    Get the viewer URL, preferring discovery file over default.
+    Return only the Viewer advertised for the connected runtime.
 
-    In release mode, the FrameViz app starts an HTTP server and writes
-    the viewer URL to the discovery file. We should use that URL.
-    In development mode, we fall back to the default dev server URL.
+    A guessed development port could belong to another local application and
+    must never receive a credential-bearing browser link.
     """
     # Try to get viewer URL from discovery file first
-    discovered_url = get_viewer_url_from_discovery()
-    if discovered_url:
-        return discovered_url
-    # Fall back to default (development mode)
-    return DEFAULT_VIEWER_URL
+    from .discovery import read_discovery_file
+    info=read_discovery_file() or {}
+    if expected_ws_url:
+        expected=urlparse(expected_ws_url)
+        discovered=urlparse(info.get('ws_url') if isinstance(info.get('ws_url'),str) else '')
+        aliases={'127.0.0.1','localhost','::1'}
+        same_host=expected.hostname==discovered.hostname or {expected.hostname,discovered.hostname}<=aliases
+        if not same_host or expected.port!=discovered.port:return None
+    candidate=info.get('viewer_url')
+    return candidate if isinstance(candidate,str) and candidate else None
 
 # Type aliases
 Color = Union[str, Tuple[float, float, float], List[float]]
@@ -2334,13 +2339,14 @@ def open(
         Viz instance for adding objects and controlling the view.
 
     Examples:
-        # Manual browser open (default)
+        # Automatically discover/start the runtime and open a native window.
         viz = fv.open(title="Main View")
-        # Then manually open: http://localhost:8080?view_id=<actual_view_id>
 
-        # Auto-open browser
+        # Force a browser instead. A headless machine prints a private link.
         viz = fv.open(title="Main View", window_mode=1)
-        # Browser automatically opens with correct view_id
+
+        # Keep page opening under application control.
+        viz = fv.open(title="Main View", window_mode=0)
 
         # Create two views sharing the same scene with auto-open
         viz1 = fv.open(title="Main View", window_mode=1)
@@ -2351,85 +2357,62 @@ def open(
         viz1.set_camera_pose(eye=[5, 5, 5], target=[0, 0, 0])
         viz2.set_camera_pose(eye=[0, 10, 2], target=[0, 0, 0])
     """
-    viewer_url = _get_viewer_url()
+    from .host import _desktop_available
+    desktop = _desktop_available()
+    if window_mode not in (0,1,2):raise ValueError('window_mode must be 0, 1 or 2')
+    print_link = not desktop and window_mode != 0
+    if not desktop:window_mode=0
     tauri_page = None
 
-    resolved_url = _resolve_connection_url(url)
-    client = FrameVizClient(url=resolved_url, timeout=timeout)
+    client,resolved_url = _connect_runtime(url,timeout,prefer_browser=window_mode==1 or not desktop)
+    scene_id = actual_view_id = None
+    owns_scene = False
     try:
-        client.connect()
-    except Exception as exc:
-        ok, reason, new_url = _maybe_auto_start_ws(resolved_url, timeout)
-        if ok:
-            client.close()
-            if new_url and new_url != resolved_url:
-                resolved_url = new_url
-                client = FrameVizClient(url=resolved_url, timeout=timeout)
-            client.connect()
+        viewer_url = _get_viewer_url(resolved_url)
+
+        if share_scene:
+            # Use existing scene
+            scene_id = share_scene
+            owns_scene = False
         else:
-            detail = reason or "auto-start failed"
-            raise RuntimeError(
-                f"{exc} (auto-start failed: {detail}). "
-                "Start FrameViz app manually or set FRAMEVIZ_WS_SERVER_CMD."
-            ) from exc
+            # Create new scene
+            scene_result = client.send_command("create_scene", {})
+            scene_id = scene_result.get("scene_id", "s_1")
+            owns_scene = True
 
-    if share_scene:
-        # Use existing scene
-        scene_id = share_scene
-        owns_scene = False
-    else:
-        # Create new scene
-        scene_result = client.send_command("create_scene", {})
-        scene_id = scene_result.get("scene_id", "s_1")
-        owns_scene = True
+        # Build create_view args
+        create_view_args = {
+            "title": title,
+            "width": width,
+            "height": height,
+            "scene_id": scene_id,
+            "window_decorations": window_decorations,
+        }
+        # Create view bound to the scene
+        view_result = client.send_command("create_view", create_view_args)
+        actual_view_id = view_result.get("view_id", "v_1")
+        ws_port = _get_ws_port_from_url(resolved_url)
+        if print_link:
+            print('FrameViz Viewer: '+_viewer_link(viewer_url,actual_view_id,ws_port,performance_mode))
 
-    # Build create_view args
-    create_view_args = {
-        "title": title,
-        "width": width,
-        "height": height,
-        "scene_id": scene_id,
-        "window_decorations": window_decorations,
-    }
-    # Create view bound to the scene
-    view_result = client.send_command("create_view", create_view_args)
-    actual_view_id = view_result.get("view_id", "v_1")
-    ws_port = _get_ws_port_from_url(resolved_url)
-
-    # Handle automatic window opening based on window_mode
-    opened_via_tauri = False
-    if window_mode == 1:
-        # Open browser directly
-        _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
-        # Wait for viewer to connect
-        _wait_for_viewer(client, actual_view_id, timeout=timeout)
-    elif window_mode == 2:
-        # If a viewer is already connected, avoid launching a new window.
-        already_ready = _wait_for_viewer(
-            client,
-            actual_view_id,
-            timeout=min(0.2, max(timeout * 0.1, 0.05)),
-        )
-        if not already_ready:
-            # Try Tauri control server first, then launch app, fallback to browser.
-            used_tauri = False
-            if _try_open_tauri_window(
+        # Handle automatic window opening based on window_mode
+        opened_via_tauri = False
+        if window_mode == 1:
+            # Open browser directly
+            _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
+            # Wait for viewer to connect
+            _wait_for_viewer(client, actual_view_id, timeout=timeout)
+        elif window_mode == 2:
+            # If a viewer is already connected, avoid launching a new window.
+            already_ready = _wait_for_viewer(
+                client,
                 actual_view_id,
-                title,
-                width,
-                height,
-                x,
-                y,
-                tauri_page,
-                scene_id,
-                performance_mode,
-                window_decorations,
-            ):
-                used_tauri = True
-            elif _try_open_tauri():
-                used_tauri = True
-                retry_attempts = max(25, int(max(timeout, 1.0) / 0.2))
-                _try_open_tauri_window_with_retry(
+                timeout=min(0.2, max(timeout * 0.1, 0.05)),
+            )
+            if not already_ready:
+                # Try Tauri control server first, then launch app, fallback to browser.
+                used_tauri = False
+                if _try_open_tauri_window(
                     actual_view_id,
                     title,
                     width,
@@ -2440,28 +2423,90 @@ def open(
                     scene_id,
                     performance_mode,
                     window_decorations,
-                    attempts=retry_attempts,
-                )
+                ):
+                    used_tauri = True
+                elif _try_open_tauri():
+                    used_tauri = True
+                    retry_attempts = max(25, int(max(timeout, 1.0) / 0.2))
+                    _try_open_tauri_window_with_retry(
+                        actual_view_id,
+                        title,
+                        width,
+                        height,
+                        x,
+                        y,
+                        tauri_page,
+                        scene_id,
+                        performance_mode,
+                        window_decorations,
+                        attempts=retry_attempts,
+                    )
 
-            if used_tauri:
-                if _wait_for_viewer(client, actual_view_id, timeout=timeout):
-                    opened_via_tauri = True
+                if used_tauri:
+                    if _wait_for_viewer(client, actual_view_id, timeout=timeout):
+                        opened_via_tauri = True
+                    else:
+                        _try_close_tauri_window(actual_view_id)
+                        _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
+                        _wait_for_viewer(client, actual_view_id, timeout=timeout)
                 else:
-                    _try_close_tauri_window(actual_view_id)
                     _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
                     _wait_for_viewer(client, actual_view_id, timeout=timeout)
-            else:
-                _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
-                _wait_for_viewer(client, actual_view_id, timeout=timeout)
 
-    return Viz(
-        client,
-        scene_id,
-        actual_view_id,
-        opened_via_tauri=opened_via_tauri,
-        owns_view=True,
-        owns_scene=owns_scene,
-    )
+        return Viz(
+            client,
+            scene_id,
+            actual_view_id,
+            opened_via_tauri=opened_via_tauri,
+            owns_view=True,
+            owns_scene=owns_scene,
+        )
+    except BaseException:
+        if actual_view_id:
+            try:client.send_command("destroy_view",{"view_id":actual_view_id})
+            except Exception:pass
+        if owns_scene and scene_id:
+            try:client.send_command("destroy_scene",{"scene_id":scene_id})
+            except Exception:pass
+        client.close()
+        raise
+
+
+def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool):
+    """Authenticate once; only a missing local service may trigger startup."""
+    from . import host
+    from .discovery import read_discovery_file
+    from .version import host_version_error
+    resolved=_resolve_connection_url(url)
+    parsed=urlparse(resolved)
+    local=parsed.hostname in ('127.0.0.1','localhost')
+    unconfigured=url is None and not os.environ.get('FRAMEVIZ_HOST')
+    info=read_discovery_file() if local and (unconfigured or parsed.port in (None,9527)) else None
+    live=False
+    if info and isinstance(info.get('pid'),int) and isinstance(info.get('port'),int):
+        live=host._pid_is_running(info['pid']) and host._is_port_open('127.0.0.1',info['port'])
+        if live:
+            error=host_version_error(info.get('version'),PROTOCOL_VERSION)
+            if error:raise ProtocolError(error,code='ERR_PROTOCOL_VERSION')
+    # A default port occupied without this user's discovery/token is not proof
+    # of a FrameViz service owned by this user. Give the new runtime its own port.
+    if local and unconfigured and not live and not os.environ.get('FRAMEVIZ_AUTH_TOKEN') and parsed.port==9527 and host._is_port_open('127.0.0.1',9527):
+        if not _should_auto_start_ws():raise RuntimeError('FrameViz automatic startup is disabled (FRAMEVIZ_AUTO_START_WS=0)')
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+        resolved=host.start_host(ws_url=f'ws://127.0.0.1:{port}',timeout=timeout,headless=True,prefer_browser=prefer_browser)
+    client=FrameVizClient(url=resolved,timeout=timeout)
+    try:
+        client.connect()
+        return client,resolved
+    except (FrameVizConnectionError,FrameVizTimeoutError):
+        client.close()
+        if not local or host._is_port_open(parsed.hostname,parsed.port or 9527):raise
+        if not _should_auto_start_ws():raise RuntimeError('FrameViz automatic startup is disabled (FRAMEVIZ_AUTO_START_WS=0)')
+        resolved=host.start_host(ws_url=resolved,timeout=timeout,headless=True,prefer_browser=prefer_browser)
+        client=FrameVizClient(url=resolved,timeout=timeout)
+        client.connect()
+        return client,resolved
 
 
 def _resolve_connect_target(
@@ -2602,6 +2647,12 @@ def _open_browser(
     performance_mode: Optional[str] = None,
 ) -> None:
     """Open the web viewer in the default browser."""
+    webbrowser.open(_viewer_link(viewer_url,view_id,ws_port,performance_mode))
+
+
+def _viewer_link(viewer_url: str, view_id: str, ws_port=None, performance_mode=None) -> str:
+    if not viewer_url:
+        raise RuntimeError('FrameViz Viewer URL is unavailable for this runtime. Install a runtime with bundled Viewer assets (docs/INSTALLATION.md), or use window_mode=0 for an embedded viewer.')
     parsed = urlparse(viewer_url)
     params = parse_qs(parsed.query)
     params["view_id"] = [view_id]
@@ -2617,7 +2668,7 @@ def _open_browser(
     token = os.environ.get("FRAMEVIZ_AUTH_TOKEN") or get_token_from_discovery()
     if token:
         full_url = full_url.split("#", 1)[0] + "#" + urlencode({"token": token})
-    webbrowser.open(full_url)
+    return full_url
 
 
 def _wait_for_viewer(
@@ -2653,6 +2704,12 @@ def _try_open_tauri(view_id: Optional[str] = None) -> bool:
     # while the process we just started is still bringing up its control socket.
     if not view_id and any(proc.poll() is None for proc in _AUTO_TAURI_PROCS):
         return True
+    from . import host
+    owned=host._started_host_proc
+    if not view_id and owned is not None and owned.poll() is None:
+        command=owned.args[0] if isinstance(owned.args,(list,tuple)) else owned.args
+        if Path(command).name in ('frameviz','FrameViz','frameviz.exe'):
+            return True
     args: List[str] = ["--headless"]
     if view_id:
         args = ["--view-id", view_id]

@@ -32,6 +32,18 @@ fn ports(args: impl Iterator<Item = String>) -> Result<Option<(u16, u16)>, Strin
     Ok(Some((ws_port, http_port)))
 }
 
+async fn termination_signal() -> std::io::Result<()> {
+    #[cfg(unix)] {
+        use tokio::signal::unix::{signal,SignalKind};
+        let mut terminate=signal(SignalKind::terminate())?;
+        tokio::select! {
+            _=terminate.recv()=>Ok(()),
+            result=tokio::signal::ctrl_c()=>result,
+        }
+    }
+    #[cfg(not(unix))] { tokio::signal::ctrl_c().await }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Some((ws_port, http_port)) = ports(env::args().skip(1))? else {
@@ -52,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[FrameViz] Press Ctrl+C to stop");
     tokio::select! {
         result = &mut server => result?,
-        signal = tokio::signal::ctrl_c() => {
+        signal = termination_signal() => {
             signal?;
             println!("[FrameViz] Shutting down...");
             let _ = shutdown_tx.send(true);

@@ -6,11 +6,15 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-from .client import DEFAULT_WS_URL
+from .client import DEFAULT_WS_URL, PROTOCOL_VERSION
+from .discovery import read_discovery_file, get_discovery_path
+from .version import host_version_error
+from .exceptions import ProtocolError
 from ._internal import (
     _get_repo_root,
     _get_macos_app_executable,
@@ -22,12 +26,15 @@ from ._internal import (
     _resolve_ws_url,
     _should_auto_start_ws,
     _wait_for_ws_ready,
+    _pid_is_running,
+    _is_port_open,
 )
 
 # Track the host process started by this module.
 _started_host_proc: Optional[subprocess.Popen] = None
 _started_host_we_own: bool = False
 _atexit_registered: bool = False
+_started_host_log_path: Optional[Path] = None
 
 
 def _parse_host_port(url: str) -> Tuple[str, int]:
@@ -37,56 +44,75 @@ def _parse_host_port(url: str) -> Tuple[str, int]:
     return host, port
 
 
-def find_host_executable() -> Optional[Path]:
-    env_path = os.environ.get("FRAMEVIZ_HOST_PATH")
-    if env_path:
-        candidate = Path(env_path).expanduser()
-        if candidate.exists():
-            return candidate
+def _desktop_available() -> bool:
+    return not sys.platform.startswith('linux') or bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
 
+
+def _installation_hint() -> str:
+    if sys.platform == 'darwin':
+        command="open ./FrameViz*.dmg, then copy FrameViz.app to /Applications"
+    elif sys.platform.startswith('linux'):
+        command="sudo apt install ./FrameViz*.deb, or install the standalone frameviz-server in ~/.local/bin"
+    else:
+        command="build the FrameViz runtime from source for this platform"
+    return f"Install the FrameViz runtime: {command}. A Python wheel alone is not the runtime. See docs/INSTALLATION.md (https://github.com/qqfly/frameviz/blob/main/docs/INSTALLATION.md)."
+
+
+def _executable(path: Path) -> Optional[Path]:
+    if sys.platform == 'darwin' and path.suffix == '.app':
+        return _get_macos_app_executable(path)
+    return path if path.is_file() and os.access(path,os.X_OK) else None
+
+
+def find_host_executable(prefer_browser: bool = False) -> Optional[Path]:
+    for key in ['FRAMEVIZ_HOST_PATH','FRAMEVIZ_TAURI_APP']:
+        env_path=os.environ.get(key)
+        if env_path:
+            path=Path(env_path).expanduser()
+            binary=_executable(path)
+            if binary:return binary
+            raise RuntimeError(f'{key} is not an executable FrameViz runtime: {path}. {_installation_hint()}')
     repo_root = _get_repo_root()
-
+    gui=[]
     if sys.platform == "darwin":
-        for app in _get_tauri_app_candidates(repo_root):
-            app_bin = _get_macos_app_executable(app)
-            if app_bin is not None:
-                return app_bin
-
-    for candidate in _get_tauri_exec_candidates(repo_root):
-        if candidate.exists():
-            return candidate
-
-    for candidate in _get_appimage_candidates(repo_root):
-        if candidate.exists():
-            return candidate
+        gui.extend(_get_tauri_app_candidates(repo_root))
+    gui.extend(_get_tauri_exec_candidates(repo_root)+_get_appimage_candidates(repo_root))
+    server=[Path('/usr/bin/frameviz-server'),Path('/usr/local/bin/frameviz-server'),Path.home()/'.local/bin/frameviz-server']
+    if repo_root:
+        server.extend(repo_root/f'packages/frameviz-server/target/{profile}/frameviz-server' for profile in ['release','debug'])
+    if prefer_browser and not _desktop_available():gui=[]
+    # Every known installation precedes source fallback, regardless of backend.
+    for source in [False,True]:
+        candidates=(server+gui) if prefer_browser else (gui+server)
+        for path in candidates:
+            is_source=repo_root is not None and path.is_relative_to(repo_root)
+            if is_source != source:continue
+            binary=_executable(path)
+            if binary:return binary
     return None
 
 
 def _launch_executable(path: Path, args: list[str]) -> subprocess.Popen:
-    """Launch the host executable and return the process handle."""
+    """Start the exact executable, recording private diagnostics for failures."""
+    global _started_host_log_path
     if sys.platform == "darwin" and path.suffix == ".app":
-        # Launch .app bundle via 'open'; the returned Popen is for the 'open'
-        # helper, not the app itself.  We launch directly via the inner binary
-        # instead so we can track the actual process.
-        inner_bin = path / "Contents" / "MacOS" / "frameviz"
-        if not inner_bin.exists():inner_bin = path / "Contents" / "MacOS" / "FrameViz"
-        if inner_bin.exists():
-            proc = subprocess.Popen(
-                [str(inner_bin), *args],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return proc
-        raise RuntimeError(
-            f"Cannot find FrameViz binary inside .app bundle at {path}. "
-            f"Expected to find it at {inner_bin}. Please ensure the .app bundle is complete."
-        )
-    proc = subprocess.Popen(
-        [str(path), *args],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return proc
+        binary=_get_macos_app_executable(path)
+        if binary is None:raise RuntimeError(f"Incomplete FrameViz application: {path}")
+        path=binary
+    options=dict(stdin=subprocess.DEVNULL,start_new_session=os.name=='posix')
+    target=os.environ.get('FRAMEVIZ_WS_SERVER_LOG','').strip()
+    if target.lower() in ('inherit','stdout','stderr'):
+        _started_host_log_path=None
+        return subprocess.Popen([str(path),*args],**options)
+    state=get_discovery_path()
+    directory=Path(os.environ['FRAMEVIZ_LOG_DIR']).expanduser() if os.environ.get('FRAMEVIZ_LOG_DIR') else (state.parent if state else Path.home()/'.local/share/qqfly/frameviz')
+    directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+    logfile=Path(target).expanduser() if target else directory/f'startup-{os.getpid()}-{time.time_ns()}.log'
+    flags=os.O_WRONLY|os.O_CREAT|(os.O_APPEND if target else os.O_EXCL)
+    descriptor=os.open(logfile,flags,0o600)
+    _started_host_log_path=logfile
+    with os.fdopen(descriptor,'w') as stream:
+        return subprocess.Popen([str(path),*args],stdout=stream,stderr=stream,**options)
 
 
 def is_host_running(ws_url: str = DEFAULT_WS_URL, timeout: float = 0.2) -> bool:
@@ -104,6 +130,7 @@ def start_host(
     timeout: float = 10.0,
     ws_port: Optional[int] = None,
     headless: bool = False,
+    prefer_browser: bool = False,
 ) -> str:
     global _started_host_proc, _started_host_we_own
     resolved = _resolve_ws_url(ws_url, allow_discovery=True)
@@ -113,14 +140,24 @@ def start_host(
     if headless:
         args.append("--headless")
 
-    path = find_host_executable()
+    path = find_host_executable(prefer_browser=prefer_browser)
     if path:
         proc = _launch_executable(path, args)
-        if _wait_for_ws_ready("127.0.0.1", ws_port, timeout=timeout):
-            _started_host_proc = proc
-            _started_host_we_own = True
-            _register_atexit()
-            return resolved
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline and proc.poll() is None:
+            info=read_discovery_file()
+            if info and info.get('pid')==proc.pid:
+                error=host_version_error(info.get('version'),PROTOCOL_VERSION)
+                if error:
+                    proc.terminate();proc.wait(timeout=2)
+                    raise ProtocolError(error,code='ERR_PROTOCOL_VERSION')
+                port=info.get('port')
+                if isinstance(port,int) and _is_port_open('127.0.0.1',port) and (not headless or info.get('viewer_url')):
+                    _started_host_proc=proc
+                    _started_host_we_own=True
+                    _register_atexit()
+                    return info.get('ws_url') or f'ws://127.0.0.1:{port}'
+            time.sleep(.025)
         if proc.poll() is None:
             try:
                 proc.terminate()
@@ -130,12 +167,17 @@ def start_host(
                     proc.kill()
                 except OSError:
                     pass
-        raise RuntimeError("Failed to start FrameViz host (startup timeout)")
+        from ._internal import _read_ws_log_tail
+        tail=_read_ws_log_tail(str(_started_host_log_path)) if _started_host_log_path else None
+        diagnostic=f" Startup log: {_started_host_log_path}. {tail or ''}" if _started_host_log_path else ''
+        raise RuntimeError(f"FrameViz runtime did not become ready (exit={proc.poll()}).{diagnostic} {_installation_hint()}")
 
+    if not os.environ.get('FRAMEVIZ_WS_SERVER_CMD'):
+        raise RuntimeError(_installation_hint())
     ok, reason, new_url = _maybe_auto_start_ws(resolved, timeout)
     if not ok:
         detail = reason or "auto-start failed"
-        raise RuntimeError(f"Failed to start FrameViz host: {detail}")
+        raise RuntimeError(f"Failed to start FrameViz runtime: {detail}. {_installation_hint()}")
     return new_url or resolved
 
 

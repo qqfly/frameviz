@@ -301,7 +301,9 @@ pub async fn run_server_on_listener(
     }
 
     if let Some(path) = state.lock().await.discovery_path.clone() {
-        let _ = fs::remove_file(path);
+        let owned=fs::read_to_string(&path).ok().and_then(|s|serde_json::from_str::<Value>(&s).ok())
+            .and_then(|data|data.get("pid").and_then(Value::as_u64))==Some(std::process::id() as u64);
+        if owned { let _ = fs::remove_file(path); }
     }
 
     Ok(())
@@ -1507,8 +1509,7 @@ fn write_discovery_file(
         payload["viewer_url"] = json!(format!("http://127.0.0.1:{}/", http_port));
     }
 
-    fs::write(path, payload.to_string())?;
-    apply_restrictive_discovery_permissions(path)?;
+    atomic_discovery_write(path,payload.to_string().as_bytes())?;
 
     if let Some(http_port) = http_port {
         println!("[FrameViz] Viewer URL: http://127.0.0.1:{http_port}/?ws_port={port}#token={auth_token}");
@@ -1526,6 +1527,26 @@ fn apply_restrictive_discovery_permissions(path: &PathBuf) -> std::io::Result<()
     }
 
     Ok(())
+}
+
+fn atomic_discovery_write(path: &PathBuf, contents: &[u8]) -> std::io::Result<()> {
+    let temporary=path.with_file_name(format!(".frameviz-{}-{:x}.tmp",std::process::id(),rand::random::<u64>()));
+    let mut options=fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file=options.open(&temporary)?;
+    let written=(|| {
+        apply_restrictive_discovery_permissions(&temporary)?;
+        file.write_all(contents)?;
+        file.sync_all()
+    })();
+    drop(file);
+    let result=written.and_then(|_|fs::rename(&temporary,path));
+    if result.is_err() { let _=fs::remove_file(&temporary); }
+    result
 }
 
 fn rotate_log_if_needed(path: &PathBuf) {
@@ -1594,14 +1615,54 @@ pub fn update_discovery_http_port(http_port: u16) -> Result<(), String> {
     let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut data: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
 
+    if data.get("pid").and_then(Value::as_u64) != Some(std::process::id() as u64) {
+        return Err("discovery file belongs to another runtime".into());
+    }
     // Add HTTP port information
     data["http_port"] = json!(http_port);
     data["viewer_url"] = json!(format!("http://127.0.0.1:{}/", http_port));
 
-    fs::write(&path, data.to_string()).map_err(|e| e.to_string())?;
-    apply_restrictive_discovery_permissions(&path).map_err(|e| e.to_string())?;
+    atomic_discovery_write(&path,data.to_string().as_bytes()).map_err(|e|e.to_string())?;
     println!("[FrameViz] Updated discovery file with HTTP port: {}", http_port);
     Ok(())
+}
+
+/// Clean up stale discovery file if it exists.
+#[cfg(test)]
+mod discovery_owner_tests {
+    use super::*;
+    #[test]
+    fn http_update_preserves_another_runtime_record() {
+        let path=std::env::temp_dir().join(format!("frameviz-http-owner-{}.json",std::process::id()));
+        let before=json!({"pid":std::process::id()+1,"http_port":12345,"token":"synthetic-owner-test"}).to_string();
+        fs::write(&path,&before).unwrap();
+        let old=std::env::var_os("FRAMEVIZ_DISCOVERY_PATH");
+        std::env::set_var("FRAMEVIZ_DISCOVERY_PATH",&path);
+        let result=update_discovery_http_port(23456);
+        let after=fs::read_to_string(&path).unwrap();
+        match old {Some(value)=>std::env::set_var("FRAMEVIZ_DISCOVERY_PATH",value),None=>std::env::remove_var("FRAMEVIZ_DISCOVERY_PATH")};
+        fs::remove_file(&path).unwrap();
+        assert!(result.is_err(),"another runtime's HTTP metadata was modified: {after}");
+        assert_eq!(before,after);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_write_failure_leaves_the_old_record_intact() {
+        use std::os::unix::fs::PermissionsExt;
+        assert_ne!(unsafe { libc::geteuid() },0,"permission acceptance requires a non-root user");
+        let directory=std::env::temp_dir().join(format!("frameviz-atomic-discovery-{}",std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let path=directory.join("host.json");let before="synthetic-previous-record";
+        fs::write(&path,before).unwrap();
+        fs::set_permissions(&directory,fs::Permissions::from_mode(0o500)).unwrap();
+        let result=write_discovery_file(&path,12345,None,"synthetic-new-token",Some(23456));
+        fs::set_permissions(&directory,fs::Permissions::from_mode(0o700)).unwrap();
+        let after=fs::read_to_string(&path).unwrap();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(result.is_err(),"discovery was not replaced atomically");
+        assert_eq!(before,after);
+    }
 }
 
 /// Clean up stale discovery file if it exists.
