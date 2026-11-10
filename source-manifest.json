@@ -481,7 +481,7 @@
     "tests/acceptance/slow_viewer.py": "0fb653e3e5fd9ce0a5c321323cb6ac6427ec1baf977804e2d60ce17113f9ea6f",
     "tests/acceptance/stress_acceptance.py": "471b2e7c65ff3fc52e0b7f785b65ead48abb3694f6d958e9f3e41dfe4c4e47e6",
     "tests/acceptance/test_auto_events.py": "77b45ca247fae5d02cff923650965f968cea459c6955aa082653023c41fdcdd4",
-    "tests/acceptance/test_browser_reuse.py": "4f79d3001a2351115191eaa352b561639942333cfa9221113e9b97f1985a9e7e",
+    "tests/acceptance/test_browser_reuse.py": "7b05380656eac42dc95e2ff7058259c156d9718680c1a5d1ef23001381001fb7",
     "tests/acceptance/test_callback_errors.py": "5dfba08c9adebcd57cc485f8dfbcd91ba63786622471e65981553a245f927cf1",
     "tests/acceptance/test_callback_stress.py": "964e70686c16f78971910c0ae668385ead7bbb4915beb0e637acb1aac5336bb9",
     "tests/acceptance/test_cpp_assets.py": "ffbe81252073666afc74dd8b99e0c046d87b0946283b7926a1fa0527cabb314b",

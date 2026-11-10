@@ -105,22 +105,33 @@ def test_explicit_separate_page_is_not_retargeted_by_default_reuse(browser_runti
             viz.close()
 
 
-def test_closed_managed_page_is_replaced_and_closing_old_viz_is_safe(browser_runtime):
+@pytest.mark.parametrize("trial", range(3))
+def test_closed_managed_page_is_replaced_and_closing_old_viz_is_safe(browser_runtime, monkeypatch, trial):
     context, opened, errors = browser_runtime
+    checks = []
+    present = implementation._present_browser_view
+
+    def checked(*args, **kwargs):
+        result = present(*args, **kwargs)
+        checks.append({'accepted': result, 'closed_pages': [p.is_closed() for p in opened],
+                       'context_pages': len(context.pages)})
+        return result
+
+    monkeypatch.setattr(implementation, '_present_browser_view', checked)
     first = fv.open(window_mode=1, timeout=3)
     second = third = None
     try:
         opened[0].close()
         second = fv.open(window_mode=1, timeout=3)
         handle = second.add_box()
-        assert len(opened) == 2 and len(context.pages) == 1
+        assert len(opened) == 2 and len(context.pages) == 1, checks
         opened[1].wait_for_function('h=>window.__FRAMEVIZ_CORE__?.objects.has(h)', arg=handle)
         first.close()
         assert second.is_object_alive(handle)
         second.close()
         third = fv.open(window_mode=1, timeout=3)
         handle = third.add_sphere()
-        assert len(opened) == 2 and len(context.pages) == 1
+        assert len(opened) == 2 and len(context.pages) == 1, checks
         opened[1].wait_for_function('h=>window.__FRAMEVIZ_CORE__?.objects.has(h)', arg=handle)
         assert not errors
     finally:
