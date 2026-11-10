@@ -106,6 +106,8 @@ class FrameVizClient:
             return
         if self._ws is not None:
             self.close()
+        if self._ws_thread is not None and self._ws_thread.is_alive():
+            raise RuntimeError("The previous receiving thread is still closing; reconnect after it finishes")
         if self._event_thread is not None and self._event_thread.is_alive():
             raise RuntimeError("The previous callback is still running; reconnect after it finishes")
 
@@ -250,13 +252,20 @@ class FrameVizClient:
             self._event_history.clear()
             self._event_condition.notify_all()
         if self._ws:
+            # Closing an fd from another thread need not wake a Linux socket
+            # read. Stop reception and explicitly wake it before joining.
+            self._ws.keep_running = False
+            transport = self._ws.sock
+            if transport is not None:
+                transport.abort()
             self._ws.close()
         if self._ws_thread and self._ws_thread.is_alive() and self._ws_thread is not threading.current_thread():
             self._ws_thread.join(timeout=2.0)
         if self._event_thread and self._event_thread is not threading.current_thread():
             self._event_thread.join(timeout=2.0)
         self._ws = None
-        self._ws_thread = None
+        if self._ws_thread is not None and not self._ws_thread.is_alive():
+            self._ws_thread = None
         while True:
             try:
                 self._event_queue.get_nowait()
