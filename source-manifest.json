@@ -478,7 +478,7 @@
     "tests/acceptance/native_acceptance.py": "6cd9738c4cd057077e16a949339dad1a9f4475027651edca50f6026fabd7ce6f",
     "tests/acceptance/slow_viewer.py": "0fb653e3e5fd9ce0a5c321323cb6ac6427ec1baf977804e2d60ce17113f9ea6f",
     "tests/acceptance/stress_acceptance.py": "471b2e7c65ff3fc52e0b7f785b65ead48abb3694f6d958e9f3e41dfe4c4e47e6",
-    "tests/acceptance/test_auto_events.py": "a8acc10c71e0274c97c291a283b76612ca28290df1e60ec98ee6fa6d3e61c54c",
+    "tests/acceptance/test_auto_events.py": "77b45ca247fae5d02cff923650965f968cea459c6955aa082653023c41fdcdd4",
     "tests/acceptance/test_cpp_assets.py": "ffbe81252073666afc74dd8b99e0c046d87b0946283b7926a1fa0527cabb314b",
     "tests/acceptance/test_cpp_root.py": "fc3ece5073afab42507eb3857f114b6f9d4f3ee9bd272b627caac1fb22d56be5",
     "tests/acceptance/test_cpp_version.py": "c226846f315c8576dc78336a59f3f7ad0a2ee51194a1b1b9a757c2961b7208c0",
