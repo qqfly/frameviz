@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import queue
+import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -495,10 +497,12 @@ class FrameVizClient:
         with self._lock:
             handlers = tuple(self._event_handlers.get(event_name, []))
         for handler in handlers:
+            if self._closing:
+                break
             try:
                 handler(data)
-            except Exception as e:
-                print(f"[FrameViz] Event handler error: {e}")
+            except Exception:
+                sys.stderr.write(f"[FrameViz] Event '{event_name}' handler failed:\n{traceback.format_exc()}")
 
     def poll_events(self) -> None:
         """Dispatch all queued events without blocking."""
