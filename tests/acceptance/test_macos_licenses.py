@@ -35,3 +35,13 @@ def test_dependency_notices_can_be_collected_for_standalone_distribution(tmp_pat
  assert (resources/'ThirdPartyLicenses/runtime-1/LICENSE').read_text()=='Synthetic license notice'
  assert (resources/'LICENSE').is_file()
  assert not (resources/'Contents').exists()
+
+
+def test_reviewed_missing_repository_requires_exact_package_version_and_commit():
+ package={'name':'libappindicator-sys','version':'0.9.0','repository':None}
+ sha='eafd1e3682a1247f595410266091e9684021cb6f'
+ assert module.license_repository(package,sha)=='https://github.com/tauri-apps/libappindicator-rs'
+ with pytest.raises(ValueError,match='License text unavailable'):
+  module.license_repository(package,'0'*40)
+ with pytest.raises(ValueError,match='License text unavailable'):
+  module.license_repository(dict(package,version='0.9.1'),sha)

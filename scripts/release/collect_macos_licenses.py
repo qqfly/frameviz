@@ -2,6 +2,17 @@
 """Collect normal Cargo dependency notices and MPL source for a macOS preview App."""
 import argparse,hashlib,json,pathlib,re,shutil,urllib.request
 ROOT=pathlib.Path(__file__).resolve().parents[2]
+def license_repository(package,sha):
+ # These two published crates omit repository/license files. Their original
+ # manifests were compared byte-for-byte with this exact upstream commit.
+ reviewed={
+  ('libappindicator','0.9.0','eafd1e3682a1247f595410266091e9684021cb6f'):'https://github.com/tauri-apps/libappindicator-rs',
+  ('libappindicator-sys','0.9.0','eafd1e3682a1247f595410266091e9684021cb6f'):'https://github.com/tauri-apps/libappindicator-rs',
+ }
+ repo=package.get('repository') or reviewed.get((package['name'],package['version'],sha),'')
+ if not re.fullmatch(r'https://github.com/([^/]+/[^/]+?)(?:\.git)?/?',repo):
+  raise ValueError('License text unavailable; review upstream for '+package['name'])
+ return repo
 def collect(metadata,app):
  app=app.resolve()
  if app.suffix!='.app' or not app.is_dir() or app.is_symlink():raise ValueError('Use an explicit App bundle')
@@ -39,10 +50,10 @@ def collect_resources(metadata,resources):
    matches=sorted(q for q in (resources/'ThirdPartyLicenses').rglob('*') if q.is_file() and q.stat().st_size>15000 and b'Mozilla Public License' in q.read_bytes())
    if matches:
     shutil.copy2(matches[0],destination/'MPL-2.0.txt');record['license_files']=['MPL-2.0.txt'];record['license_text_origin']='Canonical MPL-2.0 text; complete component source and notices also included';continue
-  repo=p.get('repository') or '';match=re.fullmatch(r'https://github.com/([^/]+/[^/]+?)(?:\.git)?/?',repo)
-  if not match:raise ValueError('License text unavailable; review upstream for '+p['name'])
   sha=json.loads((folder/'.cargo_vcs_info.json').read_text())['git']['sha1']
   if not re.fullmatch(r'[a-f0-9]{40}',sha):raise ValueError('Invalid upstream commit')
+  repo=license_repository(p,sha);match=re.fullmatch(r'https://github.com/([^/]+/[^/]+?)(?:\.git)?/?',repo)
+  record['license_repository']=repo
   repository=match.group(1);key=(repository,sha)
   if key not in cache:
    req=urllib.request.Request(f'https://api.github.com/repos/{repository}/contents?ref={sha}',headers={'Accept':'application/vnd.github+json','User-Agent':'FrameViz-license-collector'})
