@@ -418,7 +418,7 @@
     "scripts/release/build-devkit-bundle.sh": "817b20cd40547c944fa3c80214cbac803d8c4473505aa178df4e6da55f03107f",
     "scripts/release/build-linux-preview.sh": "d662f5d1b29e03050d1063bb6d94dadef242c33de2108e2e332d8b58f3a29749",
     "scripts/release/build-macos-preview.sh": "e09f519f04e03996dc27aad8b67e4f0fd37eea1bd43be259ff96aae4716231fd",
-    "scripts/release/build-macos-signed.sh": "169b5fef1ad95ec88f0682bfe880cde24c8d8f54047d9c7f75329999e4f31c74",
+    "scripts/release/build-macos-signed.sh": "c1e425458c2a9186730da8834ab9fcd4fe73079c19038910c1bb17ee4a195675",
     "scripts/release/build-setup-bundle.sh": "9078100d50c4b159b39e747b6b8f70e62aa8d0d87554426c3d318ddc74d1c049",
     "scripts/release/build_setup_bundle.py": "6f8d577aeed83fdb726ac2304abb1c8b252ebe10ca6af42306e7690de6e4ea06",
     "scripts/release/collect_macos_licenses.py": "cdb96ba64d2f6b304e27e66451dedc6bde4fb83a7417afee613c97c9b90ff4f0",
