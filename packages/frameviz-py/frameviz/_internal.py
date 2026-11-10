@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
 from .client import PROTOCOL_VERSION
+from .version import compatible
 from .discovery import get_discovery_path, read_discovery_file
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -152,7 +153,7 @@ def _looks_like_repo_root(path: Path) -> bool:
         manifest = json.loads((path / "version.json").read_text(encoding="utf-8"))
         return isinstance(manifest, dict) and (
             manifest.get("project_id") == "qqfly.frameviz"
-            and manifest.get("protocol_version") == PROTOCOL_VERSION
+            and compatible(manifest.get("protocol_version"), PROTOCOL_VERSION)
         )
     except (OSError, ValueError):
         return False
@@ -296,7 +297,7 @@ def _read_discovery_port(path: Path) -> Optional[int]:
     if not data:
         return None
     version = data.get("version")
-    if not isinstance(version, str) or version != PROTOCOL_VERSION:
+    if not compatible(version, PROTOCOL_VERSION):
         return None
     pid = data.get("pid")
     if not isinstance(pid, int) or not _pid_is_running(pid):

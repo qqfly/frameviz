@@ -12,6 +12,7 @@
 
 #include "frameviz/client.hpp"
 #include "frameviz/discovery.hpp"
+#include "frameviz/protocol_version.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -32,49 +33,6 @@
 namespace frameviz {
 
 using json = nlohmann::json;
-
-// Version comparison helper
-namespace {
-std::tuple<int, int, int> parseVersion(const std::string &version) {
-  try {
-    std::vector<int> parts;
-    std::stringstream ss(version);
-    std::string part;
-    while (std::getline(ss, part, '.')) {
-      parts.push_back(std::stoi(part));
-    }
-    int major = parts.size() > 0 ? parts[0] : 0;
-    int minor = parts.size() > 1 ? parts[1] : 0;
-    int patch = parts.size() > 2 ? parts[2] : 0;
-    return {major, minor, patch};
-  } catch (...) {
-    return {0, 0, 0};
-  }
-}
-
-void checkVersionCompatibility(const std::string &host_version) {
-  auto [host_major, host_minor, host_patch] = parseVersion(host_version);
-  auto [min_major, min_minor, min_patch] =
-      parseVersion(MIN_COMPATIBLE_VERSION);
-  auto [sdk_major, sdk_minor, sdk_patch] = parseVersion(PROTOCOL_VERSION);
-
-  // Check minimum compatibility
-  if (std::tie(host_major, host_minor, host_patch) <
-      std::tie(min_major, min_minor, min_patch)) {
-    std::cerr << "[FrameViz] WARNING: Host version " << host_version
-              << " is older than minimum compatible version "
-              << MIN_COMPATIBLE_VERSION
-              << ". Please upgrade your Tauri Host." << std::endl;
-  }
-
-  // Check if Host is newer than SDK (might have breaking changes)
-  if (host_major > sdk_major) {
-    std::cerr << "[FrameViz] WARNING: Host version " << host_version
-              << " has a newer major version than SDK " << PROTOCOL_VERSION
-              << ". Consider upgrading your C++ SDK." << std::endl;
-  }
-}
-} // namespace
 
 class FrameVizClient::Impl {
 public:
@@ -447,7 +405,7 @@ private:
     if (!m_authOk) {
       throw std::runtime_error("Authentication failed: invalid token");
     }
-    if (!m_authVersionOk) throw std::runtime_error("Host protocol version does not match SDK");
+    if (!m_authVersionOk) throw std::runtime_error(hostVersionError(m_hostVersion));
     m_authenticated = true;
     // std::cerr << "[DEBUG] Authentication successful" << std::endl;
   }
@@ -456,16 +414,9 @@ private:
     {
       std::lock_guard<std::mutex> lock(m_mutex);
       m_authOk = envelope.value("ok", false);
-      m_authVersionOk = envelope.value("protocol_version", "") == PROTOCOL_VERSION;
+      m_hostVersion = envelope.contains("protocol_version") && envelope["protocol_version"].is_string() ? envelope["protocol_version"].get<std::string>() : "";
+      m_authVersionOk = isProtocolCompatible(m_hostVersion);
       m_authDone = true;
-    }
-
-    // Capture and check Host protocol version
-    if (envelope.contains("protocol_version")) {
-      std::string host_version = envelope["protocol_version"];
-      // std::cerr << "[DEBUG] Host protocol version: " << host_version
-      //           << std::endl;
-      checkVersionCompatibility(host_version);
     }
 
     m_authEvent.notify_all();
@@ -586,6 +537,7 @@ private:
   std::condition_variable m_authEvent;
   std::atomic<bool> m_authOk;
   std::atomic<bool> m_authVersionOk{false};
+  std::string m_hostVersion;
   std::atomic<bool> m_authDone{false};
 
   std::mutex m_eventMutex;

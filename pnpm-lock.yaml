@@ -150,6 +150,9 @@ importers:
 
   packages/frameviz-web-viewer:
     dependencies:
+      '@frameviz/protocol':
+        specifier: workspace:*
+        version: link:../frameviz-protocol
       '@frameviz/core':
         specifier: workspace:*
         version: link:../frameviz-core

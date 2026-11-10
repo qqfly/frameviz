@@ -8,6 +8,12 @@ import {
 } from "../validation";
 
 describe("protocol envelope validation", () => {
+  it.each(["0.4.1", "0.4.99"])("accepts patch version %s", (version) => {
+    expect(isCommandEnvelope({protocol_version: version, type: "cmd", id: "patch", name: "create_scene", args: {}})).toBe(true);
+  });
+  it.each(["0.5.0", "0.3.9", "0.04.1", "0.4.01", "0.4.1-beta", "0.4.9999999999"])("rejects unsupported version %s", (version) => {
+    expect(isCommandEnvelope({protocol_version: version, type: "cmd", id: "bad", name: "create_scene", args: {}})).toBe(false);
+  });
   it("accepts a valid command envelope", () => {
     const envelope = {
       protocol_version: PROTOCOL_VERSION,

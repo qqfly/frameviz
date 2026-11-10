@@ -23,6 +23,7 @@
 
 ### 1.1 基础约定 (@MUST)
 - **Protocol Version**: `"0.4.0"`
+- **Compatibility**: 同一 `major.minor` 内的补丁版本互通；缺失、格式错误或不同主/次版本在执行命令前以 `ERR_PROTOCOL_VERSION` 拒绝，并说明应升级运行环境还是 SDK/Viewer。精确格式及发现文件规则见 [COMPATIBILITY.md](COMPATIBILITY.md)。
 - **Coordinate System**: 右手系 Z-up，单位：米。
 - **Colors**: 
   - JSON 中的 RGB/RGBA 一律为 **[0.0, 1.0] 浮点数**。

@@ -1,4 +1,5 @@
 export * from "./constants.js";
+export * from "./version.js";
 export * from "./types.js";
 export * from "./validation.js";
 export * from "./commandValidation.js";

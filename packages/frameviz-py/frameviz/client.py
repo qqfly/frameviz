@@ -15,6 +15,7 @@ from .exceptions import (
     ProtocolError,
 )
 from .discovery import get_discovery_path, get_token_from_discovery, get_ws_url_from_discovery
+from .version import host_version_error
 
 PROTOCOL_VERSION = "0.4.0"
 MIN_COMPATIBLE_VERSION = "0.4.0"  # Minimum Host version SDK can work with
@@ -167,6 +168,7 @@ class FrameVizClient:
 
         self._auth_event.clear()
         self._auth_ok = False
+        self._host_protocol_version = None
 
         auth_msg = {"type": "auth", "token": token}
         self._ws.send(json.dumps(auth_msg))
@@ -177,34 +179,15 @@ class FrameVizClient:
                                        operation="authenticate",
                                        timeout_seconds=self.timeout)
 
-        if self._auth_ok and self._host_protocol_version != PROTOCOL_VERSION:
-            raise ProtocolError(f"Host protocol {self._host_protocol_version!r} does not match {PROTOCOL_VERSION}", code="ERR_PROTOCOL_VERSION")
         if not self._auth_ok:
             raise ProtocolError("Authentication failed: invalid token",
                                 code="AUTH_FAILED")
+        self._check_version_compatibility(self._host_protocol_version)
 
     def _check_version_compatibility(self, host_version: str) -> None:
-        """P1-3: Check if Host version is compatible with SDK."""
-        try:
-            host_parts = self._parse_version(host_version)
-            min_parts = self._parse_version(MIN_COMPATIBLE_VERSION)
-            sdk_parts = self._parse_version(PROTOCOL_VERSION)
-
-            # Check minimum compatibility
-            if host_parts < min_parts:
-                warnings.warn(
-                    f"Host version {host_version} is older than minimum compatible "
-                    f"version {MIN_COMPATIBLE_VERSION}. Please upgrade your Tauri Host.",
-                    UserWarning)
-
-            # Check if Host is newer than SDK (might have breaking changes)
-            if host_parts[0] > sdk_parts[0]:  # Major version mismatch
-                warnings.warn(
-                    f"Host version {host_version} has a newer major version than "
-                    f"SDK {PROTOCOL_VERSION}. Consider upgrading your Python SDK.",
-                    UserWarning)
-        except (ValueError, IndexError):
-            pass  # Ignore malformed versions
+        """Reject incompatible series on the calling thread after authentication."""
+        error=host_version_error(host_version, PROTOCOL_VERSION)
+        if error:raise ProtocolError(error, code="ERR_PROTOCOL_VERSION")
 
     @staticmethod
     def _parse_version(version: str) -> tuple:
@@ -522,7 +505,6 @@ class FrameVizClient:
             host_version = envelope.get("protocol_version")
             if host_version:
                 self._host_protocol_version = host_version
-                self._check_version_compatibility(host_version)
             self._auth_event.set()
 
 

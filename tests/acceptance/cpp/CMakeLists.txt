@@ -10,3 +10,6 @@ target_include_directories(asset_harness PRIVATE ../../../examples/apps/urdf_rob
 
 add_executable(find_host find_host.cpp)
 target_link_libraries(find_host PRIVATE frameviz::frameviz-cpp)
+
+add_executable(version_connect version_connect.cpp)
+target_link_libraries(version_connect PRIVATE frameviz::frameviz-cpp)

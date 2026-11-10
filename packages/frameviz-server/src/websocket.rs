@@ -27,6 +27,7 @@ use tokio_tungstenite::accept_hdr_async;
 use url::form_urlencoded;
 
 use crate::RegisteredViewer;
+use crate::version::{compatible, client_version_error};
 
 
 const PROTOCOL_VERSION: &str = "0.4.0";
@@ -522,11 +523,13 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
         return;
     }
 
-    if parsed.get("type").and_then(Value::as_str) == Some("cmd") {
+    if matches!(parsed.get("type").and_then(Value::as_str), Some("cmd" | "event")) {
         {
-            if parsed.get("protocol_version").and_then(Value::as_str) != Some(PROTOCOL_VERSION) {
+            if let Some(error) = client_version_error(parsed.get("protocol_version").and_then(Value::as_str), PROTOCOL_VERSION) {
                 if let Some(id) = parsed.get("id").and_then(Value::as_str) {
-                    send_error_response(state, client_id, id, "ERR_PROTOCOL_VERSION", "Unsupported protocol version").await;
+                    send_error_response(state, client_id, id, "ERR_PROTOCOL_VERSION", &error).await;
+                } else if let Some(client) = state.lock().await.clients.get(&client_id) {
+                    let _ = client.sender.cancel.send(true);
                 }
                 return;
             }
@@ -1553,9 +1556,8 @@ pub fn discovery_port_if_running() -> Option<u16> {
 
     // Verify protocol version matches
     let version = data.get("version").and_then(|v| v.as_str())?;
-    if version != PROTOCOL_VERSION {
-        // Version mismatch - clean up stale file
-        let _ = fs::remove_file(&path);
+    if !compatible(version, PROTOCOL_VERSION) {
+        // A different live runtime is not stale and must not lose its token.
         return None;
     }
 
@@ -1634,9 +1636,7 @@ pub fn cleanup_stale_discovery() {
 
     // Check version
     let version = data.get("version").and_then(|v| v.as_str()).unwrap_or("");
-    if version != PROTOCOL_VERSION {
-        println!("[FrameViz] Cleaning up stale discovery file (version mismatch: {} vs {})", version, PROTOCOL_VERSION);
-        let _ = fs::remove_file(&path);
+    if !compatible(version, PROTOCOL_VERSION) {
         return;
     }
 

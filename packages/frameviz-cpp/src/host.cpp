@@ -11,6 +11,7 @@
 
 #include "frameviz/host.hpp"
 #include "frameviz/types.hpp"
+#include "frameviz/protocol_version.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include "frameviz/tauri.hpp"
@@ -265,7 +266,7 @@ bool looksLikeRepoRoot(const std::string &path) {
     auto manifest = nlohmann::json::parse(file);
     return manifest.is_object() &&
            manifest.value("project_id", std::string{}) == "qqfly.frameviz" &&
-           manifest.value("protocol_version", std::string{}) == PROTOCOL_VERSION;
+           isProtocolCompatible(manifest.value("protocol_version", std::string{}));
   } catch (const std::exception &) {
     return false;
   }

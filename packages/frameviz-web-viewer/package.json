@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@frameviz/protocol": "workspace:*",
     "ws": "^8.16.0",
     "@frameviz/core": "workspace:*"
   },
