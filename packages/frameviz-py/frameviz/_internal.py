@@ -209,6 +209,12 @@ def _get_tauri_app_candidates(repo_root: Optional[Path]) -> List[Path]:
 
 def _get_tauri_exec_candidates(repo_root: Optional[Path]) -> List[Path]:
     candidates: List[Path] = []
+    if sys.platform.startswith("linux"):
+        # The standard .deb installs here. Do not select arbitrary names from
+        # PATH: a virtual environment or another project may provide one.
+        installed = Path("/usr/bin/frameviz")
+        if installed.is_file() and os.access(installed, os.X_OK):
+            candidates.append(installed)
     if sys.platform.startswith("win"):
         if repo_root:
             candidates.extend(
