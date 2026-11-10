@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import queue
+import socket
 import sys
 import threading
 import time
@@ -253,11 +254,17 @@ class FrameVizClient:
             self._event_condition.notify_all()
         if self._ws:
             # Closing an fd from another thread need not wake a Linux socket
-            # read. Stop reception and explicitly wake it before joining.
-            self._ws.keep_running = False
+            # read. Capture it before receiver teardown clears the wrapper.
             transport = self._ws.sock
+            raw_socket = transport.sock if transport is not None else None
+            self._ws.keep_running = False
             if transport is not None:
                 transport.abort()
+            if raw_socket is not None:
+                try:
+                    raw_socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass  # Another teardown may already have closed it.
             self._ws.close()
         if self._ws_thread and self._ws_thread.is_alive() and self._ws_thread is not threading.current_thread():
             self._ws_thread.join(timeout=2.0)
