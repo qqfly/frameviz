@@ -67,10 +67,8 @@ def main():
     # 注册事件回调
     viz.on("picked", on_picked)
 
-    print("Click objects to highlight. Press Enter to exit...")
-    input()
-
-    viz.close()
+    print("Click objects to highlight. Ctrl+C to exit.")
+    viz.keep_running()
 
 
 if __name__ == "__main__":

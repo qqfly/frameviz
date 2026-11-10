@@ -24,14 +24,9 @@ def main() -> None:
     print("    ✓ 切换为仅旋转 (mask=0x38, size=1.2)")
 
     print("\n" + "=" * 50)
-    print("拖拽 Gizmo 测试，按 Enter 退出...")
+    print("拖拽 Gizmo 测试，按 Ctrl+C 退出...")
     print("=" * 50)
-    try:
-        input()
-    except (KeyboardInterrupt, EOFError):
-        pass
-
-    viz.close()
+    viz.keep_running()
     print("\n已关闭连接")
 
 

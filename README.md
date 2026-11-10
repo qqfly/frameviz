@@ -47,7 +47,7 @@ viz = fv.open()
 viz.add_box()
 ```
 
-A running compatible runtime is reused; otherwise Python starts a known installation automatically. No runtime path, port or token needs to be entered. In a standalone script, call `viz.spin()` to keep the process alive, then `viz.close()` when finished. Use `fv.open(window_mode=1)` to force a browser, or `window_mode=0` to manage pages yourself. Without a Linux desktop, the private link is printed automatically.
+A running compatible runtime is reused; otherwise Python starts a known installation automatically. No runtime path, port or token needs to be entered. In a standalone script, end with `viz.keep_running()`; Ctrl+C closes the view and connection. Use `fv.open(window_mode=1)` to force a browser, or `window_mode=0` to manage pages yourself. Without a Linux desktop, the private link is printed automatically. Repeated browser-mode opens reuse the managed page while keeping scenes independent; use `reuse_browser=False` when you want separate pages.
 
 The existing Mac preview is ad-hoc signed and **not Apple-notarized**. Ubuntu build/container checks and native desktop/GPU acceptance are different results; the latest artifact and test records determine which has run. See [installation and source builds](docs/INSTALLATION.md), [Mac first-open steps](docs/MACOS.md), and [troubleshooting](docs/TROUBLESHOOTING.md).
 
@@ -109,7 +109,7 @@ Run `python examples/python/05_developer_features/showcase.py instances`. Source
 
 ### Picking and Gizmo events
 
-Register callbacks, enable picking, and attach transform handles to a selected object. Call `spin()` or `poll_events()` to dispatch Python events.
+Register callbacks, enable picking, and attach transform handles to a selected object. Python dispatches callbacks automatically on a dedicated background thread. Synchronous SDK calls are supported inside callbacks; protect state shared with your own threads. In IPython no lifetime call is needed. In a standalone script, use `keep_running()`. Set `auto_events=False` when your application needs to dispatch callbacks itself with `poll_events()`.
 
 ```python
 viz.set_pick_config(enabled=True, mode="object", button=0)
@@ -118,7 +118,7 @@ def picked(event):
         viz.attach_gizmo(event["handle"], mask=0x07)  # Translation axes
 viz.on_pick(picked)
 viz.on_transform(lambda event: print(event))
-viz.spin()
+viz.keep_running()
 ```
 
 ![Actual pointer picking and Gizmo dragging](docs/media/picking-gizmo.webp)

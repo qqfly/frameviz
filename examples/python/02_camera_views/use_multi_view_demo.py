@@ -25,19 +25,20 @@ def main():
     print("\n[1] 创建视图...")
 
     # viz1: Tauri 主视图，创建新场景（左上角）
-    viz1 = fv.open(title="Tauri 主视图", window_mode=2, x=100, y=100, width=800, height=600)
+    viz1 = fv.open(reuse_browser=False, title="Tauri 主视图", window_mode=2, x=100, y=100, width=800, height=600)
     print(f"    ✓ viz1 (Tauri): view={viz1.view_id}, scene={viz1.scene_id}")
 
     # viz2: 浏览器窗口，共享 viz1 的场景（右上角）
-    viz2 = fv.open(title="浏览器视图", share_scene=viz1.scene_id, window_mode=1, x=950, y=100, width=800, height=600)
+    viz2 = fv.open(reuse_browser=False, title="浏览器视图", share_scene=viz1.scene_id, window_mode=1, x=950, y=100, width=800, height=600)
     print(f"    ✓ viz2 (Browser): view={viz2.view_id}, scene={viz2.scene_id} (共享)")
 
     # viz3: Tauri 独立场景（左下）
-    viz3 = fv.open(title="Tauri 独立场景", window_mode=2, x=100, y=400, width=800, height=600)
+    viz3 = fv.open(reuse_browser=False, title="Tauri 独立场景", window_mode=2, x=100, y=400, width=800, height=600)
     print(f"    ✓ viz3 (Tauri): view={viz3.view_id}, scene={viz3.scene_id} (独立)")
 
     # viz4: 无边框窗口，共享 viz1 的场景（右下）
     viz4 = fv.open(
+        reuse_browser=False,
         title="无边框窗口",
         share_scene=viz1.scene_id,
         window_mode=2,

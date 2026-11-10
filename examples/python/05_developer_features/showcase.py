@@ -99,7 +99,6 @@ def main():
             for i in range(180):
                 positions, colors = instance_frame(data["xy"], i / 20)
                 viz.update_instances(data["handle"], positions=positions, colors=colors)
-                viz.poll_events()
                 time.sleep(0.05)
         elif args.case == "mesh":
             input("Vertex colors. Enter: uniform color... ")
@@ -108,8 +107,10 @@ def main():
             viz.set_render_mode("wireframe")
         elif args.case == "picking":
             print("Click an object, then drag its translation handles. Ctrl+C to stop.")
-            viz.spin()
-        input("Enter to close... ")
+            viz.keep_running()
+            return
+        print("Ctrl+C to close.")
+        viz.keep_running()
     except (KeyboardInterrupt, EOFError):
         pass
     finally:

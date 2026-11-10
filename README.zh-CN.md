@@ -47,7 +47,7 @@ viz = fv.open()
 viz.add_box()
 ```
 
-Python 会复用兼容的运行环境，或自动找到并启动已安装的程序，无需手填路径、端口或令牌。独立脚本末尾用 `viz.spin()` 保持运行，结束时调用 `viz.close()`。`fv.open(window_mode=1)` 强制使用浏览器，`window_mode=0` 留给应用自己管理页面。无 Linux 桌面时会自动打印私有链接。
+Python 会复用兼容的运行环境，或自动找到并启动已安装的程序，无需手填路径、端口或令牌。独立脚本末尾用 `viz.keep_running()` 保持运行，Ctrl+C 会关闭视图和连接。`fv.open(window_mode=1)` 强制使用浏览器，`window_mode=0` 留给应用自己管理页面。无 Linux 桌面时会自动打印私有链接。浏览器模式重复打开会复用页面，各场景仍独立；要同时保留多个页面，使用 `reuse_browser=False`。
 
 已有 Mac 预览版使用临时签名，**尚未经过 Apple 公证**。Ubuntu 构建/容器安装检查与原生桌面、显卡实机体验分开验收，具体以对应产物和测试记录为准。参见[安装与源码构建](docs/INSTALLATION.md)、[Mac 首次打开](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
 
@@ -109,7 +109,7 @@ viz.update_instances(h, positions=next_positions, colors=next_colors)
 
 ### 拾取与 Gizmo 事件
 
-注册回调、启用拾取，为选中的对象附加平移/旋转手柄。Python 需要通过 `spin()` 或 `poll_events()` 分发事件。
+注册回调、启用拾取，为选中的对象附加平移/旋转手柄。Python 默认在独立后台线程中自动执行回调，回调内可以同步调用 SDK。与应用其他线程共享状态时，需要应用自行同步。在 IPython 中无需保持运行的调用；独立脚本用 `keep_running()`。需要自带主循环时，可设 `auto_events=False`，再用 `poll_events()` 手动分发。
 
 ```python
 viz.set_pick_config(enabled=True, mode="object", button=0)
@@ -118,7 +118,7 @@ def picked(event):
         viz.attach_gizmo(event["handle"], mask=0x07)  # 允许三个方向平移
 viz.on_pick(picked)
 viz.on_transform(lambda event: print(event))
-viz.spin()
+viz.keep_running()
 ```
 
 ![真实鼠标拾取及 Gizmo 拖拽](docs/media/picking-gizmo.webp)
