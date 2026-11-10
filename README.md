@@ -30,7 +30,7 @@ Install the runtime once, then install its paired Python SDK wheel in each proje
 | Environment | Runtime | Viewer |
 |---|---|---|
 | Apple Silicon Mac | Private-preview `FrameViz.app` from the [releases](https://github.com/qqfly/frameviz/releases) | Native window by default |
-| Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./frameviz_*.deb` | Native window by default |
+| Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./FrameViz_*.deb` | Native window by default |
 | Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |
 
 ```sh
