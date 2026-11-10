@@ -30,7 +30,7 @@
 | 环境 | 运行环境 | 显示方式 |
 |---|---|---|
 | Apple 芯片 Mac | [私有 Releases](https://github.com/qqfly/frameviz/releases) 中的预览版 `FrameViz.app` | 默认原生窗口 |
-| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./frameviz_*.deb` | 默认原生窗口 |
+| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
 | 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
 
 ```sh
