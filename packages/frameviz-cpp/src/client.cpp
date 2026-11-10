@@ -583,6 +583,12 @@ json FrameVizClient::sendCommand(const std::string &name, const json &args) {
   return m_impl->sendCommand(name, args);
 }
 
+int FrameVizClient::presentView(const std::string &browser_session,
+                               const std::string &view_id) {
+  return sendCommand("present_view", {{"browser_session", browser_session},
+                                     {"view_id", view_id}}).at("viewer_count").get<int>();
+}
+
 json FrameVizClient::sendCommandWithBinary(
     const std::string &name, const json &args,
     const std::vector<uint8_t> &binary_data) {

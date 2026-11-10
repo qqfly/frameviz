@@ -116,6 +116,16 @@ export interface GetViewerByNameArgs {
   viewer_name: string;
 }
 
+/** Present an existing view in this SDK process's authenticated browser page. */
+export interface PresentViewArgs {
+  browser_session: string;
+  view_id: string;
+}
+
+export interface PresentViewResult {
+  viewer_count: number;
+}
+
 /** Result of get_viewer_by_name command */
 export interface GetViewerByNameResult {
   view_id: string;

@@ -151,6 +151,7 @@ impl ClientSender {
 struct ClientState {
     client_type: ClientType,
     view_id: Option<String>,
+    browser_session: Option<String>,
     scene_id: Option<String>,
     scene_refs: HashSet<String>,
     sender: ClientSender,
@@ -366,6 +367,7 @@ async fn handle_connection(stream: TcpStream, state: SharedState) -> Result<(), 
             ClientState {
                 client_type: hello.client_type.clone(),
                 view_id: hello.view_id.clone(),
+                browser_session: if hello.client_type == ClientType::Viewer { hello.browser_session.clone() } else { None },
                 scene_id: hello.scene_id.clone(),
                 scene_refs: HashSet::new(),
                 sender: sender.clone(),
@@ -638,6 +640,11 @@ async fn handle_binary_message(state: &SharedState, client_id: usize, data: Vec<
 async fn handle_protocol_command(state: &SharedState, client_id: usize, mut command: CommandEnvelope) {
     let name = command.name.clone();
 
+    if name == "present_view" {
+        handle_present_view(state, client_id, &command).await;
+        return;
+    }
+
     if name == "get_resource_counts" {
         let counts = {
             let guard = state.lock().await;
@@ -749,6 +756,51 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
             send_error_response(state, client_id, &command.id, &err.code, &err.message).await;
         }
     }
+}
+
+fn valid_browser_session(label: &str) -> bool {
+    !label.is_empty() && label.len() <= 128
+        && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+async fn handle_present_view(state: &SharedState, client_id: usize, command: &CommandEnvelope) {
+    let label = command.args.get("browser_session").and_then(Value::as_str);
+    let view = command.args.get("view_id").and_then(Value::as_str);
+    if command.args.as_object().map_or(true, |args| args.len() != 2)
+        || label.map_or(true, |s| !valid_browser_session(s))
+        || view.map_or(true, |v| v.trim().is_empty()) {
+        send_error_response(state, client_id, &command.id, "ERR_INVALID_ARGS", "present_view requires a browser_session label and view_id").await;
+        return;
+    }
+    let (label, view) = (label.unwrap(), view.unwrap());
+    let selection = {
+        let mut guard = state.lock().await;
+        guard.view_to_scene.get(view).cloned().map(|scene| {
+            let ids: Vec<usize> = guard.clients.iter()
+                .filter(|(_, client)| client.authenticated && client.client_type == ClientType::Viewer
+                    && client.browser_session.as_deref() == Some(label))
+                .map(|(id, _)| *id).collect();
+            for id in &ids {
+                let client = guard.clients.get_mut(id).unwrap();
+                client.view_id = Some(view.to_string());
+                client.scene_id = Some(scene.clone());
+            }
+            if !ids.is_empty() { guard.revision += 1; }
+            (scene, ids)
+        })
+    };
+    let Some((scene, ids)) = selection else {
+        send_error_response(state, client_id, &command.id, "ERR_NOT_FOUND", "Destination view does not exist").await;
+        return;
+    };
+    let mut count = 0;
+    for recipient in ids {
+        if send_init_and_snapshot(state, recipient, view, &scene).await.is_ok() {
+            count += 1;
+            broadcast_event_to_protocol(state, "viewer_ready", json!({"view_id":view,"scene_id":scene})).await;
+        }
+    }
+    send_ok_response(state, client_id, &command.id, json!({"viewer_count":count})).await;
 }
 
 async fn handle_viewer_command(state: &SharedState, client_id: usize, mut command: CommandEnvelope) {
@@ -1382,6 +1434,9 @@ fn parse_client_hello(req: &Request) -> ClientHello {
                 "view_id" => {
                     hello.view_id = Some(value.to_string());
                 }
+                "browser_session" if valid_browser_session(&value) => {
+                    hello.browser_session = Some(value.to_string());
+                }
                 _ => {}
             }
         }
@@ -1393,6 +1448,7 @@ fn parse_client_hello(req: &Request) -> ClientHello {
 struct ClientHello {
     client_type: ClientType,
     view_id: Option<String>,
+    browser_session: Option<String>,
     scene_id: Option<String>,
 }
 

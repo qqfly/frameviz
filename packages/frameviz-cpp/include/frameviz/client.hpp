@@ -83,6 +83,11 @@ public:
    */
   json sendCommand(const std::string &name, const json &args = json::object());
 
+  /** Present a view in authenticated pages bearing this browser session label.
+   * Returns the number of matched viewers; zero leaves presentation unchanged.
+   */
+  int presentView(const std::string &browser_session, const std::string &view_id);
+
   /**
    * @brief Send a command with binary data and wait for response.
    * @param name Command name

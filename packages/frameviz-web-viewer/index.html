@@ -205,7 +205,7 @@
     }
 
     function sendEnvelope(envelope) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (connectionStopped || !ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify(envelope));
     }
 
@@ -515,6 +515,11 @@
         if (msg.view_id && msg.view_id !== viewId) {
           viewId = msg.view_id;
           document.title = `FrameViz - ${viewId}`;
+          if (urlParams.get('browser_session')) {
+            const currentUrl = new URL(location.href);
+            currentUrl.searchParams.set('view_id', viewId);
+            history.replaceState(null, '', currentUrl);
+          }
         }
         sceneId = msg.scene_id;
         core?.setViewId(viewId);
@@ -540,12 +545,15 @@
 
     function connect() {
       if (connectionStopped) return;
-      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}`;
+      const browserSession = urlParams.get('browser_session');
+      const sessionQuery = browserSession ? `&browser_session=${encodeURIComponent(browserSession)}` : '';
+      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}${sessionQuery}`;
       ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       console.log(`[FrameViz] Connecting as view=${viewId}`);
 
       ws.onopen = () => {
+        if (connectionStopped) { ws.close(); return; }
         const token = window.__FRAMEVIZ_AUTH_TOKEN__ || new URLSearchParams(location.hash.slice(1)).get('token');
         if (!token) { statusEl.textContent = 'Authentication token required'; ws.close(); return; }
         ws.send(JSON.stringify({ type: 'auth', token }));
@@ -569,6 +577,7 @@
       };
 
       ws.onmessage = (event) => {
+        if (connectionStopped) return;
         if (typeof event.data === 'string') {
           handleTextMessage(event.data);
         } else {
@@ -577,11 +586,13 @@
       };
     }
 
+    let animationFrame = null;
     function animate() {
+      if (connectionStopped) return;
       if (core) {
         core.render();
       }
-      requestAnimationFrame(animate);
+      animationFrame = requestAnimationFrame(animate);
     }
 
     window.addEventListener('resize', () => {
@@ -718,10 +729,24 @@
       });
       window.__FRAMEVIZ_CORE__ = core;
       core.setViewId(viewId);
-      window.addEventListener('beforeunload', () => {
-        if (core && typeof core.dispose === 'function') {
-          core.dispose();
+      // pagehide also runs when a browser closes a page without beforeunload.
+      // Stop answering queries immediately; a retained hidden document must
+      // not make the SDK believe its closed page is still available.
+      window.addEventListener('pagehide', (event) => {
+        connectionStopped = true;
+        cancelAnimationFrame(animationFrame);
+        ws?.close();
+        pendingBinaryQueue.length = 0;
+        if (!event.persisted) {
+          core?.dispose();
+          core = null;
         }
+      });
+      window.addEventListener('pageshow', (event) => {
+        if (!event.persisted || !core) return;
+        connectionStopped = false;
+        connect();
+        animate();
       });
       connect();
       animate();

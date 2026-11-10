@@ -44,6 +44,7 @@ This table records command-name literals in the implementation. Presence does no
 | `list_viewers` | present | not directly referenced | not directly referenced | not directly referenced |
 | `list_views` | present | not directly referenced | present | present |
 | `load_mesh` | present | present | present | present |
+| `present_view` | present | not directly referenced | present | present |
 | `read_logs` | present | not directly referenced | present | not directly referenced |
 | `register_viewer` | present | not directly referenced | not directly referenced | not directly referenced |
 | `remove_object` | present | present | present | present |

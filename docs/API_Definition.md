@@ -902,3 +902,13 @@ Mask 位定义:
 
 ## Appendix: Extensions
 - `import_mesh` (Extension)
+
+## Browser page presentation
+
+`fv.open(..., reuse_browser=True)` reuses the browser page opened by this SDK process for the same authenticated runtime. Every call still creates its own scene/view unless `share_scene` was supplied; presentation does not delete old views, change their IDs or transfer Viz ownership. `reuse_browser=False` explicitly opens a separate page. Closing an old Viz must not clear the newly presented scene.
+
+The SDK labels its managed page with an opaque `browser_session` URL parameter. The standalone Viewer forwards this optional label in its WebSocket hello; native windows and embedded Vue viewers do not advertise it. Labels are 1–128 ASCII letters, digits, underscores or hyphens, and confer no authentication rights. Tokens remain in the link fragment/auth message.
+
+Authenticated protocol command `present_view` accepts `{ "browser_session": "...", "view_id": "..." }`. The Host validates the label and destination before changing anything, selects only authenticated Viewer connections with that label, rebinds their view/scene, advances the revision and sends the existing `init` + complete scene snapshot/binary restoration. It returns `{ "viewer_count": N }`. `N=0` has no side effects and tells the SDK to open a replacement page. Viewer-role callers cannot use this command to change scene scope. Python and C++ expose the same command; rendering uses the existing init/snapshot path.
+
+The cache is confined to this SDK process and keyed by canonical runtime endpoint plus an authentication-token hash. It retains page labels, not scene state or Viz ownership. An old runtime that explicitly reports an unknown command may fall back to opening a page; authentication, version and other errors are not treated as permission to open another runtime or silently change scope.

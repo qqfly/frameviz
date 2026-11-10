@@ -422,6 +422,13 @@ class FrameVizClient:
         with self._lock:
             self._event_handlers.setdefault(name, []).append(handler)
 
+    def present_view(self, browser_session: str, view_id: str) -> int:
+        """Present a view in matching authenticated managed browser pages."""
+        result = self.send_command("present_view", {
+            "browser_session": browser_session, "view_id": view_id,
+        })
+        return int(result["viewer_count"])
+
     def off_event(self,
                   name: str,
                   handler: Optional[EventHandler] = None) -> None:

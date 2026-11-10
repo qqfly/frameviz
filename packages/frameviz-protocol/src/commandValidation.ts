@@ -347,6 +347,10 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
   destroy_scene: (args) => validateObject(args, { scene_id: isNonEmptyString }),
   destroy_view: (args) => validateObject(args, { view_id: isNonEmptyString }),
   attach_scene: (args) => validateObject(args, { view_id: isNonEmptyString, scene_id: isNonEmptyString }),
+  present_view: (args) => validateObject(args, {
+    browser_session: value => isString(value) && /^[A-Za-z0-9_-]{1,128}$/.test(value),
+    view_id: isNonEmptyString,
+  }),
   list_scenes: (args) => validateObject(args, {}),
   list_views: (args) => validateObject(args, {}),
   get_scene_snapshot: (args) => validateObject(args, { scene_id: isNonEmptyString }),
