@@ -26,3 +26,12 @@ def test_mpl_source_does_not_follow_external_symlinks(tmp_path):
  secret=tmp_path/'private-sentinel.txt';secret.write_text('synthetic private sentinel');(tmp_path/'runtime/escape.txt').symlink_to(secret)
  app=tmp_path/'Preview.app';app.mkdir()
  with pytest.raises(ValueError,match='symlink'):module.collect(data,app)
+
+
+def test_dependency_notices_can_be_collected_for_standalone_distribution(tmp_path):
+ resources=tmp_path/'standalone-notices'
+ result=module.collect_resources(metadata(tmp_path),resources)
+ assert [p['name'] for p in result['components']]==['runtime']
+ assert (resources/'ThirdPartyLicenses/runtime-1/LICENSE').read_text()=='Synthetic license notice'
+ assert (resources/'LICENSE').is_file()
+ assert not (resources/'Contents').exists()

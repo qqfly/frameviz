@@ -5,7 +5,9 @@ ROOT=pathlib.Path(__file__).resolve().parents[2]
 def collect(metadata,app):
  app=app.resolve()
  if app.suffix!='.app' or not app.is_dir() or app.is_symlink():raise ValueError('Use an explicit App bundle')
- resources=app/'Contents/Resources';resources.mkdir(parents=True,exist_ok=True)
+ return collect_resources(metadata,app/'Contents/Resources')
+def collect_resources(metadata,resources):
+ resources=resources.resolve();resources.mkdir(parents=True,exist_ok=True)
  packages={p['id']:p for p in metadata['packages']};nodes={n['id']:n for n in metadata['resolve']['nodes']};todo=[metadata['resolve']['root']];seen=set();records=[];missing=[];cache={};mpl=[]
  while todo:
   key=todo.pop()
@@ -65,4 +67,7 @@ def collect(metadata,app):
  result={'scope':'Cargo normal dependency graph filtered for the build target; excludes build/dev edges; system frameworks remain OS supplied. This is not a vulnerability scan or legal approval.','components':records,'source_included_for_mpl':mpl}
  (resources/'runtime-dependencies.json').write_text(json.dumps(result,indent=2)+'\n');return result
 if __name__=='__main__':
- p=argparse.ArgumentParser(description=__doc__);p.add_argument('--metadata',required=True,type=pathlib.Path);p.add_argument('--app',required=True,type=pathlib.Path);a=p.parse_args();r=collect(json.loads(a.metadata.read_text()),a.app);print(json.dumps({'runtime_components':len(r['components']),'mpl_sources':r['source_included_for_mpl']}))
+ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--metadata',required=True,type=pathlib.Path)
+ destination=p.add_mutually_exclusive_group(required=True);destination.add_argument('--app',type=pathlib.Path);destination.add_argument('--resources',type=pathlib.Path)
+ a=p.parse_args();metadata=json.loads(a.metadata.read_text());r=collect(metadata,a.app) if a.app else collect_resources(metadata,a.resources)
+ print(json.dumps({'runtime_components':len(r['components']),'mpl_sources':r['source_included_for_mpl']}))
