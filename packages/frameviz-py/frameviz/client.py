@@ -250,12 +250,13 @@ class FrameVizClient:
             self._query_events.clear()
             self._event_history.clear()
             self._event_condition.notify_all()
-        if self._ws:
+        app = self._ws
+        if app:
             # Closing an fd from another thread need not wake a Linux socket
             # read. Capture it before receiver teardown clears the wrapper.
-            transport = self._ws.sock
+            transport = app.sock
             raw_socket = transport.sock if transport is not None else None
-            self._ws.keep_running = False
+            app.keep_running = False
             if transport is not None:
                 transport.abort()
             if raw_socket is not None:
@@ -263,9 +264,12 @@ class FrameVizClient:
                     raw_socket.shutdown(socket.SHUT_RDWR)
                 except OSError:
                     pass  # Another teardown may already have closed it.
-            self._ws.close()
         if self._ws_thread and self._ws_thread.is_alive() and self._ws_thread is not threading.current_thread():
             self._ws_thread.join(timeout=2.0)
+        # Keep the fd present until the selector can consume its shutdown
+        # event. Removing it first can leave Linux epoll waiting on an empty set.
+        if app:
+            app.close()
         if self._event_thread and self._event_thread is not threading.current_thread():
             self._event_thread.join(timeout=2.0)
         self._ws = None
