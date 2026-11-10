@@ -116,8 +116,26 @@ def test_failed_page_open_cleans_up_the_scene_and_view_it_created(context,monkey
 
 
 def test_runtime_exit_explains_the_actual_startup_error(tmp_path,monkeypatch):
+    # This is a diagnostic-formatting unit check. An OS scheduler delaying a
+    # fresh shell must not turn it into a test of a 200 ms process-start budget.
+    # Real runtime process failures are covered by test_standalone_viewer.py.
     binary=tmp_path/'broken-runtime'
     binary.write_text('#!/bin/sh\necho "Synthetic runtime startup failure" >&2\nexit 7\n');binary.chmod(0o755)
     monkeypatch.setenv('FRAMEVIZ_HOST_PATH',str(binary))
     monkeypatch.setenv('FRAMEVIZ_DISCOVERY_PATH',str(tmp_path/'host.json'))
+    logfile=tmp_path/'startup.log';logfile.write_text('Synthetic runtime startup failure\n')
+    monkeypatch.setattr(host,'_started_host_log_path',logfile)
+    exited=MagicMock();exited.poll.return_value=7
+    monkeypatch.setattr(host,'_launch_executable',lambda *a,**k:exited)
     with pytest.raises(RuntimeError,match='Synthetic runtime startup failure'):host.start_host(timeout=.2)
+
+
+def test_public_open_exposes_manual_callback_mode(context,monkeypatch):
+    client,_=context
+    options=[]
+    def factory(**kwargs):
+        options.append(kwargs)
+        return client
+    monkeypatch.setattr(implementation,'FrameVizClient',factory)
+    implementation.open(window_mode=0,auto_events=False)
+    assert options[0]['auto_events'] is False

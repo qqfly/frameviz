@@ -35,12 +35,14 @@ class FrameVizClient:
 
     Uses a background thread for WebSocket I/O while providing a synchronous
     API to the caller. Commands block until the Host returns a response.
-    Events are queued and dispatched via spin() or poll_events().
+    Callbacks run serially on a separate background thread after authentication.
+    Set auto_events=False to dispatch manually with spin() or poll_events().
     """
 
     url: str = DEFAULT_WS_URL
     timeout: float = 10.0
     token: Optional[str] = None
+    auto_events: bool = True
 
     # Internal state (initialized in __post_init__ or connect)
     _ws: Optional[websocket.WebSocketApp] = field(default=None,
@@ -87,6 +89,14 @@ class FrameVizClient:
 
     # P1-3: Version compatibility
     _host_protocol_version: Optional[str] = field(default=None, init=False)
+    _event_thread: Optional[threading.Thread] = field(default=None, init=False, repr=False)
+    _event_stop: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _event_condition: threading.Condition = field(init=False, repr=False)
+    _event_history: Dict[int, Tuple[str, Dict[str, Any]]] = field(default_factory=dict, init=False, repr=False)
+    _event_sequence: int = field(default=0, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._event_condition = threading.Condition(self._lock)
 
     def connect(self) -> None:
         """Connect to the Host WebSocket endpoint (blocking until open)."""
@@ -94,8 +104,11 @@ class FrameVizClient:
             return
         if self._ws is not None:
             self.close()
+        if self._event_thread is not None and self._event_thread.is_alive():
+            raise RuntimeError("The previous callback is still running; reconnect after it finishes")
 
         self._closing = False
+        self._event_stop = threading.Event()
         self._connected.clear()
         self._opened.clear()
         self._connect_error = None
@@ -117,6 +130,8 @@ class FrameVizClient:
                 self._connect_error = RuntimeError(
                     "Connection closed before open.")
             self._opened.clear()
+            self._closing = True
+            self._event_stop.set()
             self._connected.set()
             # Reject any pending requests
             with self._lock:
@@ -125,6 +140,7 @@ class FrameVizClient:
                 self._pending.clear()
                 self._responses.clear()
                 self._query_events.clear()
+                self._event_condition.notify_all()
 
         self._ws = websocket.WebSocketApp(
             self.url,
@@ -148,6 +164,11 @@ class FrameVizClient:
                 # P2: Close socket/thread on auth failure to avoid resource leak
                 self.close()
                 raise
+            if self.auto_events:
+                self._event_thread = threading.Thread(
+                    target=self._run_events, args=(self._event_stop,),
+                    name="FrameViz callbacks", daemon=True)
+                self._event_thread.start()
             return
 
         self.close()
@@ -217,18 +238,37 @@ class FrameVizClient:
     def close(self) -> None:
         """Close the WebSocket connection."""
         self._closing = True
+        self._event_stop.set()
         with self._lock:
             for event in self._pending.values():
                 event.set()
             self._pending.clear()
             self._responses.clear()
             self._query_events.clear()
+            self._event_history.clear()
+            self._event_condition.notify_all()
         if self._ws:
             self._ws.close()
-        if self._ws_thread and self._ws_thread.is_alive():
+        if self._ws_thread and self._ws_thread.is_alive() and self._ws_thread is not threading.current_thread():
             self._ws_thread.join(timeout=2.0)
+        if self._event_thread and self._event_thread is not threading.current_thread():
+            self._event_thread.join(timeout=2.0)
         self._ws = None
         self._ws_thread = None
+        while True:
+            try:
+                self._event_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def _run_events(self, stop: threading.Event) -> None:
+        while not stop.is_set():
+            try:
+                event = self._event_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if not stop.is_set():
+                self._dispatch_event(*event)
 
     def send_command(self,
                      name: str,
@@ -357,19 +397,20 @@ class FrameVizClient:
 
     def on_event(self, name: str, handler: EventHandler) -> None:
         """Register a handler for a protocol event."""
-        handlers = self._event_handlers.setdefault(name, [])
-        handlers.append(handler)
+        with self._lock:
+            self._event_handlers.setdefault(name, []).append(handler)
 
     def off_event(self,
                   name: str,
                   handler: Optional[EventHandler] = None) -> None:
         """Remove event handler(s). If handler is None, remove all for that event."""
-        if handler is None:
-            self._event_handlers.pop(name, None)
-        else:
-            handlers = self._event_handlers.get(name, [])
-            if handler in handlers:
-                handlers.remove(handler)
+        with self._lock:
+            if handler is None:
+                self._event_handlers.pop(name, None)
+            else:
+                handlers = self._event_handlers.get(name, [])
+                if handler in handlers:
+                    handlers.remove(handler)
 
     def wait_for_event(
         self,
@@ -388,6 +429,8 @@ class FrameVizClient:
         Returns:
             The event data dict, or None if timeout.
         """
+        if self.auto_events and self._event_thread is not None:
+            return self._wait_automatic_event(name, timeout, filter_fn)
         result: List[Dict[str, Any]] = []
         received = threading.Event()
 
@@ -403,9 +446,12 @@ class FrameVizClient:
             while not received.is_set():
                 # Correlated query responses are retained independently of event dispatch.
                 with self._lock:
-                    for request_id, (event_name, data) in list(self._query_events.items()):
-                        if event_name == name and (filter_fn is None or filter_fn(data)):
-                            self._query_events.pop(request_id)
+                    queries = list(self._query_events.items())
+                for request_id, (event_name, data) in queries:
+                    if event_name == name and (filter_fn is None or filter_fn(data)):
+                        with self._lock:
+                            retained = self._query_events.pop(request_id, None)
+                        if retained is not None:
                             result.append(data)
                             received.set()
                             break
@@ -430,6 +476,9 @@ class FrameVizClient:
 
     def spin(self) -> None:
         """Process events in a blocking loop until the connection closes."""
+        if self.auto_events and self._event_thread is not None:
+            self._event_stop.wait()
+            return
         while self._ws is not None and not self._closing:
             self.poll_events()
             if self._closing or self._ws is None:
@@ -443,7 +492,8 @@ class FrameVizClient:
 
     def _dispatch_event(self, event_name: str, data: Dict[str, Any]) -> None:
         """Internal helper to call handlers for a single event."""
-        handlers = self._event_handlers.get(event_name, [])
+        with self._lock:
+            handlers = tuple(self._event_handlers.get(event_name, []))
         for handler in handlers:
             try:
                 handler(data)
@@ -452,12 +502,34 @@ class FrameVizClient:
 
     def poll_events(self) -> None:
         """Dispatch all queued events without blocking."""
+        if self.auto_events and self._event_thread is not None:
+            return
         while True:
             try:
                 event_info = self._event_queue.get_nowait()
                 self._dispatch_event(*event_info)
             except queue.Empty:
                 break
+
+    def _wait_automatic_event(self, name: str, timeout: float,
+                              filter_fn: Optional[Callable[[Dict[str, Any]], bool]]) -> Optional[Dict[str, Any]]:
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._lock:
+                candidates = [(self._query_events, key, event) for key, event in self._query_events.items()]
+                candidates.extend((self._event_history, key, event) for key, event in self._event_history.items())
+            # Filters may call the SDK. Never execute application code under
+            # internal locks or on the WebSocket receiving thread.
+            for source, key, (event_name, data) in candidates:
+                if event_name == name and (filter_fn is None or filter_fn(data)):
+                    with self._lock:
+                        if source.pop(key, None) is not None:
+                            return data
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or self._closing:
+                return None
+            with self._event_condition:
+                self._event_condition.wait(timeout=min(remaining, 0.02))
 
     def _handle_message(self, message: str) -> None:
         """Parse an incoming message and route it appropriately."""
@@ -489,7 +561,15 @@ class FrameVizClient:
                     if len(self._query_events) >= 4096:
                         self._query_events.pop(next(iter(self._query_events)))
                     self._query_events[data["request_id"]] = (event_name, data)
+                    self._event_condition.notify_all()
                 return
+            if self.auto_events:
+                with self._lock:
+                    self._event_sequence += 1
+                    if len(self._event_history) >= 4096:
+                        self._event_history.pop(next(iter(self._event_history)))
+                    self._event_history[self._event_sequence] = (event_name, data)
+                    self._event_condition.notify_all()
             try:
                 self._event_queue.put_nowait((event_name, data))
             except queue.Full:
@@ -508,8 +588,8 @@ class FrameVizClient:
             self._auth_event.set()
 
 
-def open(url: str = DEFAULT_WS_URL, timeout: float = 10.0) -> FrameVizClient:
+def open(url: str = DEFAULT_WS_URL, timeout: float = 10.0, *, auto_events: bool = True) -> FrameVizClient:
     """Create a client, connect it, and return the instance."""
-    client = FrameVizClient(url=url, timeout=timeout)
+    client = FrameVizClient(url=url, timeout=timeout, auto_events=auto_events)
     client.connect()
     return client

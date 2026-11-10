@@ -2302,6 +2302,7 @@ def open(
     window_mode: int = 2,
     timeout: float = 10.0,
     performance_mode: str = "balanced",
+    auto_events: bool = True,
 ) -> Viz:
     """
     Open a FrameViz visualization window.
@@ -2329,6 +2330,8 @@ def open(
                          to override the app path and FRAMEVIZ_TAURI_CONTROL_PORT
                          to override the control port.
         timeout: Command timeout in seconds.
+        auto_events: Run callbacks serially in a background thread (default True).
+                     Set False for manual spin()/poll_events() dispatch.
         performance_mode: Initial WebGL rendering quality mode:
                          - 'performance': Fast rendering, low quality
                          - 'balanced': Medium quality and performance (default)
@@ -2364,7 +2367,7 @@ def open(
     if not desktop:window_mode=0
     tauri_page = None
 
-    client,resolved_url = _connect_runtime(url,timeout,prefer_browser=window_mode==1 or not desktop)
+    client,resolved_url = _connect_runtime(url,timeout,prefer_browser=window_mode==1 or not desktop,auto_events=auto_events)
     scene_id = actual_view_id = None
     owns_scene = False
     try:
@@ -2472,7 +2475,7 @@ def open(
         raise
 
 
-def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool):
+def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool, auto_events: bool = True):
     """Authenticate once; only a missing local service may trigger startup."""
     from . import host
     from .discovery import read_discovery_file
@@ -2495,7 +2498,7 @@ def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         resolved=host.start_host(ws_url=f'ws://127.0.0.1:{port}',timeout=timeout,headless=True,prefer_browser=prefer_browser)
-    client=FrameVizClient(url=resolved,timeout=timeout)
+    client=FrameVizClient(url=resolved,timeout=timeout,**({} if auto_events else {'auto_events':False}))
     try:
         client.connect()
         return client,resolved
@@ -2504,7 +2507,7 @@ def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool):
         if not local or host._is_port_open(parsed.hostname,parsed.port or 9527):raise
         if not _should_auto_start_ws():raise RuntimeError('FrameViz automatic startup is disabled (FRAMEVIZ_AUTO_START_WS=0)')
         resolved=host.start_host(ws_url=resolved,timeout=timeout,headless=True,prefer_browser=prefer_browser)
-        client=FrameVizClient(url=resolved,timeout=timeout)
+        client=FrameVizClient(url=resolved,timeout=timeout,**({} if auto_events else {'auto_events':False}))
         client.connect()
         return client,resolved
 
@@ -2602,6 +2605,7 @@ def connect(
     url: Optional[str] = None,
     view_id: Optional[str] = None,
     timeout: float = 10.0,
+    auto_events: bool = True,
 ) -> Viz:
     """
     Connect to an existing view and return a Viz object.
@@ -2612,6 +2616,7 @@ def connect(
              2. Discovery file (if available)
              3. Defaults to ws://127.0.0.1:9527
         timeout: Connection timeout in seconds.
+        auto_events: Run callbacks on a background thread; False enables manual polling.
         view_id: Optional target view identifier.
                  If omitted, connect() succeeds only when exactly one view exists.
 
@@ -2627,7 +2632,7 @@ def connect(
     """
 
     resolved_url = _resolve_connection_url(url)
-    client = FrameVizClient(url=resolved_url, timeout=timeout)
+    client = FrameVizClient(url=resolved_url, timeout=timeout, **({} if auto_events else {'auto_events': False}))
     client.connect()
 
     try:
