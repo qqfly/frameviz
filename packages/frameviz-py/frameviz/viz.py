@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import builtins
 import atexit
+import hashlib
 import logging
 import json
 import os
@@ -21,6 +22,8 @@ import sys
 import signal
 import tempfile
 import time
+import threading
+import uuid
 import webbrowser
 from collections import deque
 from pathlib import Path
@@ -127,6 +130,10 @@ Quat = Union[Tuple[float, float, float, float], List[float], np.ndarray]
 EventHandler = Callable[[Dict[str, Any]], None]
 
 logger = logging.getLogger(__name__)
+
+# Presentation labels only: scenes, clients and Viz ownership stay independent.
+_BROWSER_SESSIONS: Dict[Tuple[str, str, int, str], str] = {}
+_BROWSER_SESSION_LOCK = threading.RLock()
 
 
 def _normalize_color(color: Color) -> List[float]:
@@ -2318,6 +2325,7 @@ def open(
     timeout: float = 10.0,
     performance_mode: str = "balanced",
     auto_events: bool = True,
+    reuse_browser: bool = True,
 ) -> Viz:
     """
     Open a FrameViz visualization window.
@@ -2347,6 +2355,8 @@ def open(
         timeout: Command timeout in seconds.
         auto_events: Run callbacks serially in a background thread (default True).
                      Set False for manual spin()/poll_events() dispatch.
+        reuse_browser: Reuse this process's managed browser page for this runtime.
+                       False opens a separate page; native windows are unaffected.
         performance_mode: Initial WebGL rendering quality mode:
                          - 'performance': Fast rendering, low quality
                          - 'balanced': Medium quality and performance (default)
@@ -2368,7 +2378,7 @@ def open(
 
         # Create two views sharing the same scene with auto-open
         viz1 = fv.open(title="Main View", window_mode=1)
-        viz2 = fv.open(title="Side View", share_scene=viz1.scene_id, window_mode=1)
+        viz2 = fv.open(title="Side View", share_scene=viz1.scene_id, window_mode=1, reuse_browser=False)
         # Both browser windows open automatically
 
         # Each view can have independent camera positions
@@ -2378,6 +2388,7 @@ def open(
     from .host import _desktop_available
     desktop = _desktop_available()
     if window_mode not in (0,1,2):raise ValueError('window_mode must be 0, 1 or 2')
+    if not isinstance(reuse_browser,bool):raise ValueError('reuse_browser must be a boolean')
     print_link = not desktop and window_mode != 0
     if not desktop:window_mode=0
     tauri_page = None
@@ -2417,9 +2428,7 @@ def open(
         opened_via_tauri = False
         if window_mode == 1:
             # Open browser directly
-            _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
-            # Wait for viewer to connect
-            _wait_for_viewer(client, actual_view_id, timeout=timeout)
+            _open_browser_view(client,viewer_url,actual_view_id,ws_port,performance_mode,timeout,reuse_browser)
         elif window_mode == 2:
             # If a viewer is already connected, avoid launching a new window.
             already_ready = _wait_for_viewer(
@@ -2465,11 +2474,9 @@ def open(
                         opened_via_tauri = True
                     else:
                         _try_close_tauri_window(actual_view_id)
-                        _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
-                        _wait_for_viewer(client, actual_view_id, timeout=timeout)
+                        _open_browser_view(client,viewer_url,actual_view_id,ws_port,performance_mode,timeout,reuse_browser)
                 else:
-                    _open_browser(viewer_url, actual_view_id, ws_port, performance_mode)
-                    _wait_for_viewer(client, actual_view_id, timeout=timeout)
+                    _open_browser_view(client,viewer_url,actual_view_id,ws_port,performance_mode,timeout,reuse_browser)
 
         return Viz(
             client,
@@ -2660,22 +2667,80 @@ def connect(
         raise
 
 
+def _browser_session_key(client: FrameVizClient):
+    token = client._resolve_token()
+    if not isinstance(token,str) or not token or not isinstance(client.url,str):
+        return None
+    endpoint = urlparse(client.url)
+    hostname = endpoint.hostname or ''
+    if hostname in ('localhost','127.0.0.1','::1'):
+        hostname = 'loopback'
+    return (endpoint.scheme,hostname,endpoint.port or (443 if endpoint.scheme=='wss' else 80),
+            hashlib.sha256(token.encode()).hexdigest())
+
+
+def _present_browser_view(client: FrameVizClient, session: str, view_id: str,
+                          timeout: float) -> bool:
+    try:
+        count = client.present_view(session,view_id)
+    except RuntimeError as error:
+        # This exact legacy response means the runtime predates page reuse.
+        # Authentication/version/other failures must retain their normal errors.
+        if str(error) == '[ERR_INVALID_ARGS] Command not implemented: present_view':
+            return False
+        raise
+    if count == 0:
+        return False
+    # The existing correlated query is also a liveness barrier: a page that
+    # closed before presentation cannot answer it. Never rely only on a registry.
+    try:
+        result = client.send_command('get_camera_pose',{'view_id':view_id})
+    except RuntimeError as error:
+        if str(error).startswith('[ERR_VIEWER_UNAVAILABLE]'):
+            return False
+        raise
+    reply = client.wait_for_event('camera_pose_response',timeout=timeout,
+        filter_fn=lambda data:data.get('view_id')==view_id and data.get('request_id')==result.get('request_id'))
+    return reply is not None
+
+
+def _open_browser_view(client, viewer_url, view_id, ws_port, performance_mode, timeout, reuse_browser):
+    key = _browser_session_key(client) if reuse_browser else None
+    if key is None:
+        _open_browser(viewer_url,view_id,ws_port,performance_mode)
+        _wait_for_viewer(client,view_id,timeout=timeout)
+        return
+    # Serialize presentation/opening, not scene creation or application callbacks.
+    with _BROWSER_SESSION_LOCK:
+        session = _BROWSER_SESSIONS.get(key)
+        if session is not None and _present_browser_view(client,session,view_id,timeout):
+            client.send_command('set_performance_mode',{'view_id':view_id,'mode':performance_mode})
+            return
+        session = uuid.uuid4().hex
+        _open_browser(viewer_url,view_id,ws_port,performance_mode,browser_session=session)
+        _wait_for_viewer(client,view_id,timeout=timeout)
+        _BROWSER_SESSIONS[key] = session
+
+
 def _open_browser(
     viewer_url: str,
     view_id: str,
     ws_port: Optional[int] = None,
     performance_mode: Optional[str] = None,
+    browser_session: Optional[str] = None,
 ) -> None:
     """Open the web viewer in the default browser."""
-    webbrowser.open(_viewer_link(viewer_url,view_id,ws_port,performance_mode))
+    webbrowser.open(_viewer_link(viewer_url,view_id,ws_port,performance_mode,browser_session))
 
 
-def _viewer_link(viewer_url: str, view_id: str, ws_port=None, performance_mode=None) -> str:
+def _viewer_link(viewer_url: str, view_id: str, ws_port=None, performance_mode=None, browser_session=None) -> str:
     if not viewer_url:
         raise RuntimeError('FrameViz Viewer URL is unavailable for this runtime. Install a runtime with bundled Viewer assets (docs/INSTALLATION.md), or use window_mode=0 for an embedded viewer.')
     parsed = urlparse(viewer_url)
     params = parse_qs(parsed.query)
     params["view_id"] = [view_id]
+    if browser_session is not None:
+        params['browser_session'] = [browser_session]
     if ws_port is not None:
         params["ws_port"] = [str(ws_port)]
     if performance_mode is not None:

@@ -34,7 +34,7 @@ jobs:
       - run: pnpm test
       - run: cargo build --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: python -m playwright install --with-deps chromium
-      - run: python -m pytest tests/acceptance/test_standalone_viewer.py tests/acceptance/test_protocol_compatibility.py tests/acceptance/test_startup_runtime.py tests/acceptance/test_open_runtime.py tests/acceptance/test_forced_browser.py tests/acceptance/test_auto_events.py tests/acceptance/test_callback_stress.py tests/acceptance/test_callback_errors.py tests/acceptance/test_keep_running.py -q -ra
+      - run: python -m pytest tests/acceptance/test_standalone_viewer.py tests/acceptance/test_protocol_compatibility.py tests/acceptance/test_startup_runtime.py tests/acceptance/test_open_runtime.py tests/acceptance/test_forced_browser.py tests/acceptance/test_auto_events.py tests/acceptance/test_callback_stress.py tests/acceptance/test_callback_errors.py tests/acceptance/test_keep_running.py tests/acceptance/test_browser_reuse.py tests/acceptance/test_presentation_contracts.py -q -ra
       - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py tests/acceptance/test_signed_build.py tests/acceptance/test_readme_media.py tests/acceptance/test_example_business_handshake.py -q -ra
       - run: cargo test --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: cmake -S packages/frameviz-cpp -B .cache/cpp-release -DCMAKE_BUILD_TYPE=Release -DFRAMEVIZ_BUILD_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -43,4 +43,4 @@ jobs:
       - run: cmake --install .cache/cpp-release --prefix "$PWD/.cache/sdk"
       - run: cmake -S tests/acceptance/cpp -B .cache/installed-consumer -DCMAKE_PREFIX_PATH="$PWD/.cache/sdk"
       - run: cmake --build .cache/installed-consumer -j 2
-      - run: FRAMEVIZ_ASSET_TEST_BINARY="$PWD/.cache/installed-consumer/asset_harness" FRAMEVIZ_CPP_FIND_HOST="$PWD/.cache/installed-consumer/find_host" FRAMEVIZ_CPP_VERSION_CONNECT="$PWD/.cache/installed-consumer/version_connect" python -m pytest tests/acceptance/test_cpp_assets.py tests/acceptance/test_cpp_root.py tests/acceptance/test_cpp_version.py -q
+      - run: FRAMEVIZ_ASSET_TEST_BINARY="$PWD/.cache/installed-consumer/asset_harness" FRAMEVIZ_CPP_FIND_HOST="$PWD/.cache/installed-consumer/find_host" FRAMEVIZ_CPP_VERSION_CONNECT="$PWD/.cache/installed-consumer/version_connect" FRAMEVIZ_CPP_PRESENT_VIEW="$PWD/.cache/installed-consumer/present_view" python -m pytest tests/acceptance/test_cpp_assets.py tests/acceptance/test_cpp_root.py tests/acceptance/test_cpp_version.py tests/acceptance/test_cpp_presentation.py -q

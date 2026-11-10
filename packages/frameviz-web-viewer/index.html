@@ -515,6 +515,11 @@
         if (msg.view_id && msg.view_id !== viewId) {
           viewId = msg.view_id;
           document.title = `FrameViz - ${viewId}`;
+          if (urlParams.get('browser_session')) {
+            const currentUrl = new URL(location.href);
+            currentUrl.searchParams.set('view_id', viewId);
+            history.replaceState(null, '', currentUrl);
+          }
         }
         sceneId = msg.scene_id;
         core?.setViewId(viewId);
@@ -540,7 +545,9 @@
 
     function connect() {
       if (connectionStopped) return;
-      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}`;
+      const browserSession = urlParams.get('browser_session');
+      const sessionQuery = browserSession ? `&browser_session=${encodeURIComponent(browserSession)}` : '';
+      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}${sessionQuery}`;
       ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       console.log(`[FrameViz] Connecting as view=${viewId}`);
