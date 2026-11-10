@@ -2,6 +2,9 @@
 import os
 import threading
 import time
+import sys
+import traceback
+import websocket
 
 import pytest
 from frameviz.client import FrameVizClient
@@ -17,6 +20,7 @@ def test_real_pick_callback_can_command_and_query_without_polling(standalone, au
                             **({} if automatic else {'auto_events': False}))
     client.connect()
     receiver = client._ws_thread
+    transport = client._ws
     try:
         scene = client.send_command('create_scene', {})['scene_id']
         view = client.send_command('create_view', {'scene_id': scene})['view_id']
@@ -77,7 +81,13 @@ def test_real_pick_callback_can_command_and_query_without_polling(standalone, au
                 assert pose['eye'] == pytest.approx([0, -8, 6], abs=1e-5)
                 if automatic:
                     thread.join(timeout=1)
-                    assert not thread.is_alive() and not receiver.is_alive()
+                    frame = sys._current_frames().get(receiver.ident)
+                    diagnostic = {'websocket_client': websocket.__version__,
+                                  'receiver_stack': ''.join(traceback.format_stack(frame)) if frame else None,
+                                  'keep_running': transport.keep_running,
+                                  'socket_present': transport.sock is not None,
+                                  'client_retains_receiver': client._ws_thread is receiver}
+                    assert not thread.is_alive() and not receiver.is_alive(), diagnostic
             finally:
                 browser.close()
     finally:
