@@ -111,10 +111,27 @@ def test_closed_managed_page_is_replaced_and_closing_old_viz_is_safe(browser_run
     checks = []
     present = implementation._present_browser_view
 
-    def checked(*args, **kwargs):
-        result = present(*args, **kwargs)
+    def checked(client, *args, **kwargs):
+        send, wait = client.send_command, client.wait_for_event
+        exchanges = []
+
+        def traced_send(name, data):
+            result = send(name, data)
+            exchanges.append({'command': name, 'result': result})
+            return result
+
+        def traced_wait(name, **kwargs):
+            result = wait(name, **kwargs)
+            exchanges.append({'event': name, 'result': result})
+            return result
+
+        client.send_command, client.wait_for_event = traced_send, traced_wait
+        try:
+            result = present(client, *args, **kwargs)
+        finally:
+            client.send_command, client.wait_for_event = send, wait
         checks.append({'accepted': result, 'closed_pages': [p.is_closed() for p in opened],
-                       'context_pages': len(context.pages)})
+                       'context_pages': len(context.pages), 'exchanges': exchanges})
         return result
 
     monkeypatch.setattr(implementation, '_present_browser_view', checked)
