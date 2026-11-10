@@ -57,3 +57,30 @@ def test_close_inside_handler_stops_remaining_handlers(mock_client):
     client._event_queue.put(('example', {}))
     client.poll_events()
     assert seen == []
+
+
+def test_manual_event_wait_finishes_when_connection_is_closed(mock_client):
+    import threading
+
+    client, _ = mock_client
+    client.auto_events = False
+    registered = threading.Event()
+    results = []
+    on_event = client.on_event
+
+    def observe_registration(name, handler):
+        on_event(name, handler)
+        registered.set()
+
+    client.on_event = observe_registration
+    worker = threading.Thread(target=lambda: results.append(client.wait_for_event('never', timeout=3)))
+    worker.start()
+    try:
+        assert registered.wait(1)
+        client.close()
+        worker.join(timeout=.5)
+        assert not worker.is_alive(), 'Explicit close left manual event wait running'
+        assert results == [None]
+        assert not client._event_handlers.get('never')
+    finally:
+        worker.join(timeout=4)

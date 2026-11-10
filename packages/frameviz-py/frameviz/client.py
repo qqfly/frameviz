@@ -472,7 +472,7 @@ class FrameVizClient:
         self.on_event(name, handler)
         try:
             deadline = time.monotonic() + timeout
-            while not received.is_set():
+            while not received.is_set() and not self._closing:
                 # Correlated query responses are retained independently of event dispatch.
                 with self._lock:
                     queries = list(self._query_events.items())
