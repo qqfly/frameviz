@@ -34,7 +34,7 @@ jobs:
       - run: pnpm test
       - run: cargo build --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: python -m playwright install --with-deps chromium
-      - run: python -m pytest tests/acceptance/test_standalone_viewer.py tests/acceptance/test_protocol_compatibility.py tests/acceptance/test_startup_runtime.py tests/acceptance/test_open_runtime.py tests/acceptance/test_forced_browser.py -q -ra
+      - run: python -m pytest tests/acceptance/test_standalone_viewer.py tests/acceptance/test_protocol_compatibility.py tests/acceptance/test_startup_runtime.py tests/acceptance/test_open_runtime.py tests/acceptance/test_forced_browser.py tests/acceptance/test_auto_events.py -q -ra
       - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py tests/acceptance/test_signed_build.py tests/acceptance/test_readme_media.py tests/acceptance/test_example_business_handshake.py -q -ra
       - run: cargo test --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: cmake -S packages/frameviz-cpp -B .cache/cpp-release -DCMAKE_BUILD_TYPE=Release -DFRAMEVIZ_BUILD_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5

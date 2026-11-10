@@ -116,7 +116,15 @@ def test_python_failed_sends_leave_no_pending_requests(h):
  assert not h.c._pending,{'pending_count':len(h.c._pending)}
 
 def test_python_explicit_reconnect_and_late_reply_discard(h):
- h.c.close();h.c.connect();assert h.cmd('list_scenes')=={'scenes':[]}
+ import sys,traceback,websocket
+ receiver=h.c._ws_thread;transport=h.c._ws
+ h.c.close()
+ frame=sys._current_frames().get(receiver.ident)
+ diagnostic={'websocket_client':websocket.__version__,
+             'receiver_stack':''.join(traceback.format_stack(frame)) if frame else None,
+             'keep_running':transport.keep_running,'socket_present':transport.sock is not None}
+ assert not receiver.is_alive(),diagnostic
+ h.c.connect();assert h.cmd('list_scenes')=={'scenes':[]}
  h.c._handle_message(json.dumps({'type':'resp','id':'timed-out-id','ok':True,'result':{}}))
  assert not h.c._responses
 
