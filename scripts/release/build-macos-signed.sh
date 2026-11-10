@@ -49,5 +49,10 @@ PY
 xcrun stapler staple "$OUT/FrameViz.dmg"
 xcrun stapler validate "$OUT/FrameViz.dmg"
 spctl --assess --type open --context context:primary-signature "$OUT/FrameViz.dmg"
-shasum -a 256 "$OUT/FrameViz.dmg" > "$OUT/SHA256SUMS"
+python3 - "$OUT" <<'PYHASH'
+import hashlib,sys
+from pathlib import Path
+out=Path(sys.argv[1]);digest=hashlib.sha256((out/'FrameViz.dmg').read_bytes()).hexdigest()
+(out/'SHA256SUMS').write_text(f'{digest}  FrameViz.dmg\n')
+PYHASH
 printf '%s\n' 'Signed and notarized artifact created. Download/open acceptance on the other Mac remains required.'
