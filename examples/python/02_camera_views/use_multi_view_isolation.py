@@ -22,13 +22,13 @@ def main() -> None:
     print("=" * 60)
 
     print("\n[1] 创建 View A...")
-    viz_a = fv.open(title="View A", x=100, y=100, width=800, height=600)
+    viz_a = fv.open(reuse_browser=False, title="View A", x=100, y=100, width=800, height=600)
     print(f"    ✓ View A: view={viz_a.view_id}, scene={viz_a.scene_id}")
 
     time.sleep(0.3)  # 延迟确保窗口创建完成
 
     print("\n[2] 创建 View B...")
-    viz_b = fv.open(title="View B", x=950, y=100, width=800, height=600)
+    viz_b = fv.open(reuse_browser=False, title="View B", x=950, y=100, width=800, height=600)
     print(f"    ✓ View B: view={viz_b.view_id}, scene={viz_b.scene_id}")
 
     # 创建独立场景对象

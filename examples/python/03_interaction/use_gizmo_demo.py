@@ -152,13 +152,8 @@ def main():
     viz.on('key_down', on_key_down)
     viz.on('transformed', on_transformed)
 
-    # 事件循环
-    try:
-        viz.spin()
-    except KeyboardInterrupt:
-        print("\n[退出]")
-    finally:
-        viz.close()
+    # 回调由后台线程自动处理；主线程只负责维持脚本生命周期。
+    viz.keep_running()
 
 
 if __name__ == "__main__":

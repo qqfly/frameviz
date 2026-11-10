@@ -35,10 +35,7 @@ import frameviz as fv
 
 viz = fv.open(title="My scene")
 viz.add_box(color=(0.2, 0.7, 0.9))
-try:
-    viz.spin()
-finally:
-    viz.close()
+viz.keep_running()
 ```
 
 The SDK reads the current user's matching discovery record. Automatic installation lookup checks the bundle identifier, declared executable and executable location; it does not launch unrelated apps by name. `FRAMEVIZ_TAURI_APP` remains an optional override for custom locations. Protocol versions with the same major and minor number accept different patches; incompatible versions report which side needs upgrading. A Host started and owned by the Python process is cleaned up when Python exits; a manually started App is left running. SDK background starts do not consume the first manual welcome. The welcome preference is separate from host.json and retained across Host shutdown.
