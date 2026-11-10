@@ -29,3 +29,31 @@ def test_dispatch_uses_a_handler_snapshot_when_handlers_change(mock_client):
     client._event_queue.put(('example', {}))
     client.poll_events()
     assert calls == ['first', 'second']
+
+
+def test_callback_exception_reports_traceback_and_continues(mock_client, capsys):
+    client, _ = mock_client
+    seen = []
+
+    def broken(data):
+        raise ValueError('Synthetic callback failure')
+
+    client.on_event('example', broken)
+    client.on_event('example', lambda data: seen.append(data['n']))
+    client._event_queue.put(('example', {'n': 1}))
+    client._event_queue.put(('example', {'n': 2}))
+    client.poll_events()
+    error = capsys.readouterr().err
+    assert error.count('Traceback (most recent call last)') == 2
+    assert 'in broken' in error and 'ValueError: Synthetic callback failure' in error
+    assert seen == [1, 2]
+
+
+def test_close_inside_handler_stops_remaining_handlers(mock_client):
+    client, _ = mock_client
+    seen = []
+    client.on_event('example', lambda data: client.close())
+    client.on_event('example', lambda data: seen.append('after close'))
+    client._event_queue.put(('example', {}))
+    client.poll_events()
+    assert seen == []
