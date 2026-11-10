@@ -21,6 +21,14 @@ import pytest
 
 from frameviz.client import FrameVizClient, PROTOCOL_VERSION, DEFAULT_WS_URL
 
+
+def test_client_repr_does_not_disclose_credentials():
+    token = 'synthetic-authentication-credential-for-repr-test'
+    client = FrameVizClient(token=token)
+    assert token not in repr(client)
+    client._auth_token = token + '-resolved'
+    assert token not in repr(client)
+
 # =============================================================================
 # Connection Management Tests
 # =============================================================================

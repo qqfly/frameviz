@@ -44,7 +44,7 @@ class FrameVizClient:
 
     url: str = DEFAULT_WS_URL
     timeout: float = 10.0
-    token: Optional[str] = None
+    token: Optional[str] = field(default=None, repr=False)
     auto_events: bool = True
 
     # Internal state (initialized in __post_init__ or connect)
@@ -85,7 +85,7 @@ class FrameVizClient:
                                                            init=False)
 
     # P0-2: Authentication
-    _auth_token: Optional[str] = field(default=None, init=False)
+    _auth_token: Optional[str] = field(default=None, init=False, repr=False)
     _auth_event: threading.Event = field(default_factory=threading.Event,
                                          init=False)
     _auth_ok: bool = field(default=False, init=False)
