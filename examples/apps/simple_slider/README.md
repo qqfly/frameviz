@@ -24,7 +24,7 @@ Set `FRAMEVIZ_BUSINESS_TOKEN` to a random token of at least 32 characters before
 
 The backend validates a local Origin and the business token before sending state or accepting commands. The token authorizes this local example, including its configured viewer binding; fine-grained remote-user permissions are not implemented. Missing credentials fail closed.
 
-Python business services select the offered `frameviz-business` WebSocket subprotocol; the temporary token remains an authentication input and is never echoed as the selected protocol. Browser clients require this negotiation.
+The browser sends the temporary business token in the first WebSocket frame and waits for acknowledgement before binding the Viewer. Existing clients can still use the token subprotocol header.
 
 Use `FRAMEVIZ_PYTHON` to select a Python interpreter, `FRAMEVIZ_HOME` for state, `FRAMEVIZ_RUNTIME_MANIFEST` for an explicit runtime manifest, and `CMAKE_PREFIX_PATH` for the C++ SDK. No internal installation directory is searched. The standalone template's packaged desktop credential injection and complete installer still need target-platform acceptance.
 

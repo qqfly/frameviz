@@ -1,8 +1,9 @@
 #pragma once
-// Local example business channel. Credential arrives in the upgrade subprotocol
-// header, never in a URL. No payload or state is accepted before this check.
+// Local example business channel. The first frame or legacy upgrade header
+// authenticates the session before business state or commands are exchanged.
 #include <ixwebsocket/IXWebSocket.h>
 #include <ixwebsocket/IXWebSocketMessageType.h>
+#include <nlohmann/json.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -12,13 +13,25 @@
 
 namespace frameviz {
 class BusinessAuth {
-  struct Session { std::chrono::steady_clock::time_point start; unsigned count = 0; };
+  struct Session {
+    std::chrono::steady_clock::time_point start;
+    unsigned count = 0;
+    bool authenticated = false;
+  };
   std::mutex mutex_;
   std::unordered_map<ix::WebSocket*, Session> sessions_;
+  static bool matches(const std::string& token, const std::string& expected) {
+    unsigned mismatch = token.size() == expected.size() ? 0 : 1;
+    for (size_t i = 0; i < expected.size(); ++i)
+      mismatch |= expected[i] ^ (i < token.size() ? token[i] : 0);
+    return expected.size() >= 32 && mismatch == 0;
+  }
+
 public:
   bool authorized(ix::WebSocket* socket) {
     std::lock_guard<std::mutex> lock(mutex_);
-    return sessions_.count(socket) != 0;
+    auto it = sessions_.find(socket);
+    return it != sessions_.end() && it->second.authenticated;
   }
   bool accept(ix::WebSocket& socket, const ix::WebSocketMessagePtr& message) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -37,28 +50,46 @@ public:
       const auto origin = header("origin");
       const char* env = std::getenv("FRAMEVIZ_BUSINESS_TOKEN");
       const std::string expected = env ? env : "";
-      std::string token, part; unsigned found = 0;
-      std::istringstream protocols(header("sec-websocket-protocol"));
+      std::string token, part;
+      unsigned found = 0;
+      const auto offered = header("sec-websocket-protocol");
+      std::istringstream protocols(offered);
       while (std::getline(protocols, part, ',')) {
         auto first = part.find_first_not_of(" \t"), last = part.find_last_not_of(" \t");
         if (first == std::string::npos) continue;
         part = part.substr(first, last - first + 1);
         if (part.rfind("token.", 0) == 0) { token = part.substr(6); ++found; }
       }
-      unsigned mismatch = token.size() == expected.size() ? 0 : 1;
-      for (size_t i = 0; i < expected.size(); ++i) mismatch |= expected[i] ^ (i < token.size() ? token[i] : 0);
       const bool originOk = origin.empty() || std::regex_match(origin, std::regex(R"((http|https|tauri)://(localhost|127\.0\.0\.1|\[::1\]|tauri\.localhost)(:[0-9]+)?)"));
-      if (expected.size() < 32 || found != 1 || mismatch || !originOk || sessions_.size() >= 32) {
+      const bool legacy = !offered.empty();
+      if (expected.size() < 32 || (legacy && (found != 1 || !matches(token, expected)))
+          || !originOk || sessions_.size() >= 32) {
         socket.close(1008, "Business authentication required"); return false;
       }
-      sessions_[&socket] = {std::chrono::steady_clock::now(), 0};
-      return true;
+      sessions_[&socket] = {std::chrono::steady_clock::now(), 0, legacy};
+      return legacy;
     }
     if (message->type != ix::WebSocketMessageType::Message) return false;
     auto it = sessions_.find(&socket);
     if (it == sessions_.end()) return false;
     auto now = std::chrono::steady_clock::now();
-    if (now - it->second.start >= std::chrono::seconds(1)) it->second = {now, 0};
+    if (!it->second.authenticated) {
+      using nlohmann::json;
+      const auto payload = !message->binary && message->str.size() <= 65536
+          ? json::parse(message->str, nullptr, false) : json();
+      const char* expected = std::getenv("FRAMEVIZ_BUSINESS_TOKEN");
+      if (!expected || now - it->second.start > std::chrono::seconds(3) ||
+          !payload.is_object() || !payload.contains("type") || payload["type"] != "auth" ||
+          !payload.contains("token") || !payload["token"].is_string() || !matches(payload["token"].get<std::string>(), expected)) {
+        sessions_.erase(it);
+        socket.close(1008, "Business authentication required");
+        return false;
+      }
+      it->second = {now, 0, true};
+      socket.sendText(R"({"type":"auth_ok"})");
+      return false;
+    }
+    if (now - it->second.start >= std::chrono::seconds(1)) it->second = {now, 0, true};
     if (message->binary || message->str.size() > 65536 || ++it->second.count > 120) {
       sessions_.erase(it); socket.close(1008, "Business message limit exceeded"); return false;
     }

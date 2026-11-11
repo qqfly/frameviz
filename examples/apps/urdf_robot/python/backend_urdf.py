@@ -14,7 +14,7 @@ Dependencies:
 """
 
 import argparse
-from frameviz.business_auth import authorize_business_socket, business_messages
+from frameviz.business_auth import authorize_business_socket, business_messages, select_business_subprotocol
 import asyncio
 import http.server
 import json
@@ -204,18 +204,11 @@ def _wait_asset_server_ready(timeout: float = 5.0) -> None:
     if not AUTO_START_ASSET_SERVER:
         return
     import time
-    import urllib.request
-    import urllib.error
-
     end = time.monotonic() + timeout
-    url = f"http://127.0.0.1:{ASSET_SERVER_PORT}/"
     while time.monotonic() < end:
-        try:
-            req = urllib.request.Request(url, method="HEAD")
-            urllib.request.urlopen(req, timeout=0.3)
+        if _is_port_open("127.0.0.1", ASSET_SERVER_PORT):
             return
-        except (urllib.error.URLError, OSError):
-            time.sleep(0.1)
+        time.sleep(0.1)
     print("[Backend] Warning: asset server not ready after timeout")
 
 
@@ -767,6 +760,7 @@ async def main() -> None:
         WS_HOST,
         WS_PORT,
         subprotocols=["frameviz-business"],
+        select_subprotocol=select_business_subprotocol,
         ping_interval=20,
     )
 

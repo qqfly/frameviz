@@ -69,6 +69,8 @@ type SliderStateUpdate = {
   box_handle?: string
 }
 
+type BackendAuth = { type: 'auth_ok' }
+
 type BackendError = {
   type: 'error'
   message?: string
@@ -114,11 +116,10 @@ function connectBackend() {
 
   const businessToken = new URLSearchParams(window.location.hash.slice(1)).get('business_token')
   if (!businessToken) { console.error('[App] business_token is required in the URL fragment'); return }
-  backendSocket = new WebSocket(BACKEND_WS_URL, ['frameviz-business', `token.${businessToken}`])
+  backendSocket = new WebSocket(BACKEND_WS_URL)
 
   backendSocket.onopen = () => {
-    backendConnected.value = true
-    sendViewerBinding()
+    backendSocket?.send(JSON.stringify({ type: 'auth', token: businessToken }))
   }
 
   backendSocket.onclose = () => {
@@ -135,8 +136,11 @@ function connectBackend() {
 
   backendSocket.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data) as SliderStateUpdate | BackendError
-      if (msg.type === 'state_update') {
+      const msg = JSON.parse(event.data) as SliderStateUpdate | BackendError | BackendAuth
+      if (msg.type === 'auth_ok') {
+        backendConnected.value = true
+        sendViewerBinding()
+      } else if (msg.type === 'state_update') {
         boxHandle.value = msg.box_handle || ''
       } else if (msg.type === 'error') {
         console.error('[App] Backend error:', msg.message || 'unknown error')
@@ -148,7 +152,7 @@ function connectBackend() {
 }
 
 function sendBackendCommand(name: string, args: Record<string, unknown> = {}) {
-  if (!backendSocket || backendSocket.readyState !== WebSocket.OPEN) return
+  if (!backendConnected.value || !backendSocket || backendSocket.readyState !== WebSocket.OPEN) return
   backendSocket.send(JSON.stringify({ name, args }))
 }
 

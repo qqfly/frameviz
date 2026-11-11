@@ -21,7 +21,7 @@ import os
 from typing import Any, Dict, List, Optional, Set
 
 import frameviz as fv
-from frameviz.business_auth import authorize_business_socket, business_messages
+from frameviz.business_auth import authorize_business_socket, business_messages, select_business_subprotocol
 
 DEFAULT_WS_HOST = os.environ.get("SIMPLE_SLIDER_WS_HOST", "127.0.0.1")
 DEFAULT_WS_PORT = int(os.environ.get("SIMPLE_SLIDER_WS_PORT", "9621"))
@@ -306,6 +306,7 @@ async def run_backend(args: argparse.Namespace) -> None:
         args.ws_host,
         args.ws_port,
         subprotocols=["frameviz-business"],
+        select_subprotocol=select_business_subprotocol,
         ping_interval=20,
     )
 
