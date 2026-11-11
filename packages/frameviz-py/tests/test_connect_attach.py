@@ -10,15 +10,7 @@ import frameviz.viz as fv_viz
 def test_resolve_connection_url_uses_env_var(monkeypatch):
     monkeypatch.setenv("FRAMEVIZ_HOST", "ws://127.0.0.1:11001")
 
-    with patch.object(
-        fv_viz, "_resolve_ws_url", return_value="ws://127.0.0.1:11001"
-    ) as mock_resolve:
-        resolved = fv_viz._resolve_connection_url(None)
-
-    assert resolved == "ws://127.0.0.1:11001"
-    mock_resolve.assert_called_once_with(
-        "ws://127.0.0.1:11001", allow_discovery=True
-    )
+    assert fv_viz._resolve_connection_url(None) == "ws://127.0.0.1:11001"
 
 
 def test_connect_by_view_id_uses_list_views_resolution():
