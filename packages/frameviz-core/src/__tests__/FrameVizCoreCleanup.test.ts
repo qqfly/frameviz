@@ -168,6 +168,23 @@ describe('FrameVizCore cleanup', () => {
     expect(a.material.color.r).toBe(1);
   });
 
+  it('keeps color and opacity changes after a picked object is deselected', () => {
+    core.handleCommand('add_primitive', { type: 'box', color: [1, 0, 0] }, { handle: 'picked' });
+    const object = (core as any).objects.get('picked');
+    const original = object.material;
+    (core as any).pickingManager.highlightObject('picked');
+    expect(object.material).not.toBe(original);
+    core.handleCommand('set_color', { handle: 'picked', rgba: [0, 1, 0, 1] });
+    core.handleCommand('set_alpha', { handle: 'picked', alpha: 0.4 });
+    expect(object.material).not.toBe(original);
+    expect(object.material.color.toArray()).toEqual([0, 1, 0]);
+    expect(object.material.opacity).toBe(0.4);
+    core.handleCommand('clear_pick_highlight', {});
+    expect(object.material).toBe(original);
+    expect(object.material.color.toArray()).toEqual([0, 1, 0]);
+    expect(object.material.opacity).toBe(0.4);
+  });
+
   it('replays mutations made while a model is loading', async () => {
     core.handleCommand('load_mesh', { url: '/model.stl' }, { handle: 'm' });
     core.handleCommand('set_transform', { handle: 'm', pose: { pos: [2, 3, 4], quat: [0, 0, 0, 1] } });

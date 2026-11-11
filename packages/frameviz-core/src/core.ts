@@ -679,56 +679,11 @@ export class FrameVizCore {
         }
         const obj = this.objects.get(handle);
         if (obj) {
-          const instanceArgs = obj.userData.instanceArgs;
-          if (instanceArgs) {
-            obj.userData.instanceArgs = { ...instanceArgs, color: rgba, alpha: rgba[3] ?? 1 };
-            delete obj.userData.instanceArgs.colors;
-            obj.traverse(child => { if ((child as THREE.InstancedMesh).isInstancedMesh) (child as THREE.InstancedMesh).instanceColor = null; });
-
-          }
-          const removedColors: string[] = obj.userData.colorBufferIds ??
-            (obj.userData.colorBufferId ? [obj.userData.colorBufferId] : []);
-          if (removedColors.length > 0) {
-            const ids: string[] = [...(obj.userData.bufferIds ?? [])];
-            for (const id of removedColors) {
-              const index = ids.lastIndexOf(id);
-              if (index >= 0) ids.splice(index, 1);
-            }
-            obj.userData.bufferIds = ids;
-            delete obj.userData.colorBufferId;
-            delete obj.userData.colorBufferIds;
-            this.releaseUnusedBuffers(removedColors);
-          }
-          const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
-          const div = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLDivElement | undefined;
-          if (cssLabel.isCSS2DObject || div) {
-            if (div) {
-              const r = Math.round(rgba[0] * 255);
-              const g = Math.round(rgba[1] * 255);
-              const b = Math.round(rgba[2] * 255);
-              const a = rgba.length >= 4 ? rgba[3] ?? 1 : 1;
-              div.style.color = a < 1 ? `rgba(${r},${g},${b},${a})` : `rgb(${r},${g},${b})`;
-            }
-            return;
-          }
-          // Convert vertex-colored geometry to uniform color when needed
-          if (obj.userData.hasVertexColors === true) {
-            if (obj instanceof THREE.Mesh) {
-              this.convertMeshToUniformColor(obj, rgba);
-            } else if (obj instanceof THREE.Points) {
-              this.convertPointsToUniformColor(obj, rgba);
-            } else {
-              obj.traverse(child => {
-                if (child instanceof THREE.Points && child.userData.hasVertexColors) {
-                  this.convertPointsToUniformColor(child, rgba);
-                  child.userData.hasVertexColors = false;
-                }
-              });
-              this.applyColor(obj, rgba);
-            }
-            obj.userData.hasVertexColors = false;
-          } else {
-            this.applyColor(obj, rgba);
+          const restoreHighlight = this.pickingManager?.suspendObjectHighlight(handle);
+          try {
+            this.setDrawableColor(obj, rgba);
+          } finally {
+            restoreHighlight?.();
           }
         }
         return;
@@ -739,8 +694,13 @@ export class FrameVizCore {
         if (typeof alpha !== "number" || isNaN(alpha) || alpha < 0 || alpha > 1) return;
         const obj = this.objects.get(handle);
         if (obj) {
-          this.applyAlpha(obj, alpha);
-          if (obj.userData.instanceArgs) obj.userData.instanceArgs.alpha = alpha;
+          const restoreHighlight = this.pickingManager?.suspendObjectHighlight(handle);
+          try {
+            this.applyAlpha(obj, alpha);
+            if (obj.userData.instanceArgs) obj.userData.instanceArgs.alpha = alpha;
+          } finally {
+            restoreHighlight?.();
+          }
         }
         return;
       }
@@ -1830,6 +1790,59 @@ export class FrameVizCore {
         return data instanceof Uint8Array ? data : new Uint8Array(buffer);
       default:
         return data instanceof Uint8Array ? data : new Uint8Array(buffer);
+    }
+  }
+
+  private setDrawableColor(obj: THREE.Object3D, rgba: number[]): void {
+    const instanceArgs = obj.userData.instanceArgs;
+    if (instanceArgs) {
+      obj.userData.instanceArgs = { ...instanceArgs, color: rgba, alpha: rgba[3] ?? 1 };
+      delete obj.userData.instanceArgs.colors;
+      obj.traverse(child => { if ((child as THREE.InstancedMesh).isInstancedMesh) (child as THREE.InstancedMesh).instanceColor = null; });
+    }
+    const removedColors: string[] = obj.userData.colorBufferIds ??
+      (obj.userData.colorBufferId ? [obj.userData.colorBufferId] : []);
+    if (removedColors.length > 0) {
+      const ids: string[] = [...(obj.userData.bufferIds ?? [])];
+      for (const id of removedColors) {
+        const index = ids.lastIndexOf(id);
+        if (index >= 0) ids.splice(index, 1);
+      }
+      obj.userData.bufferIds = ids;
+      delete obj.userData.colorBufferId;
+      delete obj.userData.colorBufferIds;
+      this.releaseUnusedBuffers(removedColors);
+    }
+    const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
+    const div = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLDivElement | undefined;
+    if (cssLabel.isCSS2DObject || div) {
+      if (div) {
+        const r = Math.round(rgba[0] * 255);
+        const g = Math.round(rgba[1] * 255);
+        const b = Math.round(rgba[2] * 255);
+        const a = rgba.length >= 4 ? rgba[3] ?? 1 : 1;
+        div.style.color = a < 1 ? `rgba(${r},${g},${b},${a})` : `rgb(${r},${g},${b})`;
+      }
+      return;
+    }
+    // Convert vertex-colored geometry to uniform color when needed
+    if (obj.userData.hasVertexColors === true) {
+      if (obj instanceof THREE.Mesh) {
+        this.convertMeshToUniformColor(obj, rgba);
+      } else if (obj instanceof THREE.Points) {
+        this.convertPointsToUniformColor(obj, rgba);
+      } else {
+        obj.traverse(child => {
+          if (child instanceof THREE.Points && child.userData.hasVertexColors) {
+            this.convertPointsToUniformColor(child, rgba);
+            child.userData.hasVertexColors = false;
+          }
+        });
+        this.applyColor(obj, rgba);
+      }
+      obj.userData.hasVertexColors = false;
+    } else {
+      this.applyColor(obj, rgba);
     }
   }
 

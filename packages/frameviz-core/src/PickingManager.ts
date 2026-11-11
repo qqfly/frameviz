@@ -116,6 +116,13 @@ export class PickingManager {
     return { ...this.lastPickInfo };
   }
 
+  suspendObjectHighlight(handle: string): (() => void) | undefined {
+    if (this.selectedHandle !== handle) return;
+    // Appearance commands must update the base material that deselection restores.
+    this.clearHighlight();
+    return () => this.highlightObject(handle);
+  }
+
   clearHighlight(): void {
     if (this.selectedHandle && this.selectedOriginalMaterial) {
       const obj = this.objects.get(this.selectedHandle) as THREE.Mesh | undefined;
