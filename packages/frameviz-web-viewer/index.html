@@ -264,6 +264,7 @@
       if (!core) return;
       sceneId = snapshot.scene_id;
       replaySnapshot(core, snapshot);
+      if (capture) window.__FRAMEVIZ_CAPTURE_SNAPSHOT__ = snapshot;
       document.documentElement.dataset.sceneReady = "true";
       updateObjectCount();
     }

@@ -65,6 +65,25 @@ viz.close()
 也可传入 `camera_view=viz.get_camera_view()` 的同结构数据，改变这一次的拍摄视角。
 后台 Chromium 自动启动并在同一个 Python 进程中复用。默认使用同版本本机 Host 提供的 Viewer。
 
+### 离线教程
+
+使用和截图相同的后台组件。仅导出静态场景时调用 `viz.export_html("lesson.html")`。
+也可以给对象 ID 指定预先计算好的局部刚体位姿轨迹，时间单位为秒，严格递增。
+
+```python
+box = viz.add_box()
+viz.export_html("lesson.html", animation={
+    box: [
+        {"time": 0, "pose": [0, 0, 0, 0, 0, 0, 1]},
+        {"time": 2, "pose": [1, 0, 0, 0, 0, 1, 0]},
+    ],
+})
+```
+
+读者双击 `lesson.html` 即可浏览，或由教程页面以 `<iframe src="lesson.html" title="位姿动画"></iframe>` 嵌入。
+播放、暂停和进度只作用于预计算轨迹，读者仍可独立旋转和缩放视角。
+导出时需要能加载场景引用的模型和图片，成功后页面携带其绘图数据。
+
 ### C++ 场景节点
 
 ```cpp

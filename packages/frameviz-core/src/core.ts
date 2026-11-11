@@ -579,8 +579,10 @@ export class FrameVizCore {
         const token = ++this.loadTokenCounter;
         this.pendingLoads.set(handle, token);
         this.failedModels.delete(handle);
-        this.meshLoader
-          .load(url, { color: color ? [color[0], color[1], color[2]] : undefined })
+        const model = args.baked_model
+          ? new THREE.ObjectLoader().parseAsync(args.baked_model)
+          : this.meshLoader.load(url, { color: color ? [color[0], color[1], color[2]] : undefined });
+        model
           .then((obj) => {
             if (this.pendingLoads.get(handle) !== token) {
               this.disposeObject(obj);
@@ -1306,6 +1308,51 @@ export class FrameVizCore {
         this.pendingRenders.push(item);
       }
     }
+  }
+
+  /**
+   * Inline the buffers and compiled mesh assets from an isolated capture snapshot.
+   * The offline viewer can replay the resulting display data without any network.
+   */
+  prepareTutorialSnapshot(snapshot: Record<string, any>): Record<string, unknown> {
+    const buffers: Record<string, unknown> = {};
+    for (const [id, info] of Object.entries(snapshot.buffers ?? {}) as [string, Record<string, unknown>][]) {
+      if (typeof info.data_base64 === 'string') {
+        buffers[id] = info;
+        continue;
+      }
+      const data = this.buffers.get(id)?.data;
+      if (!data) throw new Error(`Missing geometry buffer ${id}`);
+      const bytes = ArrayBuffer.isView(data)
+        ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        : new Uint8Array(data);
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 32768) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+      }
+      buffers[id] = { ...info, data_base64: btoa(binary) };
+    }
+
+    const objects = (snapshot.objects ?? []).map((object: any) => {
+      if (object.object_type !== 'loaded_mesh') return object;
+      const drawable = this.objects.get(object.handle);
+      if (!drawable) throw new Error(`Missing loaded model ${object.handle}`);
+      const baked = drawable.toJSON();
+      for (const image of baked.images ?? []) {
+        const sources = Array.isArray(image.url) ? image.url : [image.url];
+        if (sources.some((source: unknown) => typeof source === 'string' && !source.startsWith('data:'))) {
+          throw new Error(`Model ${object.handle} has an image that cannot be embedded`);
+        }
+      }
+      const { url: _, ...data } = object.data;
+      return { ...object, data: { ...data, baked_model: baked } };
+    });
+
+    return {
+      scene_id: snapshot.scene_id, objects, buffers, view_config: snapshot.view_config,
+      camera_pose: snapshot.camera_pose, camera_controls: snapshot.camera_controls,
+      overlays: snapshot.overlays,
+    };
   }
 
   getRenderStatus(): { ready: boolean; failed: string[] } {

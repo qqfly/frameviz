@@ -1650,6 +1650,11 @@ class Viz:
         from ._capture import screenshot
         return screenshot(self, path, camera_view=camera_view, width=width, height=height)
 
+    def export_html(self, path, *, animation=None) -> None:
+        """Write a self-contained lesson with optional precomputed local pose tracks."""
+        from ._tutorial import export_html
+        export_html(self, path, animation=animation)
+
     def get_camera_pose(self) -> Dict[str, Any]:
         """Get the current camera pose (viewer-side).
 
