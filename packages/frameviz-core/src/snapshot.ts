@@ -27,13 +27,13 @@ export function decodeBufferBase64(encoded: string): Uint8Array {
 /** Restore one authoritative object, including while its model/buffers are loading. */
 export function restoreSceneObject(core: FrameVizCore, object: any): void {
   const commands: Record<string, string> = {
-    primitive: 'add_primitive', points: 'add_points', lines: 'add_lines', mesh: 'add_mesh',
+    node: 'add_node', primitive: 'add_primitive', points: 'add_points', lines: 'add_lines', mesh: 'add_mesh',
     instances: 'add_instances', loaded_mesh: 'load_mesh', text3d: 'add_text_3d', text_3d: 'add_text_3d',
   };
   const command = commands[object.object_type];
   if (!command) return;
   const pose = object.pose && { ...object.pose, scale: object.geometry_scale ?? object.pose.scale };
-  const args = { ...object.data, scene_id: object.scene_id, pose,
+  const args = { ...object.data, scene_id: object.scene_id, parent: object.parent, pose,
     pos: object.pose?.pos, color: object.color ?? object.data?.color, group_id: object.group_id };
   core.handleCommand(command, args, { handle: object.handle });
   if (pose) core.handleCommand('set_transform', { handle: object.handle, pose });

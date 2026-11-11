@@ -551,6 +551,10 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
                         let _ = client.sender.cancel.send(true);
                         return;
                     }
+                    if matches!(name, "picked" | "transformed" | "pick_info_response") {
+                        let Some(scene_id) = client.view_id.as_ref().and_then(|id| guard.view_to_scene.get(id)) else { return; };
+                        if !guard.host.annotate_interaction(scene_id, name, &mut data) { return; }
+                    }
                     data["view_id"] = json!(client.view_id);
                     data["scene_id"] = json!(client.scene_id);
                     drop(guard);

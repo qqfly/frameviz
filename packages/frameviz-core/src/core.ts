@@ -50,6 +50,7 @@ export class FrameVizCore {
   private keydownHandler?: (event: KeyboardEvent) => void;
 
   private objects = new Map<string, THREE.Object3D>();
+  private frames = new Map<string, THREE.Group>();
   private overlays2d = new Map<string, HTMLElement>();
   private buffers = new Map<string, BufferEntry>();
   private pendingRenders: PendingRender[] = [];
@@ -84,57 +85,7 @@ export class FrameVizCore {
         this.cameraController.controls,
         this.sceneManager.scene
       );
-      this.gizmoManager.setTransformChangeCallback((handle, pose) => {
-        const obj = this.objects.get(handle);
-        if (!obj) {
-          return;
-        }
-        const normalizedPose: Pose = {
-          pos: [pose.pos[0], pose.pos[1], pose.pos[2]],
-          quat: [pose.quat[0], pose.quat[1], pose.quat[2], pose.quat[3]],
-          scale: [pose.scale[0], pose.scale[1], pose.scale[2]],
-        };
-        const groupId = obj.userData?.group_id as string | undefined;
-        const targets: string[] = [];
-        if (groupId) {
-          for (const [objHandle, objEntry] of this.objects) {
-            if ((objEntry?.userData?.group_id as string | undefined) === groupId) {
-              targets.push(objHandle);
-            }
-          }
-        } else {
-          targets.push(handle);
-        }
-        if (targets.length > 1) {
-          const items = [];
-          for (const target of targets) {
-            const targetObj = this.objects.get(target);
-            if (targetObj) {
-              this.geometryFactory?.applyPose(targetObj, normalizedPose);
-            }
-            items.push({ handle: target, pose: normalizedPose });
-          }
-          this.emitCommand("set_object_transforms", { items });
-        } else {
-          const target = targets[0];
-          const targetObj = this.objects.get(target);
-          if (targetObj) {
-            this.geometryFactory?.applyPose(targetObj, normalizedPose);
-          }
-          const sceneId = targetObj?.userData?.scene_id as string | undefined;
-          this.emitCommand("set_transform", {
-            handle: target,
-            scene_id: sceneId,
-            pose: normalizedPose,
-          });
-        }
-        this.emitEvent("transformed", {
-          view_id: this.viewId,
-          handle: groupId ?? handle,
-          pose: { pos: normalizedPose.pos, quat: normalizedPose.quat },
-          scale: normalizedPose.scale,
-        });
-      });
+      this.gizmoManager.setTransformChangeCallback((handle, pose) => this.onGizmoTransform(handle, pose));
       this.pickingManager = new PickingManager({
         scene: this.sceneManager.scene,
         camera: this.sceneManager.camera,
@@ -188,14 +139,12 @@ export class FrameVizCore {
   }
 
   getObjectCount(options: { grouped?: boolean } = {}): number {
+    const emptyNodes = [...this.frames.values()].filter(frame => frame.userData.emptyNode).length;
     if (!options.grouped) {
-      return this.objects.size;
-    }
-    if (this.objects.size === 0) {
-      return 0;
+      return this.objects.size + emptyNodes;
     }
     const groupIds = new Set<string>();
-    let count = 0;
+    let count = emptyNodes;
     for (const obj of this.objects.values()) {
       const groupId = obj.userData?.group_id as string | undefined;
       if (groupId) {
@@ -314,7 +263,7 @@ export class FrameVizCore {
     const deferredHandle = args.handle as string;
     if (deferredHandle && !this.objects.has(deferredHandle) &&
         (this.pendingLoads.has(deferredHandle) || this.pendingRenders.some(p => p.handle === deferredHandle)) &&
-        ['set_transform', 'set_color', 'set_alpha', 'set_visible'].includes(name)) {
+        ['set_color', 'set_alpha'].includes(name)) {
       const changes = this.deferredMutations.get(deferredHandle) ?? [];
       // Only the latest value of each property matters while loading.
       this.deferredMutations.set(deferredHandle, [...changes.filter(([n]) => n !== name), [name, args]]);
@@ -328,7 +277,19 @@ export class FrameVizCore {
       return;
     }
 
+    const created = result.handle as string | undefined;
+    if (created && [
+      "add_node", "add_primitive", "add_points", "add_lines", "add_mesh",
+      "add_instances", "load_mesh", "add_text_3d",
+    ].includes(name)) {
+      this.createFrame(created, args, name === "add_node");
+    }
+
     switch (name) {
+      case "add_node":
+      case "set_object_metadata":
+        // Metadata is authoritative on Host and accompanies interaction events.
+        return;
       case "create_buffer": {
         const bufferId = (result as { buffer_id?: string }).buffer_id ?? (args.buffer_id as string);
         if (!bufferId) return;
@@ -368,49 +329,45 @@ export class FrameVizCore {
             color: cssColor,
             fontSize: height,
           });
-          this.geometryFactory.applyPose(label, (args.pose as Pose) || {});
           label.userData.handle = handle;
           label.userData.scene_id = args.scene_id;
-          this.sceneManager.addObject(handle, label);
-          this.objects.set(handle, label);
+          this.putDrawable(handle, label);
           return;
         }
-        const obj = this.geometryFactory.createPrimitive(ptype as any, params, color);
-        const arrowHasStartEnd = ptype === "arrow" && params.start && params.end;
-        if (!arrowHasStartEnd) {
-          this.geometryFactory.applyPose(obj, (args.pose as Pose) || {});
-        }
+        const shape = this.geometryFactory.createPrimitive(ptype as any, params, color);
+        const obj = ptype === "arrow" && params.start && params.end ? new THREE.Group().add(shape) : shape;
         obj.userData.handle = handle;
         obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-        this.sceneManager.addObject(handle, obj);
-        this.objects.set(handle, obj);
+        this.putDrawable(handle, obj);
         return;
       }
       case "add_points": {
-        const handle = (result as { handle?: string }).handle;
+        const handle = result.handle as string;
         if (!handle) return;
-        const posRef = args.positions as BufferRef;
-        const colRef = args.colors as BufferRef | undefined;
-        const color = this.toColorArray(args.color as number[] | undefined);
+        const chunks = args.chunks as Array<{ positions: BufferRef; colors?: BufferRef }> | undefined;
+        const parts = chunks ?? [{ positions: args.positions as BufferRef, colors: args.colors as BufferRef | undefined }];
         const size = (args.size as number) ?? 1;
-        const groupId = args.group_id as string | undefined;
-        this.enqueueIfMissingBuffers(handle, [posRef, colRef].filter(Boolean) as BufferRef[], () => {
-          const positions = this.getBufferTypedArray(posRef) as Float32Array;
-          const colors = colRef ? (this.getBufferTypedArray(colRef) as Uint8Array) : undefined;
-          const obj = this.geometryFactory!.createPoints(positions, colors, size, colors ? undefined : color);
-          obj.userData.colorBufferId = colRef?.buffer_id;
+        const color = this.toColorArray(args.color as number[] | undefined);
+        const refs = parts.flatMap(part => part.colors ? [part.positions, part.colors] : [part.positions]);
+        this.enqueueIfMissingBuffers(handle, refs, () => {
+          let offset = 0;
+          const points = parts.map(part => {
+            const positions = this.getBufferTypedArray(part.positions) as Float32Array;
+            const colors = part.colors ? this.getBufferTypedArray(part.colors) as Uint8Array : undefined;
+            const points = this.geometryFactory!.createPoints(positions, colors, size, colors ? undefined : color);
+            points.userData.pointOffset = offset;
+            points.userData.hasVertexColors = Boolean(colors);
+            offset += points.geometry.attributes.position.count;
+            return points;
+          });
+          const obj = chunks ? new THREE.Group().add(...points) : points[0];
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
-          if (args.group_id) obj.userData.group_id = args.group_id;
-          if (groupId) {
-            obj.userData.group_id = groupId;
-          }
-          if (colors) {
-            obj.userData.hasVertexColors = true;
-          }
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          obj.userData.group_id = args.group_id;
+          obj.userData.colorBufferIds = parts.flatMap(part => part.colors ? [part.colors.buffer_id] : []);
+          obj.userData.hasVertexColors = parts.some(part => part.colors);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -428,8 +385,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -484,8 +440,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
             obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-            this.sceneManager!.addObject(handle, obj);
-            this.objects.set(handle, obj);
+            this.putDrawable(handle, obj);
             return;
           } else {
             faces = this.getBufferTypedArray(faceRef as BufferRef) as Uint32Array;
@@ -509,8 +464,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -543,8 +497,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -582,8 +535,7 @@ export class FrameVizCore {
           next.userData = { ...previous.userData, instanceArgs: merged, colorBufferId: merged.colors?.buffer_id };
           this.sceneManager!.removeObject(handle);
           this.disposeObject(previous);
-          this.sceneManager!.addObject(handle, next);
-          this.objects.set(handle, next);
+          this.putDrawable(handle, next);
           if (this.gizmoManager?.getAttachedHandle() === handle) this.gizmoManager.attach(next, handle);
           this.pickingManager?.clearHighlight();
           this.renderModeManager?.cleanupHelpers(this.objects);
@@ -596,8 +548,7 @@ export class FrameVizCore {
         if (!handle) return;
         if (this.objects.has(handle)) return;
         const url = args.url as string;
-        const pose = (args.pose as Pose) || { pos: [0, 0, 0], quat: [0, 0, 0, 1] };
-        const scale = (args.scale as number[]) || [1, 1, 1];
+
         const color = args.color as number[] | undefined;
         if (!this.meshLoader) {
           this.meshLoader = new MeshLoader();
@@ -616,10 +567,7 @@ export class FrameVizCore {
             obj.userData.handle = handle;
             obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-            obj.scale.set(scale[0], scale[1], scale[2]);
-            this.geometryFactory?.applyPose(obj, pose);
-            this.sceneManager?.addObject(handle, obj);
-            this.objects.set(handle, obj);
+            this.putDrawable(handle, obj);
             this.replayDeferred(handle);
             this.emitEvent('object_ready', { handle, view_id: this.viewId });
           })
@@ -634,19 +582,28 @@ export class FrameVizCore {
         return;
       }
       case "set_transform": {
+        this.setFramePose(args.handle as string, args);
+        return;
+      }
+      case "set_geometry_scale": {
+        this.setFramePose(args.handle as string, args);
+        return;
+      }
+      case "set_parent": {
         const handle = args.handle as string;
-        const obj = this.objects.get(handle);
-        if (obj) {
-          this.geometryFactory.applyPose(obj, (args.pose as Pose) || {});
-        }
+        const frame = this.frames.get(handle);
+        const parent = this.frameParent(result.parent ?? args.parent);
+        if (!frame || !parent || parent === frame) return;
+        parent.add(frame);
+        const drawable = this.objects.get(handle);
+        if (drawable) parent.add(drawable);
+        this.setFramePose(handle, { pose: result.pose ?? args.local_transform });
         return;
       }
       case "set_object_transforms": {
-        const items = args.items as Array<{ handle: string; pose: Pose }>;
+        const items = args.items as Array<Record<string, unknown>>;
         if (Array.isArray(items)) {
-          for (const item of items) {
-            this.handleCommand('set_transform', { handle: item.handle, pose: item.pose });
-          }
+          for (const item of items) this.setFramePose(item.handle as string, item);
         }
         return;
       }
@@ -702,14 +659,18 @@ export class FrameVizCore {
             obj.traverse(child => { if ((child as THREE.InstancedMesh).isInstancedMesh) (child as THREE.InstancedMesh).instanceColor = null; });
 
           }
-          const removedColor = obj.userData.colorBufferId;
-          if (removedColor) {
+          const removedColors: string[] = obj.userData.colorBufferIds ??
+            (obj.userData.colorBufferId ? [obj.userData.colorBufferId] : []);
+          if (removedColors.length > 0) {
             const ids: string[] = [...(obj.userData.bufferIds ?? [])];
-            const index = ids.lastIndexOf(removedColor);
-            if (index >= 0) ids.splice(index, 1);
+            for (const id of removedColors) {
+              const index = ids.lastIndexOf(id);
+              if (index >= 0) ids.splice(index, 1);
+            }
             obj.userData.bufferIds = ids;
             delete obj.userData.colorBufferId;
-            this.releaseUnusedBuffers([removedColor]);
+            delete obj.userData.colorBufferIds;
+            this.releaseUnusedBuffers(removedColors);
           }
           const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
           const div = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLDivElement | undefined;
@@ -730,6 +691,12 @@ export class FrameVizCore {
             } else if (obj instanceof THREE.Points) {
               this.convertPointsToUniformColor(obj, rgba);
             } else {
+              obj.traverse(child => {
+                if (child instanceof THREE.Points && child.userData.hasVertexColors) {
+                  this.convertPointsToUniformColor(child, rgba);
+                  child.userData.hasVertexColors = false;
+                }
+              });
               this.applyColor(obj, rgba);
             }
             obj.userData.hasVertexColors = false;
@@ -784,8 +751,10 @@ export class FrameVizCore {
           }
           return;
         }
+        const visible = Boolean(args.visible);
+        const frame = this.frames.get(handle);
+        if (frame) frame.visible = visible;
         if (obj) {
-          const visible = Boolean(args.visible);
           obj.visible = visible;
           (obj as THREE.Object3D & { userData: { userVisible?: boolean } }).userData.userVisible = visible;
           // Re-apply current render mode so points helpers respect visibility.
@@ -865,17 +834,7 @@ export class FrameVizCore {
             this.cameraController!.controls,
             this.sceneManager.scene
           );
-          this.gizmoManager.setTransformChangeCallback((handle, pose) => {
-            const obj = this.objects.get(handle);
-            const sceneId = obj?.userData?.scene_id as string | undefined;
-            this.emitCommand("set_transform", { handle, scene_id: sceneId, pose });
-            this.emitEvent("transformed", {
-              view_id: this.viewId,
-              handle,
-              pose: { pos: pose.pos, quat: pose.quat },
-              scale: pose.scale,
-            });
-          });
+          this.gizmoManager.setTransformChangeCallback((handle, pose) => this.onGizmoTransform(handle, pose));
         }
 
         // Rebind PickingManager to new canvas
@@ -966,7 +925,7 @@ export class FrameVizCore {
       }
       case "attach_gizmo": {
         const handle = args.handle as string;
-        const obj = this.objects.get(handle);
+        const obj = this.objects.get(handle) ?? this.frames.get(handle);
         if (!obj || !this.gizmoManager) return;
         this.gizmoManager.attach(obj, handle, {
           size: args.size as number | undefined,
@@ -1094,45 +1053,12 @@ export class FrameVizCore {
         }
         return;
       }
-      case "remove_object": {
-        const handle = args.handle as string;
-        const bufferIds = this.objects.get(handle)?.userData.bufferIds ?? [];
-        this.deferredMutations.delete(handle);
-        const obj = this.objects.get(handle);
-        if (obj && this.sceneManager) {
-          const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
-          const labelDiv = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLElement | undefined;
-          if ((cssLabel.isCSS2DObject || labelDiv) && this.labelManager) {
-            this.labelManager.removeLabel(obj as any);
-          }
-          this.disposeObject(obj);
-          this.sceneManager.removeObject(handle);
-          this.objects.delete(handle);
-        }
-        this.removePendingRendersForHandle(handle);
-        this.pendingLoads.delete(handle);
-        if (this.gizmoManager?.getAttachedHandle() === handle) {
-          this.gizmoManager.detach();
-        }
-        if (this.pickingManager) {
-          const info = this.pickingManager.getLastPickInfo();
-          if (info.handle === handle) {
-            this.pickingManager.clearHighlight();
-          }
-        }
-        const overlay = this.overlays2d.get(handle);
-        if (overlay) {
-          overlay.remove();
-          this.overlays2d.delete(handle);
-        }
-        this.releaseUnusedBuffers(bufferIds);
-        return;
-      }
+      case "remove_object":
+      case "remove_text_3d":
       case "remove_objects": {
-        const handles = (args.handles as string[]) || [];
-        for (const handle of handles) {
-          this.handleCommand("remove_object", { handle }, {});
-        }
+        const roots = name === "remove_objects" ? args.handles as string[] : [args.handle as string];
+        const handles = Array.isArray(result.removed) ? result.removed as string[] : this.subtreeHandles(roots);
+        for (const handle of handles) this.removeDrawableAndFrame(handle);
         return;
       }
       case "clone_object": {
@@ -1162,14 +1088,22 @@ export class FrameVizCore {
             mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cloneMaterial) : cloneMaterial(mesh.material);
           }
         });
+        const original = this.frames.get(sourceHandle);
+        const record = result.object as Record<string, unknown> | undefined;
+        this.createFrame(handle, record ?? {
+          parent: original?.parent?.userData.sceneNodeHandle,
+          scene_id: source.userData.scene_id,
+          pose: { pos: source.position.toArray(), quat: source.quaternion.toArray() },
+          geometry_scale: source.scale.toArray(),
+        });
+        this.frames.get(handle)!.visible = source.userData.userVisible ?? source.visible;
         cloned.userData.handle = handle;
         cloned.userData.scene_id = source.userData.scene_id;
         const groupId = args.group_id as string | undefined;
         if (groupId) {
           cloned.userData.group_id = groupId;
         }
-        this.sceneManager?.addObject(handle, cloned);
-        this.objects.set(handle, cloned);
+        this.putDrawable(handle, cloned);
         this.emitEvent('object_ready', { handle, view_id: this.viewId });
         return;
       }
@@ -1217,13 +1151,12 @@ export class FrameVizCore {
         });
         label.userData.handle = handle;
         label.userData.scene_id = args.scene_id;
-        if (this.sceneManager) {
-          this.sceneManager.addObject(handle, label);
-        }
-        this.objects.set(handle, label);
+        this.putDrawable(handle, label);
         return;
       }
       case "update_text_3d": {
+        const pos = args.pos as [number, number, number] | undefined;
+        if (pos) this.setFramePose(args.handle as string, { pose: { pos } });
         const label = this.objects.get(args.handle as string);
         if (label && this.labelManager) {
           this.labelManager.updateLabel(label as any, {
@@ -1232,16 +1165,6 @@ export class FrameVizCore {
             color: args.color as [number, number, number] | undefined,
             fontSize: args.font_size as number | undefined,
           });
-        }
-        return;
-      }
-      case "remove_text_3d": {
-        const handle = args.handle as string;
-        const label = this.objects.get(handle);
-        if (label) {
-          this.labelManager?.removeLabel(label as any);
-          this.sceneManager?.removeObject(handle);
-          this.objects.delete(handle);
         }
         return;
       }
@@ -1587,6 +1510,122 @@ export class FrameVizCore {
     }
   }
 
+  private frameParent(parent: unknown): THREE.Object3D | undefined {
+    return typeof parent === "string" ? this.frames.get(parent) : this.sceneManager?.scene;
+  }
+
+  private createFrame(handle: string, args: Record<string, unknown>, empty = false): void {
+    if (this.frames.has(handle)) return;
+    const frame = new THREE.Group();
+    frame.userData.sceneNodeHandle = handle;
+    frame.userData.scene_id = args.scene_id;
+    frame.userData.emptyNode = empty;
+    this.frames.set(handle, frame);
+    this.frameParent(args.parent)?.add(frame);
+    this.setFramePose(handle, args);
+  }
+
+  private setFramePose(handle: string, args: Record<string, unknown>): void {
+    const input = args.pose as (Pose & { position?: Pose["pos"]; quaternion?: Pose["quat"] }) | number[] | undefined;
+    const pose: Pose = Array.isArray(input)
+      ? { pos: [input[0], input[1], input[2]], quat: [input[3], input[4], input[5], input[6]] }
+      : { pos: input?.position ?? input?.pos ?? args.pos as Pose["pos"], quat: input?.quaternion ?? input?.quat };
+    const scale = (args.geometry_scale ?? (Array.isArray(input) ? undefined : input?.scale) ?? args.scale) as Pose["scale"];
+    const frame = this.frames.get(handle);
+    if (frame) {
+      this.geometryFactory?.applyPose(frame, pose);
+      if (scale) frame.userData.geometryScale = scale;
+    }
+    const drawable = this.objects.get(handle);
+    if (drawable) this.geometryFactory?.applyPose(drawable, { ...pose, scale });
+  }
+
+  private putDrawable(handle: string, drawable: THREE.Object3D): void {
+    this.sceneManager?.addObject(handle, drawable);
+    this.objects.set(handle, drawable);
+    const frame = this.frames.get(handle);
+    if (!frame) return;
+    // Drawables and the unscaled frame are siblings. Child nodes attach to the frame.
+    frame.parent?.add(drawable);
+    drawable.position.copy(frame.position);
+    drawable.quaternion.copy(frame.quaternion);
+    if (frame.userData.geometryScale) drawable.scale.fromArray(frame.userData.geometryScale);
+    drawable.visible = frame.visible;
+    drawable.userData.userVisible = frame.visible;
+  }
+
+  private onGizmoTransform(handle: string, value: { pos: number[]; quat: number[]; scale: number[] }): void {
+    const drawable = this.objects.get(handle);
+    const frame = this.frames.get(handle);
+    if (!frame && !drawable) return;
+    const pose = { pos: value.pos, quat: value.quat };
+    const groupId = drawable?.userData.group_id as string | undefined;
+    const sceneId = frame?.userData.scene_id ?? drawable?.userData.scene_id;
+    const args = { pose, scene_id: sceneId, ...(drawable && { geometry_scale: value.scale }) };
+    if (!drawable) frame?.scale.set(1, 1, 1);
+    if (groupId) {
+      const items = [...this.objects].filter(([, obj]) => obj.userData.group_id === groupId)
+        .map(([handle]) => ({ ...args, handle }));
+      for (const item of items) this.setFramePose(item.handle, item);
+      this.emitCommand("set_object_transforms", { scene_id: sceneId, items });
+    } else {
+      this.setFramePose(handle, args);
+      this.emitCommand("set_transform", { ...args, handle });
+    }
+    this.emitEvent("transformed", {
+      view_id: this.viewId, handle: groupId ?? handle, pose, ...(drawable && { scale: value.scale }),
+    });
+  }
+
+  private subtreeHandles(roots: string[]): string[] {
+    const handles = new Set(roots);
+    for (const root of roots) {
+      this.frames.get(root)?.traverse(frame => {
+        const handle = frame.userData.sceneNodeHandle;
+        if (this.frames.get(handle) === frame) handles.add(handle);
+      });
+    }
+    return [...handles];
+  }
+
+  private removeDrawableAndFrame(handle: string): void {
+    const bufferIds = [
+      ...(this.objects.get(handle)?.userData.bufferIds ?? []),
+      ...this.pendingRenders.filter(render => render.handle === handle).flatMap(render => render.bufferIds),
+    ];
+    this.frames.get(handle)?.removeFromParent();
+    this.frames.delete(handle);
+    this.deferredMutations.delete(handle);
+    const obj = this.objects.get(handle);
+    if (obj && this.sceneManager) {
+      const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
+      const labelDiv = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLElement | undefined;
+      if ((cssLabel.isCSS2DObject || labelDiv) && this.labelManager) {
+        this.labelManager.removeLabel(obj as any);
+      }
+      this.disposeObject(obj);
+      this.sceneManager.removeObject(handle);
+      this.objects.delete(handle);
+    }
+    this.removePendingRendersForHandle(handle);
+    this.pendingLoads.delete(handle);
+    if (this.gizmoManager?.getAttachedHandle() === handle) {
+      this.gizmoManager.detach();
+    }
+    if (this.pickingManager) {
+      const info = this.pickingManager.getLastPickInfo();
+      if (info.handle === handle) {
+        this.pickingManager.clearHighlight();
+      }
+    }
+    const overlay = this.overlays2d.get(handle);
+    if (overlay) {
+      overlay.remove();
+      this.overlays2d.delete(handle);
+    }
+    this.releaseUnusedBuffers(bufferIds);
+  }
+
   private clearSceneContents(): void {
     if (!this.sceneManager) return;
     for (const [handle, obj] of this.objects) {
@@ -1594,6 +1633,8 @@ export class FrameVizCore {
       this.sceneManager.removeObject(handle);
     }
     this.objects.clear();
+    for (const frame of this.frames.values()) frame.removeFromParent();
+    this.frames.clear();
     this.gizmoManager?.detach();
     this.pickingManager?.clearHighlight();
     for (const overlay of this.overlays2d.values()) {

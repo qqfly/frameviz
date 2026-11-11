@@ -382,7 +382,7 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
   add_primitive: validateAddPrimitive,
   add_points: (args) => {
     const positions = (value: unknown) => isBufferRef(value, "f32", [0, 3]);
-    const colors = (value: unknown) => isBufferRef(value, "u8", [0, 3]) || isBufferRef(value, "u8", [0, 4]);
+    const colors = (value: unknown) => isBufferRef(value, "u8", [0, 3]);
     const error = validateObject(args, { scene_id: isNonEmptyString }, {
       ...nodeOptions, positions, colors, color: isColor, size: isNumber, group_id: isNonEmptyString,
       chunks: (value) => Array.isArray(value) && value.length > 0 &&

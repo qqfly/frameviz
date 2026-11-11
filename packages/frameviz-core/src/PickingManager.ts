@@ -151,28 +151,17 @@ export class PickingManager {
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    const meshObjects: THREE.Object3D[] = [];
-    const pointObjects: THREE.Points[] = [];
-    const lineObjects: THREE.Line[] = [];
-    for (const obj of this.objects.values()) {
-      if (!obj.visible) continue;
-      if (obj instanceof THREE.Points) {
-        pointObjects.push(obj);
-      } else if (obj instanceof THREE.Line) {
-        lineObjects.push(obj);
-      } else {
-        meshObjects.push(obj);
+    const visible = (object: THREE.Object3D): boolean => {
+      for (let current: THREE.Object3D | null = object; current; current = current.parent) {
+        if (!current.visible) return false;
       }
-    }
-
-    const meshIntersects = this.raycaster.intersectObjects(meshObjects, true);
+      return true;
+    };
+    this.scene.updateMatrixWorld(true);
     this.raycaster.params.Points.threshold = this.config.point_threshold;
-    const pointIntersects = this.raycaster.intersectObjects(pointObjects, false);
     this.raycaster.params.Line.threshold = this.config.line_threshold;
-    const lineIntersects = this.raycaster.intersectObjects(lineObjects, false);
-
-    const allIntersects = [...meshIntersects, ...pointIntersects, ...lineIntersects];
-    allIntersects.sort((a, b) => a.distance - b.distance);
+    const drawables = [...this.objects.values()].filter(visible);
+    const allIntersects = this.raycaster.intersectObjects(drawables, true).filter(hit => visible(hit.object));
 
     const modifiers = {
       ctrl: event.ctrlKey,
@@ -205,7 +194,7 @@ export class PickingManager {
     }
 
     const handle = obj.userData?.handle ?? null;
-    const isPointCloud = obj instanceof THREE.Points;
+    const isPointCloud = hit.object instanceof THREE.Points;
     const isLine = obj instanceof THREE.Line;
 
     let hitType: PickInfo["hit_type"] = "object";
@@ -217,11 +206,11 @@ export class PickingManager {
     let pointIndex: number | null = null;
 
     if (isPointCloud && hit.index !== undefined) {
-      const positions = (obj as THREE.Points).geometry.attributes.position;
+      const positions = (hit.object as THREE.Points).geometry.attributes.position;
       pointWorld = new THREE.Vector3(
         positions.getX(hit.index), positions.getY(hit.index), positions.getZ(hit.index)
       ).applyMatrix4(hit.object.matrixWorld).toArray();
-      pointIndex = hit.index;
+      pointIndex = hit.index + (hit.object.userData.pointOffset ?? 0);
     } else if (isLine && hit.index !== undefined) {
       pointWorld = hit.point.toArray();
       pointIndex = hit.index;

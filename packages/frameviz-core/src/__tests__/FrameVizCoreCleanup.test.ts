@@ -117,6 +117,46 @@ describe('FrameVizCore cleanup', () => {
     expect(core.getObjectCount()).toBe(1);
   });
 
+  it('uses the parent rigid frame independently from its nonuniform geometry scale', () => {
+    core.handleCommand('add_primitive', {
+      type: 'box', pose: { pos: [1, 0, 0], quat: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      geometry_scale: [5, 2, 3],
+    }, { handle: 'parent' });
+    core.handleCommand('add_primitive', {
+      type: 'box', parent: 'parent', pose: { pos: [2, 0, 0], quat: [0, 0, 0, 1] },
+    }, { handle: 'child' });
+    const child = (core as any).objects.get('child');
+    const parent = (core as any).objects.get('parent');
+    expect(parent.scale.toArray()).toEqual([5, 2, 3]);
+    expect(child.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([
+      expect.closeTo(1), expect.closeTo(2), 0,
+    ]);
+    core.handleCommand('set_visible', { handle: 'parent', visible: false });
+    expect(child.visible).toBe(true);
+    expect(child.parent.visible).toBe(false);
+    core.handleCommand('set_parent', { handle: 'child', parent: null }, {
+      pose: { pos: [1, 2, 0], quat: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      parent: null,
+    });
+    expect(child.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([1, 2, 0]);
+    expect(child.parent.visible).toBe(true);
+  });
+
+  it('cancels an async parent and its children without resurrecting either drawable', async () => {
+    core.handleCommand('load_mesh', { url: '/model.stl', pose: { pos: [2, 0, 0] } }, { handle: 'parent' });
+    core.handleCommand('add_primitive', {
+      type: 'box', parent: 'parent', pose: { pos: [3, 0, 0] },
+    }, { handle: 'child' });
+    const child = (core as any).objects.get('child');
+    expect(child.getWorldPosition(new THREE.Vector3()).x).toBe(5);
+    core.handleCommand('remove_object', { handle: 'parent' }, { removed: ['parent', 'child'] });
+    resolveLoad!(new THREE.Object3D());
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((core as any).objects.has('parent')).toBe(false);
+    expect((core as any).objects.has('child')).toBe(false);
+  });
+
   it('keeps clone material and geometry independent', () => {
     core.handleCommand('add_primitive', { type: 'box', color: [1, 0, 0] }, { handle: 'a' });
     core.handleCommand('clone_object', { handle: 'a' }, { handle: 'b' });

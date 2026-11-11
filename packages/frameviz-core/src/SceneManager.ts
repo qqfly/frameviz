@@ -404,7 +404,7 @@ export class SceneManager {
   removeObject(handle: string): void {
     const obj = this.objects.get(handle);
     if (obj) {
-      this.scene.remove(obj);
+      obj.removeFromParent();
       // P3: Removed disposeObject call - caller handles disposal to avoid double traversal
       this.objects.delete(handle);
     }
@@ -526,7 +526,7 @@ export class SceneManager {
   clearScene(): void {
     // Remove and dispose all objects
     for (const [handle, obj] of this.objects) {
-      this.scene.remove(obj);
+      obj.removeFromParent();
       this.disposeObject(obj);
     }
     this.objects.clear();

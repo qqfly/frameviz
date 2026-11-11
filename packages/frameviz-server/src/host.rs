@@ -1814,15 +1814,58 @@ impl Host {
                 .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "chunk positions must reference an f32 Nx3 buffer"))?;
             if let Some(colors) = chunk.get("colors").filter(|colors| !colors.is_null()) {
                 let valid_shape = colors["shape"].as_array().is_some_and(|shape|
-                    shape.len() == 2 && shape[0] == rows && (shape[1] == 3 || shape[1] == 4));
+                    shape.len() == 2 && shape[0] == rows && shape[1] == 3);
                 if !valid_shape || colors["dtype"] != "u8" || !colors["buffer_id"].is_string() {
-                    return Err(HostError::new("ERR_INVALID_ARGS", "chunk colors must reference a matching u8 RGB or RGBA buffer"));
+                    return Err(HostError::new("ERR_INVALID_ARGS", "chunk colors must reference a matching u8 RGB buffer"));
                 }
             }
             count = count.checked_add(rows)
                 .ok_or_else(|| HostError::new("ERR_RESOURCE_LIMIT", "point count overflow"))?;
         }
         Ok(json!({"chunks": chunks, "size": size, "point_count": count}))
+    }
+
+    pub(crate) fn annotate_interaction(&self, scene_id: &str, event: &str, data: &mut Value) -> bool {
+        let Some(handle) = data.get("handle").and_then(Value::as_str) else {
+            let data = data.as_object_mut().expect("event data was validated");
+            for key in ["name", "tags", "ancestors"] { data.remove(key); }
+            return event != "transformed";
+        };
+        let obj = self.objects.get(handle).filter(|obj| obj.scene_id == scene_id)
+            .or_else(|| self.objects.values().find(|obj|
+                obj.scene_id == scene_id && obj.group_id.as_deref() == Some(handle)));
+        let Some(obj) = obj else {
+            if event == "pick_info_response" {
+                for key in ["handle", "point_index", "point_world", "normal_world", "name", "tags"] {
+                    data[key] = Value::Null;
+                }
+                data["hit_type"] = json!("none");
+                data["ancestors"] = json!([]);
+                return true;
+            }
+            return false;
+        };
+        data["name"] = json!(obj.name);
+        data["tags"] = obj.tags.clone();
+        let mut ancestors = Vec::new();
+        let mut parent = obj.parent.as_deref();
+        while let Some(id) = parent {
+            let ancestor = &self.objects[id];
+            ancestors.push(json!({"handle": id, "name": ancestor.name, "tags": ancestor.tags}));
+            parent = ancestor.parent.as_deref();
+        }
+        ancestors.reverse();
+        data["ancestors"] = json!(ancestors);
+        if event == "transformed" {
+            let Ok(world) = self.world_pose(obj) else { return false; };
+            data["pose"] = json!(obj.pose);
+            data["local_transform"] = json!({"position": obj.pose.pos, "quaternion": obj.pose.quat});
+            data["world_transform"] = json!({"position": world.pos, "quaternion": world.quat});
+            if let Some(scale) = obj.geometry_scale {
+                data["scale"] = json!(scale);
+            }
+        }
+        true
     }
 
     fn world_pose(&self, obj: &SceneObject) -> Result<Pose, HostError> {
