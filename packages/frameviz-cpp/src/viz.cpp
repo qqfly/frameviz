@@ -238,15 +238,15 @@ json colorToJson(const Color &c) {
 std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
                                int width, int height, bool windowDecorations,
                                const std::optional<std::string>& shareScene,
-                               int windowMode) {
+                               int windowMode, bool autoEvents) {
   std::string resolved_url = resolveWsUrl(url);
-  auto client = std::make_unique<FrameVizClient>(resolved_url);
+  auto client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
   try {
     client->connect();
   } catch (const std::exception &) {
     // Connection failed — try to auto-start the host and retry.
     ensureHostRunning(resolved_url);
-    client = std::make_unique<FrameVizClient>(resolved_url);
+    client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
     client->connect();
   }
 
@@ -345,14 +345,14 @@ std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
 
 std::unique_ptr<Viz> Viz::connect(const std::string &url,
                                   const std::string &view_id,
-                                  std::chrono::seconds timeout) {
+                                  std::chrono::seconds timeout, bool autoEvents) {
   std::string resolved_url = resolveWsUrl(url);
-  auto client = std::make_unique<FrameVizClient>(resolved_url);
+  auto client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
   try {
     client->connect(timeout);
   } catch (const std::exception &) {
     ensureHostRunning(resolved_url);
-    client = std::make_unique<FrameVizClient>(resolved_url);
+    client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
     client->connect(timeout);
   }
 
@@ -1390,6 +1390,59 @@ void Viz::detachGizmo() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Events
 // ─────────────────────────────────────────────────────────────────────────────
+
+Handle Viz::addWidget(const std::string &kind, const std::string &label,
+                       const json &value, const json &options) {
+  if (!options.is_object()) throw std::invalid_argument("Widget options must be an object");
+  auto args = options;
+  args.update({{"scene_id", m_sceneId}, {"kind", kind}, {"label", label}, {"value", value}});
+  return m_client->sendCommand("add_widget", args).at("widget").at("id").get<Handle>();
+}
+
+json Viz::listWidgets() {
+  return m_client->sendCommand("list_widgets", {{"scene_id", m_sceneId}}).at("widgets");
+}
+
+json Viz::getWidget(const Handle &widget) {
+  return m_client->sendCommand("get_widget",
+      {{"scene_id", m_sceneId}, {"widget_id", widget}}).at("widget");
+}
+
+json Viz::getWidgetValue(const Handle &widget) {
+  return getWidget(widget).at("value");
+}
+
+void Viz::setWidgetValue(const Handle &widget, const json &value, bool emit) {
+  m_client->sendCommand("set_widget_value",
+      {{"scene_id", m_sceneId}, {"widget_id", widget}, {"value", value}, {"emit", emit}});
+}
+
+void Viz::removeWidget(const Handle &widget) {
+  auto result = m_client->sendCommand("remove_widget",
+      {{"scene_id", m_sceneId}, {"widget_id", widget}});
+  for (const auto &id : result.at("removed")) offWidgetChange(id.get<Handle>());
+}
+
+void Viz::onWidgetChange(const Handle &widget, EventHandler handler, bool append) {
+  m_client->onWidgetChange(m_sceneId, widget, std::move(handler), append);
+}
+
+void Viz::offWidgetChange(const Handle &widget) {
+  m_client->offWidgetChange(m_sceneId, widget);
+}
+
+json Viz::getCameraView() {
+  return m_client->sendCommand("get_camera_view", {{"view_id", m_viewId}});
+}
+
+void Viz::setCameraView(const json &cameraView) {
+  m_client->sendCommand("set_camera_view", {{"view_id", m_viewId}, {"camera_view", cameraView}});
+}
+
+json Viz::getDisplayState(bool includeBounds) {
+  return m_client->sendCommand("get_display_state",
+      {{"view_id", m_viewId}, {"include_bounds", includeBounds}});
+}
 
 void Viz::onEvent(const std::string &name, EventHandler handler) {
   m_client->onEvent(name, std::move(handler));

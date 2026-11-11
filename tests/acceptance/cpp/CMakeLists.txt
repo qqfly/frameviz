@@ -19,3 +19,6 @@ target_link_libraries(present_view PRIVATE frameviz::frameviz-cpp)
 
 add_executable(scene_tree scene_tree.cpp)
 target_link_libraries(scene_tree PRIVATE frameviz::frameviz-cpp)
+
+add_executable(widgets_and_queries widgets_and_queries.cpp)
+target_link_libraries(widgets_and_queries PRIVATE frameviz::frameviz-cpp)

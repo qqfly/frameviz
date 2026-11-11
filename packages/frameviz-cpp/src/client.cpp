@@ -18,6 +18,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <queue>
 #include <stdexcept>
@@ -34,24 +35,31 @@ namespace frameviz {
 
 using json = nlohmann::json;
 
-class FrameVizClient::Impl {
+class FrameVizClient::Impl : public std::enable_shared_from_this<Impl> {
 public:
-  explicit Impl(const std::string &url)
+  explicit Impl(const std::string &url, bool autoEvents)
       : m_url(url), m_connected(false), m_authenticated(false),
-        m_requestId(0), m_timeout(std::chrono::seconds(10)), m_authOk(false) {}
+        m_requestId(0), m_timeout(std::chrono::seconds(10)), m_authOk(false),
+        m_autoEvents(autoEvents) {}
 
   ~Impl() { close(); }
 
   void connect(std::chrono::seconds timeout) {
+    std::lock_guard<std::mutex> lifecycle(m_lifecycleMutex);
     if (m_connected) {
       return;
     }
 
+    if (m_eventRunning || m_eventThread.joinable()) {
+      throw std::runtime_error("Close the previous FrameViz event session before reconnecting");
+    }
     m_timeout = timeout;
+    m_stopEvents = false;
     { std::lock_guard<std::mutex> guard(m_connectMutex); m_connectError.reset(); }
     m_authenticated = false;
 
     m_ws.setUrl(m_url);
+    m_ws.disableAutomaticReconnection();
 
     // Set up message handler
     m_ws.setOnMessageCallback(
@@ -90,12 +98,30 @@ public:
       m_connected = false;
       throw std::runtime_error(std::string("Authentication failed: ") + e.what());
     }
+    if (m_autoEvents) startEventDispatcher();
   }
 
   void close() {
-    m_ws.stop();
-    m_connected = false;
-    m_authenticated = false;
+    std::thread worker;
+    {
+      std::lock_guard<std::mutex> lifecycle(m_lifecycleMutex);
+      {
+        std::lock_guard<std::mutex> events(m_eventMutex);
+        m_stopEvents = true;
+      }
+      m_eventCv.notify_all();
+      m_ws.stop();
+      m_connected = false;
+      m_authenticated = false;
+      if (m_eventThread.joinable()) {
+        if (m_eventThread.get_id() == std::this_thread::get_id()) {
+          m_eventThread.detach();
+        } else {
+          worker = std::move(m_eventThread);
+        }
+      }
+    }
+    if (worker.joinable()) worker.join();
   }
 
   bool isConnected() const { return m_connected.load(); }
@@ -232,35 +258,91 @@ public:
     m_eventHandlers[event_name].push_back(handler);
   }
 
+  void onWidgetChange(const std::string &scene, const std::string &widget,
+                      EventHandler handler, bool append) {
+    if (!handler) throw std::invalid_argument("Widget handler must be callable");
+    std::lock_guard<std::mutex> lock(m_eventMutex);
+    auto &handlers = m_widgetHandlers[{scene, widget}];
+    if (!append) handlers.clear();
+    handlers.push_back(std::move(handler));
+  }
+
+  void offWidgetChange(const std::string &scene, const std::string &widget) {
+    std::lock_guard<std::mutex> lock(m_eventMutex);
+    m_widgetHandlers.erase({scene, widget});
+  }
+
   void pollEvents() {
-    std::queue<QueuedEvent> events_to_dispatch;
+    if (!m_autoEvents) dispatchEvents();
+  }
+
+  void dispatchEvents() {
+    std::queue<QueuedEvent> events;
     {
       std::lock_guard<std::mutex> lock(m_eventMutex);
-      std::swap(events_to_dispatch, m_eventQueue);
+      std::swap(events, m_eventQueue);
+      if (m_autoEvents) {
+        // Only one worker dispatches this queue. Record unconsumed events while
+        // moving them so a synchronous wait can still see an already handled event.
+        std::queue<QueuedEvent> pending;
+        while (!events.empty()) {
+          auto event = std::move(events.front());
+          events.pop();
+          if (m_waitConsumedEventIds.erase(event.id) == 0 && !event.queryReply) {
+            if (m_eventHistory.size() >= 4096) m_eventHistory.pop_front();
+            m_eventHistory.push_back(event);
+          }
+          pending.push(std::move(event));
+        }
+        events.swap(pending);
+      }
     }
 
-    while (!events_to_dispatch.empty()) {
-      auto event = std::move(events_to_dispatch.front());
-      events_to_dispatch.pop();
-
+    while (!events.empty() && !m_stopEvents) {
+      auto event = std::move(events.front());
+      events.pop();
       std::vector<EventHandler> handlers;
       {
         std::lock_guard<std::mutex> lock(m_eventMutex);
         m_waitConsumedEventIds.erase(event.id);
         auto it = m_eventHandlers.find(event.name);
-        if (it != m_eventHandlers.end()) {
-          handlers = it->second;
+        if (it != m_eventHandlers.end()) handlers = it->second;
+        if (event.name == "widget_changed" && event.data.is_object()) {
+          auto key = std::make_pair(event.data.value("scene_id", ""), event.data.value("widget_id", ""));
+          auto widget = m_widgetHandlers.find(key);
+          if (widget != m_widgetHandlers.end()) {
+            handlers.insert(handlers.end(), widget->second.begin(), widget->second.end());
+          }
         }
       }
 
       for (auto &handler : handlers) {
+        if (m_stopEvents) break;
         try {
           handler(event.data);
+        } catch (const std::exception &error) {
+          std::cerr << "[FrameViz] Event " << event.name << " failed: " << error.what() << '\n';
         } catch (...) {
-          // Ignore handler exceptions
+          std::cerr << "[FrameViz] Event " << event.name << " failed\n";
         }
       }
     }
+  }
+
+  void startEventDispatcher() {
+    m_stopEvents = false;
+    m_eventRunning = true;
+    m_eventThread = std::thread([keepAlive = shared_from_this()] {
+      auto &self = *keepAlive;
+      while (!self.m_stopEvents) {
+        {
+          std::unique_lock<std::mutex> lock(self.m_eventMutex);
+          self.m_eventCv.wait(lock, [&] { return self.m_stopEvents || !self.m_eventQueue.empty(); });
+        }
+        if (!self.m_stopEvents) self.dispatchEvents();
+      }
+      self.m_eventRunning = false;
+    });
   }
 
   void setTimeout(std::chrono::seconds timeout) { m_timeout = timeout; }
@@ -279,6 +361,7 @@ private:
       {
         std::lock_guard<std::mutex> lock(m_eventMutex);
         m_queryReplies.clear();
+        m_eventHistory.clear();
         m_eventQueue = {};
         m_waitConsumedEventIds.clear();
         for (auto &[name, waiters] : m_eventWaiters) for (auto &waiter : waiters) waiter.cv->notify_all();
@@ -363,7 +446,10 @@ private:
             m_ws.close();
             return;
           }
-          m_eventQueue.push(QueuedEvent{m_nextQueuedEventId++, event_name, data});
+          const auto id = m_nextQueuedEventId++;
+          if (delivered) m_waitConsumedEventIds.insert(id);
+          m_eventQueue.push(QueuedEvent{id, event_name, data, queryResponse});
+          m_eventCv.notify_one();
         }
       } else if (msg_type == "auth_resp") {
         handleAuthResponse(envelope);
@@ -448,6 +534,15 @@ public:
         *waiter.result = it->data;
         m_queryReplies.erase(it);
         break;
+      }
+    }
+    if (!waiter.result->has_value()) {
+      for (auto it = m_eventHistory.begin(); it != m_eventHistory.end(); ++it) {
+        if (it->name == event_name && filter(it->data)) {
+          *waiter.result = it->data;
+          m_eventHistory.erase(it);
+          break;
+        }
       }
     }
     // Scan queued events without draining unrelated ones. This closes the race
@@ -540,7 +635,14 @@ private:
   std::string m_hostVersion;
   std::atomic<bool> m_authDone{false};
 
+  std::mutex m_lifecycleMutex;
+  const bool m_autoEvents;
+  std::atomic<bool> m_stopEvents{false};
+  std::atomic<bool> m_eventRunning{false};
+  std::thread m_eventThread;
   std::mutex m_eventMutex;
+  std::condition_variable m_eventCv;
+  std::map<std::pair<std::string, std::string>, std::vector<EventHandler>> m_widgetHandlers;
   std::unordered_map<std::string, std::vector<EventHandler>> m_eventHandlers;
 
   // Event waiting mechanism (support multiple concurrent waiters)
@@ -553,23 +655,33 @@ private:
     size_t id;
     std::string name;
     json data;
+    bool queryReply = false;
   };
   std::unordered_map<std::string, std::vector<EventWaiter>> m_eventWaiters;
   std::queue<QueuedEvent> m_eventQueue;
   std::deque<QueuedEvent> m_queryReplies;
+  std::deque<QueuedEvent> m_eventHistory;
   std::unordered_set<size_t> m_waitConsumedEventIds;
   size_t m_nextQueuedEventId = 1;
 };
 
 // FrameVizClient implementation (delegate to Impl)
 
-FrameVizClient::FrameVizClient(const std::string &url)
-    : m_impl(std::make_unique<Impl>(url)) {}
+FrameVizClient::FrameVizClient(const std::string &url, bool autoEvents)
+    : m_impl(std::make_shared<Impl>(url, autoEvents)) {}
 
-FrameVizClient::~FrameVizClient() = default;
+FrameVizClient::~FrameVizClient() {
+  if (m_impl) m_impl->close();
+}
 
 FrameVizClient::FrameVizClient(FrameVizClient &&) noexcept = default;
-FrameVizClient &FrameVizClient::operator=(FrameVizClient &&) noexcept = default;
+FrameVizClient &FrameVizClient::operator=(FrameVizClient &&other) noexcept {
+  if (this != &other) {
+    if (m_impl) m_impl->close();
+    m_impl = std::move(other.m_impl);
+  }
+  return *this;
+}
 
 void FrameVizClient::connect(std::chrono::seconds timeout) {
   m_impl->connect(timeout);
@@ -602,6 +714,15 @@ void FrameVizClient::sendBinary(const std::vector<uint8_t> &data) {
 void FrameVizClient::onEvent(const std::string &event_name,
                              EventHandler handler) {
   m_impl->onEvent(event_name, handler);
+}
+
+void FrameVizClient::onWidgetChange(const std::string &scene, const std::string &widget,
+                                   EventHandler handler, bool append) {
+  m_impl->onWidgetChange(scene, widget, std::move(handler), append);
+}
+
+void FrameVizClient::offWidgetChange(const std::string &scene, const std::string &widget) {
+  m_impl->offWidgetChange(scene, widget);
 }
 
 void FrameVizClient::pollEvents() { m_impl->pollEvents(); }

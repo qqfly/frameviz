@@ -42,7 +42,7 @@ public:
    * @brief Construct a new client instance.
    * @param url WebSocket URL (default: ws://127.0.0.1:9527)
    */
-  explicit FrameVizClient(const std::string &url = "ws://127.0.0.1:9527");
+  explicit FrameVizClient(const std::string &url = "ws://127.0.0.1:9527", bool autoEvents = true);
 
   /**
    * @brief Destructor. Closes connection if open.
@@ -114,6 +114,9 @@ public:
   /**
    * @brief Poll and dispatch queued events.
    */
+  void onWidgetChange(const std::string &scene, const std::string &widget,
+                      EventHandler handler, bool append = false);
+  void offWidgetChange(const std::string &scene, const std::string &widget);
   void pollEvents();
 
   /**
@@ -144,7 +147,7 @@ public:
 
 private:
   class Impl;
-  std::unique_ptr<Impl> m_impl;
+  std::shared_ptr<Impl> m_impl;
 };
 
 } // namespace frameviz

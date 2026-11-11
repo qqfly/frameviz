@@ -12,7 +12,7 @@ This table records command-name literals in the implementation. Presence does no
 | `add_primitive` | present | present | present | present |
 | `add_text_2d` | present | present | present | present |
 | `add_text_3d` | present | present | present | present |
-| `add_widget` | present | present | present | not directly referenced |
+| `add_widget` | present | present | present | present |
 | `attach_gizmo` | present | present | present | present |
 | `attach_scene` | present | not directly referenced | present | not directly referenced |
 | `clear_pick_highlight` | present | present | present | not directly referenced |
@@ -28,9 +28,9 @@ This table records command-name literals in the implementation. Presence does no
 | `get_alpha` | present | present | present | present |
 | `get_camera_controls` | present | present | present | present |
 | `get_camera_pose` | present | present | present | present |
-| `get_camera_view` | present | not directly referenced | present | not directly referenced |
+| `get_camera_view` | present | not directly referenced | present | present |
 | `get_color` | present | present | present | present |
-| `get_display_state` | present | not directly referenced | present | not directly referenced |
+| `get_display_state` | present | not directly referenced | present | present |
 | `get_pick_config` | present | present | present | present |
 | `get_picked_info` | present | present | present | not directly referenced |
 | `get_render_endpoint` | present | not directly referenced | present | not directly referenced |
@@ -40,13 +40,13 @@ This table records command-name literals in the implementation. Presence does no
 | `get_view_config` | present | present | present | present |
 | `get_viewer_by_name` | present | not directly referenced | not directly referenced | not directly referenced |
 | `get_visible` | present | not directly referenced | present | not directly referenced |
-| `get_widget` | present | not directly referenced | present | not directly referenced |
+| `get_widget` | present | not directly referenced | present | present |
 | `is_object_alive` | present | not directly referenced | present | present |
 | `list_objects` | present | not directly referenced | present | not directly referenced |
 | `list_scenes` | present | not directly referenced | present | not directly referenced |
 | `list_viewers` | present | not directly referenced | not directly referenced | not directly referenced |
 | `list_views` | present | not directly referenced | present | present |
-| `list_widgets` | present | not directly referenced | present | not directly referenced |
+| `list_widgets` | present | not directly referenced | present | present |
 | `load_mesh` | present | present | present | present |
 | `present_view` | present | not directly referenced | present | present |
 | `read_logs` | present | not directly referenced | present | not directly referenced |
@@ -55,12 +55,12 @@ This table records command-name literals in the implementation. Presence does no
 | `remove_objects` | present | present | present | present |
 | `remove_text_2d` | present | present | not directly referenced | not directly referenced |
 | `remove_text_3d` | present | present | not directly referenced | not directly referenced |
-| `remove_widget` | present | present | present | not directly referenced |
+| `remove_widget` | present | present | present | present |
 | `reset_camera` | present | present | present | present |
 | `set_alpha` | present | present | present | present |
 | `set_camera_controls` | present | present | present | present |
 | `set_camera_pose` | present | present | present | present |
-| `set_camera_view` | present | present | present | not directly referenced |
+| `set_camera_view` | present | present | present | present |
 | `set_color` | present | present | present | present |
 | `set_geometry_scale` | present | present | present | present |
 | `set_gizmo_mode` | present | present | present | present |
@@ -79,7 +79,7 @@ This table records command-name literals in the implementation. Presence does no
 | `set_view` | present | present | present | present |
 | `set_view_config` | present | present | present | present |
 | `set_visible` | present | present | present | present |
-| `set_widget_value` | present | present | present | not directly referenced |
+| `set_widget_value` | present | present | present | present |
 | `u16` | present | present | not directly referenced | not directly referenced |
 | `u8` | present | present | present | present |
 | `update_instances` | present | present | present | present |

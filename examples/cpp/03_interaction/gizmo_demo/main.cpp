@@ -29,7 +29,9 @@ int main()
 {
     std::cout << "FrameViz - Gizmo Demo\n" << std::endl;
 
-    auto viz = Viz::open();
+    // This example processes callbacks on its own main loop.
+    auto viz = Viz::open("ws://127.0.0.1:9527", "FrameViz", 800, 600,
+                         true, std::nullopt, 2, false);
     std::cout << "✓ Connected to FrameViz\n" << std::endl;
 
     // 1. 创建场景对象

@@ -67,7 +67,7 @@ public:
        const std::string &title = "FrameViz", int width = 800,
        int height = 600, bool windowDecorations = true,
        const std::optional<std::string>& shareScene = std::nullopt,
-       int windowMode = 2);
+       int windowMode = 2, bool autoEvents = true);
 
   /**
    * @brief Connect to an existing view and return a Viz instance.
@@ -88,7 +88,8 @@ public:
   static std::unique_ptr<Viz>
   connect(const std::string &url = "ws://127.0.0.1:9527",
           const std::string &view_id = "",
-          std::chrono::seconds timeout = std::chrono::seconds(10));
+          std::chrono::seconds timeout = std::chrono::seconds(10),
+          bool autoEvents = true);
 
   /**
    * @brief Destructor.
@@ -392,6 +393,20 @@ public:
   // ─────────────────────────────────────────────────────────────────────────
   // Events
   // ─────────────────────────────────────────────────────────────────────────
+
+  Handle addWidget(const std::string &kind, const std::string &label,
+                   const json &value = nullptr, const json &options = json::object());
+  json listWidgets();
+  json getWidget(const Handle &widget);
+  json getWidgetValue(const Handle &widget);
+  void setWidgetValue(const Handle &widget, const json &value, bool emit = false);
+  void removeWidget(const Handle &widget);
+  void onWidgetChange(const Handle &widget, EventHandler handler, bool append = false);
+  void offWidgetChange(const Handle &widget);
+
+  json getCameraView();
+  void setCameraView(const json &cameraView);
+  json getDisplayState(bool includeBounds = false);
 
   void onEvent(const std::string &name, EventHandler handler);
 
