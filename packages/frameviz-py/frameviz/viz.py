@@ -1145,6 +1145,59 @@ class Viz:
     # Object manipulation
     # ─────────────────────────────────────────────────────────────────────────
 
+    def add_widget(
+        self, kind: str, label: str, value: Any = None, *,
+        parent: Optional[str] = None,
+        minimum: Optional[float] = None, maximum: Optional[float] = None,
+        step: Optional[float] = None, choices: Optional[Sequence[str]] = None,
+        update_mode: str = "commit",
+    ) -> str:
+        """Add a scene control. A number with both bounds also has a slider."""
+        args: Dict[str, Any] = {
+            "scene_id": self._scene_id, "kind": kind, "label": label,
+            "value": value, "update_mode": update_mode,
+        }
+        args.update({key: val for key, val in (
+            ("parent", parent), ("minimum", minimum), ("maximum", maximum),
+            ("step", step), ("choices", list(choices) if choices is not None else None),
+        ) if val is not None})
+        return self._client.send_command("add_widget", args)["widget"]["id"]
+
+    def list_widgets(self) -> List[Dict[str, Any]]:
+        """Return scene controls in creation order, including their current values."""
+        return self._client.send_command("list_widgets", {"scene_id": self._scene_id})["widgets"]
+
+    def get_widget(self, widget_id: str) -> Dict[str, Any]:
+        """Return a control's definition and current value."""
+        return self._client.send_command("get_widget", {
+            "scene_id": self._scene_id, "widget_id": widget_id,
+        })["widget"]
+
+    def get_widget_value(self, widget_id: str) -> Any:
+        return self.get_widget(widget_id)["value"]
+
+    def set_widget_value(self, widget_id: str, value: Any, *, emit: bool = False) -> None:
+        """Synchronize all views. Use emit=True to dispatch a program event."""
+        self._client.send_command("set_widget_value", {
+            "scene_id": self._scene_id, "widget_id": widget_id, "value": value, "emit": emit,
+        })
+
+    def remove_widget(self, widget_id: str) -> None:
+        """Remove a control and any controls within its group."""
+        result = self._client.send_command("remove_widget", {
+            "scene_id": self._scene_id, "widget_id": widget_id,
+        })
+        for removed in result["removed"]:
+            self._client._off_widget_change(self._scene_id, removed)
+
+    def on_widget_change(self, widget_id: str, handler: EventHandler, *, append: bool = False) -> None:
+        """Register a handler for this client. Repeated calls replace it by default."""
+        self._client._on_widget_change(self._scene_id, widget_id, handler, append=append)
+
+    def off_widget_change(self, widget_id: str) -> None:
+        """Remove this client's handlers for the control."""
+        self._client._off_widget_change(self._scene_id, widget_id)
+
     def add_node(
         self, *, parent=None, name=None, tags=None, position=None, quaternion=None, pose=None
     ) -> str:
@@ -1697,6 +1750,7 @@ class Viz:
         axes_radius: Optional[float] = None,
         axes_size: Optional[float] = None,
         background: Optional[Color] = None,
+        *, show_widgets: Optional[bool] = None,
     ) -> None:
         """
         Configure view helpers (grid/axes/background).
@@ -1727,6 +1781,8 @@ class Viz:
             config["axes_length"] = axes_size
         if background is not None:
             config["background"] = _normalize_color(background)
+        if show_widgets is not None:
+            config["show_widgets"] = show_widgets
         if not config:
             return
         self._client.send_command(

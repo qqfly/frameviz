@@ -84,6 +84,9 @@ class FrameVizClient:
     _event_handlers: Dict[str, List[EventHandler]] = field(default_factory=dict,
                                                            init=False)
 
+    _widget_handlers: Dict[Tuple[str, str], List[EventHandler]] = field(
+        default_factory=dict, init=False, repr=False)
+
     # P0-2: Authentication
     _auth_token: Optional[str] = field(default=None, init=False, repr=False)
     _auth_event: threading.Event = field(default_factory=threading.Event,
@@ -422,6 +425,21 @@ class FrameVizClient:
         with self._lock:
             self._event_handlers.setdefault(name, []).append(handler)
 
+    def _on_widget_change(self, scene_id: str, widget_id: str,
+                          handler: EventHandler, *, append: bool) -> None:
+        if not callable(handler):
+            raise TypeError("Widget handler must be callable")
+        key = (scene_id, widget_id)
+        with self._lock:
+            if append:
+                self._widget_handlers.setdefault(key, []).append(handler)
+            else:
+                self._widget_handlers[key] = [handler]
+
+    def _off_widget_change(self, scene_id: str, widget_id: str) -> None:
+        with self._lock:
+            self._widget_handlers.pop((scene_id, widget_id), None)
+
     def present_view(self, browser_session: str, view_id: str) -> int:
         """Present a view in matching authenticated managed browser pages."""
         result = self.send_command("present_view", {
@@ -523,6 +541,10 @@ class FrameVizClient:
         """Internal helper to call handlers for a single event."""
         with self._lock:
             handlers = tuple(self._event_handlers.get(event_name, []))
+            if event_name == "widget_changed":
+                scene, widget = data.get("scene_id"), data.get("widget_id")
+                if isinstance(scene, str) and isinstance(widget, str):
+                    handlers += tuple(self._widget_handlers.get((scene, widget), []))
         for handler in handlers:
             if self._closing:
                 break
