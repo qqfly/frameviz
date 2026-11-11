@@ -69,13 +69,51 @@ class So101:
         ])
 
 
+    def add_controls(self):
+        viz, model = self.viz, self.model
+        group = viz.add_widget("group", "SO-101 joint angles")
+        controls = {}
+        addresses = {}
+        for joint in range(model.njnt):
+            if model.jnt_type[joint] != mj.mjtJoint.mjJNT_HINGE:
+                continue
+            name = model.joint(joint).name
+            address = int(model.jnt_qposadr[joint])
+            lower, upper = model.jnt_range[joint]
+            control = viz.add_widget("number", f"{name} (rad)", float(self.data.qpos[address]),
+                                     parent=group, minimum=float(lower), maximum=float(upper),
+                                     step=.01, update_mode="continuous")
+            controls[name] = control
+            addresses[control] = address
+
+            def change(event, qpos_address=address):
+                self.data.qpos[qpos_address] = event["value"]
+                self.update()
+
+            viz.on_widget_change(control, change)
+
+        def reset(_):
+            self.data.qpos[:] = model.qpos0
+            self.update()
+            for control, address in addresses.items():
+                viz.set_widget_value(control, float(self.data.qpos[address]))
+
+        viz.on_widget_change(viz.add_widget("button", "Reset pose", parent=group), reset)
+        viz.set_pick_config(enabled=True, mode="object", button=0, ctrl_modifier=False)
+        viz.on_pick(lambda event: print(event["name"]) if event.get("name") else None)
+        return controls
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", help="Path to the separately downloaded so101.xml")
+    parser.add_argument("--controls", action="store_true", help="Show joint sliders")
     args = parser.parse_args()
     viz = fv.open(title="SO-101 · MuJoCo display")
     try:
-        So101(viz, args.model)
+        robot = So101(viz, args.model)
+        if args.controls:
+            robot.add_controls()
         viz.keep_running()
     finally:
         viz.close()

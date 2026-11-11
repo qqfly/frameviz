@@ -10,6 +10,8 @@ python examples/python/04_robotics/extra/so101_display.py /path/to/robotstudio_s
 
 Use the `robotstudio_so101` directory, including its referenced assets, from the
 [pinned MuJoCo Menagerie revision](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101).
+Add `--controls` after the path to show the joint sliders and Reset pose.
+Click a link to print its name. Drag or enter the angle in radians.
 Keep its license with the downloaded model. The FrameViz repository includes
 the example code and the README animation.
 
