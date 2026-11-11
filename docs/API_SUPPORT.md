@@ -31,6 +31,7 @@ This table records command-name literals in the implementation. Presence does no
 | `get_camera_view` | present | not directly referenced | present | present |
 | `get_color` | present | present | present | present |
 | `get_display_state` | present | not directly referenced | present | present |
+| `get_lan_view_link` | present | not directly referenced | present | not directly referenced |
 | `get_pick_config` | present | present | present | present |
 | `get_picked_info` | present | present | present | not directly referenced |
 | `get_render_endpoint` | present | not directly referenced | present | not directly referenced |

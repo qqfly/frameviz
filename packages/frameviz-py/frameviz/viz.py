@@ -1631,6 +1631,10 @@ class Viz:
             },
         )
 
+    def get_lan_view_link(self) -> str:
+        """Get the current View's read-only link from an explicitly LAN-enabled Host."""
+        return self._client.send_command("get_lan_view_link", {"view_id": self._view_id})["url"]
+
     def get_camera_view(self) -> Dict[str, Any]:
         """Get this View's camera pose and projection, including with no window."""
         return self._client.send_command("get_camera_view", {"view_id": self._view_id})

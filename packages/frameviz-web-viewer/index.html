@@ -155,6 +155,7 @@
     const performanceMode = injectedPerfMode || urlParams.get('performance_mode') || 'balanced';
     const backgroundParam = injectedBackground || urlParams.get('background');
     let sceneId = null;
+    let readOnly = false;
 
     // Parse background color from URL param (hex like "1e1e2a" or "0x1e1e2a")
     function parseBackgroundColor(bg) {
@@ -210,7 +211,7 @@
     }
 
     function sendEnvelope(envelope) {
-      if (connectionStopped || !ws || ws.readyState !== WebSocket.OPEN) return;
+      if (readOnly || connectionStopped || !ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify(envelope));
     }
 
@@ -518,6 +519,8 @@
         return;
       }
       if (msg.type === 'init') {
+        readOnly = msg.read_only === true;
+        core?.setWidgetPanelEnabled(!readOnly && !capture);
         document.documentElement.dataset.sceneReady = 'false';
         if (core) core.sceneRevision = 0;
         if (msg.view_id && msg.view_id !== viewId) {
@@ -555,7 +558,8 @@
       if (connectionStopped) return;
       const browserSession = urlParams.get('browser_session');
       const sessionQuery = browserSession ? `&browser_session=${encodeURIComponent(browserSession)}` : '';
-      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}${sessionQuery}`;
+      const wsHost = urlParams.get('remote') === '1' ? location.hostname : '127.0.0.1';
+      const wsUrl = `ws://${wsHost}:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}${sessionQuery}`;
       ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       console.log(`[FrameViz] Connecting as view=${viewId}`);
