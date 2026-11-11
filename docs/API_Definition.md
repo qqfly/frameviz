@@ -1,5 +1,7 @@
 # FrameViz API Definition v0.4.0
 
+后续场景树、控件和显示输出的契约见 [FrameViz 显示场景契约](SCENE_TREE.md)。每项能力的实现状态以发布版本及接口表为准。
+
 > 当前兼容约定见 [COMPATIBILITY.md](COMPATIBILITY.md)，包括认证、上传、查询错误、共享内存和生命周期。接口示例需配合实际验收记录使用。
 
 本文档定义 **Client** 与 **Host** 之间通过 **WebSocket** 传输的协议。
