@@ -709,11 +709,6 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
         return;
     }
 
-    let target_scene_id = command
-        .args
-        .get("scene_id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
     let target_view_id = command
         .args
         .get("view_id")
@@ -736,6 +731,12 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
 
     match response {
         Ok(mut result) => {
+            let target_scene_id = command
+                .args
+                .get("scene_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
             {
                 let mut guard = state.lock().await;
                 if !name.starts_with("get_") && !name.starts_with("list_") && !name.starts_with("is_") { guard.revision += 1; }

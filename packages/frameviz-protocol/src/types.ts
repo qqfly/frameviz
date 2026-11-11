@@ -58,7 +58,23 @@ export interface EventEnvelope {
 
 export type Envelope = CommandEnvelope | ResponseEnvelope | EventEnvelope;
 
-/** Position + rotation in the Z-up right-handed coordinate system. */
+/** Translation and xyzw rotation in the Z-up right-handed coordinate system. */
+export interface RigidPose {
+  position: [number, number, number];
+  quaternion: [number, number, number, number];
+}
+
+export type RigidPoseInput = RigidPose | [number, number, number, number, number, number, number];
+
+export interface SceneNodeOptions {
+  parent?: Handle | null;
+  name?: string;
+  tags?: JsonObject;
+  pose?: RigidPoseInput;
+  geometry_scale?: [number, number, number];
+}
+
+/** Legacy wire spelling. Scale applies to the object's own geometry. */
 export interface Pose {
   pos: [number, number, number];
   quat: [number, number, number, number];

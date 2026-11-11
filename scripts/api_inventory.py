@@ -9,7 +9,7 @@ sources={
  'Python':['packages/frameviz-py/frameviz/viz.py','packages/frameviz-py/frameviz/client.py'],
  'C++':['packages/frameviz-cpp/src/viz.cpp','packages/frameviz-cpp/src/client.cpp'],
 }
-commands=set(re.findall(r'^\s*"([a-z][a-z0-9_]+)"\s*=>', (ROOT/sources['Host'][0]).read_text(),re.M))
+commands=set(re.findall(r'^ {12}"([a-z][a-z0-9_]+)"\s*=>', (ROOT/sources['Host'][0]).read_text(),re.M))
 commands.update(['present_view','get_resource_counts','register_viewer','get_viewer_by_name','list_viewers','upload_buffer_chunk'])
 texts={key:'\n'.join((ROOT/name).read_text() for name in names) for key,names in sources.items()}
 rows=['# Static API inventory','','This table records command-name literals in the implementation. Presence does not prove equivalent signatures, rendering, compatibility, or test coverage. Use the versioned API contract and actual acceptance receipts.','','| Command | Host | Core | Python | C++ |','|---|---|---|---|---|']

@@ -68,13 +68,35 @@ const isBufferRef = (
   return true;
 };
 
-const isPose = (value: unknown): boolean => {
-  if (!isObject(value)) return false;
-  if (!isVec3(value.pos)) return false;
-  if (!isQuat(value.quat)) return false;
-  if (value.scale !== undefined && !isVec3(value.scale)) return false;
+const isNonzeroQuat = (value: unknown): boolean =>
+  isQuat(value) && (value as number[]).some(component => component !== 0);
+
+const isPose = (value: unknown, allowScale = true): boolean => {
+  if (Array.isArray(value)) {
+    return isArrayOf(value, isNumber, 7) && isNonzeroQuat(value.slice(3));
+  }
+  if (!isObject(value) || value.matrix !== undefined || value.geometry_scale !== undefined) return false;
+  if (value.scale !== undefined && (!allowScale || !isVec3(value.scale))) return false;
+  for (const [canonical, alias, check] of [
+    ["position", "pos", isVec3],
+    ["quaternion", "quat", isNonzeroQuat],
+  ] as const) {
+    const primary = value[canonical];
+    const old = value[alias];
+    if (primary !== undefined && !check(primary)) return false;
+    if (old !== undefined && !check(old)) return false;
+    if (primary !== undefined && old !== undefined && JSON.stringify(primary) !== JSON.stringify(old)) return false;
+  }
   return true;
 };
+
+const isParent = (value: unknown): boolean => value === null || isNonEmptyString(value);
+const isName = (value: unknown): boolean => isString(value) && new TextEncoder().encode(value).length <= 1024;
+const isTags = (value: unknown): boolean =>
+  isObject(value) && new TextEncoder().encode(JSON.stringify(value)).length <= 16 * 1024;
+const nodeMetadata = { parent: isParent, name: isName, tags: isTags };
+const nodeOptions = { ...nodeMetadata, pose: isPose, geometry_scale: isVec3 };
+const poseOptions = { scene_id: isNonEmptyString, geometry_scale: isVec3 };
 
 const isStringEnum = (values: string[]): Validator => (value) =>
   isString(value) && values.includes(value);
@@ -159,7 +181,7 @@ const validateAddPrimitive = (args: unknown): string | null => {
   const error = validateObject(
     args,
     { scene_id: isNonEmptyString, type: isNonEmptyString },
-    { pose: isPose, color: isColor, params: isObject }
+    { ...nodeOptions, color: isColor, params: isObject }
   );
   if (error) return error;
   const obj = args as Record<string, unknown>;
@@ -179,6 +201,7 @@ const validateAddMesh = (args: unknown): string | null => {
       faces: (value) => value !== undefined,
     },
     {
+      ...nodeOptions,
       normals: (value) => isBufferRef(value, "f32", [0, 3]),
       colors: (value) => isBufferRef(value, "u8", [0, 3]),
       color: isColor,
@@ -355,25 +378,32 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
   list_views: (args) => validateObject(args, {}),
   get_scene_snapshot: (args) => validateObject(args, { scene_id: isNonEmptyString }),
 
+  add_node: (args) => validateObject(args, { scene_id: isNonEmptyString }, nodeOptions),
   add_primitive: validateAddPrimitive,
   add_points: (args) => {
-    const error = validateObject(
-      args,
-      {
-        scene_id: isNonEmptyString,
-        positions: (value) => isBufferRef(value, "f32", [0, 3]),
-      },
-      {
-        colors: (value) => isBufferRef(value, "u8", [0, 3]),
-        color: isColor,
-        size: isNumber,
-        group_id: isNonEmptyString,
+    const positions = (value: unknown) => isBufferRef(value, "f32", [0, 3]);
+    const colors = (value: unknown) => isBufferRef(value, "u8", [0, 3]) || isBufferRef(value, "u8", [0, 4]);
+    const error = validateObject(args, { scene_id: isNonEmptyString }, {
+      ...nodeOptions, positions, colors, color: isColor, size: isNumber, group_id: isNonEmptyString,
+      chunks: (value) => Array.isArray(value) && value.length > 0 &&
+        value.every(chunk => isObject(chunk) && isObject(chunk.positions) &&
+          Array.isArray(chunk.positions.shape) &&
+          validateObject(chunk, { positions }, { colors }) === null &&
+          (chunk.colors === undefined || (isObject(chunk.colors) && Array.isArray(chunk.colors.shape) &&
+            chunk.colors.shape[0] === chunk.positions.shape[0]))),
+    });
+    if (error || !isObject(args)) return error;
+    if (args.chunks !== undefined) {
+      if (["positions", "colors", "group_id"].some(key => args[key] !== undefined)) {
+        return "chunks cannot be combined with positions, colors or group_id";
       }
-    );
-    if (error) return error;
-    if (isObject(args) && "colors" in args && "color" in args) {
-      return "colors and color are mutually exclusive";
+      if (args.color !== undefined && (args.chunks as Array<Record<string, unknown>>).some(chunk => chunk.colors !== undefined)) {
+        return "colors and color are mutually exclusive";
+      }
+    } else if (args.positions === undefined) {
+      return "positions or chunks required";
     }
+    if (args.colors !== undefined && args.color !== undefined) return "colors and color are mutually exclusive";
     return null;
   },
   add_lines: (args) =>
@@ -384,6 +414,7 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
         positions: (value) => isBufferRef(value, "f32", [0, 3]),
       },
       {
+        ...nodeOptions,
         indices: (value) => isBufferRef(value, "u32", [0, 2]),
         width: isNumber,
         color: isColor,
@@ -394,7 +425,7 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
     validateObject(
       args,
       { scene_id: isNonEmptyString, url: isNonEmptyString },
-      { pose: isPose, scale: isVec3, color: isColor }
+      { ...nodeOptions, scale: isVec3, color: isColor }
     ),
   add_text_3d: (args) =>
     validateObject(
@@ -406,7 +437,7 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
         font_size: isNumber,
         color: isColor,
       },
-      { background_color: isString }
+      { ...nodeOptions, background_color: isString }
     ),
   update_text_3d: (args) =>
     validateObject(
@@ -443,8 +474,17 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
     validateObject(
       args,
       { handle: isNonEmptyString, pose: isPose },
-      { scene_id: isNonEmptyString }
+      poseOptions
     ),
+  set_parent: (args) => validateObject(args, { handle: isNonEmptyString, parent: isParent }, {
+    scene_id: isNonEmptyString, local_transform: value => isPose(value, false),
+  }),
+  set_object_metadata: (args) => validateObject(args, { handle: isNonEmptyString }, {
+    scene_id: isNonEmptyString, name: isName, tags: isTags,
+  }),
+  set_geometry_scale: (args) => validateObject(args, { handle: isNonEmptyString, geometry_scale: isVec3 }, {
+    scene_id: isNonEmptyString,
+  }),
   set_object_transforms: (args) =>
     validateObject(
       args,
@@ -452,7 +492,7 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
         items: (value) =>
           Array.isArray(value) &&
           value.every((item) =>
-            validateObject(item, { handle: isNonEmptyString, pose: isPose }, { scene_id: isNonEmptyString }) === null
+            validateObject(item, { handle: isNonEmptyString, pose: isPose }, poseOptions) === null
           ),
       },
       { scene_id: isNonEmptyString }
@@ -478,7 +518,9 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
       { handle: isNonEmptyString, visible: isBoolean },
       { target: isStringEnum(["scene", "overlay"]), view_id: isNonEmptyString, scene_id: isNonEmptyString }
     ),
-  get_transform: (args) => validateObject(args, { handle: isNonEmptyString }),
+  get_transform: (args) => validateObject(args, { handle: isNonEmptyString }, {
+    scene_id: isNonEmptyString, space: isStringEnum(["local", "world"]), matrix: isBoolean,
+  }),
   get_color: (args) => validateObject(args, { handle: isNonEmptyString }),
   get_alpha: (args) => validateObject(args, { handle: isNonEmptyString }),
   get_visible: (args) => validateObject(args, { handle: isNonEmptyString }),
@@ -588,6 +630,7 @@ const COMMAND_VALIDATORS: Record<string, (args: unknown) => string | null> = {
     validateObject(
       args,
       {
+        ...nodeOptions,
         view_id: isNonEmptyString,
         handle: isNonEmptyString,
       },

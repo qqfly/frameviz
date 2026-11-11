@@ -2,7 +2,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -34,8 +34,6 @@ impl HostError {
 pub struct Pose {
     pub pos: [f64; 3],
     pub quat: [f64; 4],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scale: Option<[f64; 3]>,
 }
 
 impl Pose {
@@ -43,8 +41,76 @@ impl Pose {
         Self {
             pos: [0.0, 0.0, 0.0],
             quat: [0.0, 0.0, 0.0, 1.0],
-            scale: None,
         }
+    }
+
+    fn normalized(quat: [f64; 4]) -> Result<[f64; 4], HostError> {
+        let max = quat.iter().fold(0.0_f64, |max, x| max.max(x.abs()));
+        if max == 0.0 || !quat.iter().all(|x| x.is_finite()) {
+            return Err(HostError::new("ERR_INVALID_ARGS", "quaternion must be finite and nonzero"));
+        }
+        let scaled = quat.map(|x| x / max);
+        let length = scaled.iter().map(|x| x * x).sum::<f64>().sqrt();
+        Ok(scaled.map(|x| x / length))
+    }
+
+    fn rotate(&self, point: [f64; 3]) -> [f64; 3] {
+        let [x, y, z, w] = self.quat;
+        let [px, py, pz] = point;
+        let [tx, ty, tz] = [
+            2.0 * (y * pz - z * py),
+            2.0 * (z * px - x * pz),
+            2.0 * (x * py - y * px),
+        ];
+        [
+            px + w * tx + y * tz - z * ty,
+            py + w * ty + z * tx - x * tz,
+            pz + w * tz + x * ty - y * tx,
+        ]
+    }
+
+    fn compose(&self, local: &Self) -> Result<Self, HostError> {
+        let [x, y, z, w] = self.quat;
+        let [a, b, c, d] = local.quat;
+        let pos = self.rotate(local.pos);
+        let pos = std::array::from_fn(|i| self.pos[i] + pos[i]);
+        if !pos.iter().all(|p| p.is_finite()) {
+            return Err(HostError::new("ERR_INVALID_ARGS", "composed position is not finite"));
+        }
+        Ok(Self {
+            pos,
+            quat: Self::normalized([
+                w * a + x * d + y * c - z * b,
+                w * b - x * c + y * d + z * a,
+                w * c + x * b - y * a + z * d,
+                w * d - x * a - y * b - z * c,
+            ])?,
+        })
+    }
+
+    fn inverse(&self) -> Self {
+        let [x, y, z, w] = self.quat;
+        let mut inverse = Self { pos: [0.0; 3], quat: [-x, -y, -z, w] };
+        inverse.pos = inverse.rotate(self.pos.map(|p| -p));
+        inverse
+    }
+
+    fn matrix(&self) -> [f64; 16] {
+        let [x, y, z] = [self.rotate([1.,0.,0.]), self.rotate([0.,1.,0.]), self.rotate([0.,0.,1.])];
+        [
+            x[0], x[1], x[2], 0.0,
+            y[0], y[1], y[2], 0.0,
+            z[0], z[1], z[2], 0.0,
+            self.pos[0], self.pos[1], self.pos[2], 1.0,
+        ]
+    }
+
+    fn legacy_wire(&self, scale: Option<[f64; 3]>) -> Value {
+        let mut pose = json!(self);
+        if let Some(scale) = scale {
+            pose["scale"] = json!(scale);
+        }
+        pose
     }
 }
 
@@ -54,6 +120,11 @@ pub struct SceneObject {
     pub object_type: String,
     pub scene_id: String,
     pub pose: Pose,
+    pub parent: Option<String>,
+    pub name: String,
+    pub tags: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geometry_scale: Option<[f64; 3]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<Vec<f64>>,
     pub visible: bool,
@@ -260,15 +331,12 @@ impl Host {
     }
 
     pub fn build_scene_snapshot(&self, scene_id: &str) -> Result<SceneSnapshot, HostError> {
-        let mut objects: Vec<SceneObject> = Vec::new();
+        let objects = self.ordered_scene_objects(scene_id);
         let mut buffer_ids: Vec<String> = Vec::new();
 
-        for obj in self.objects.values() {
-            if obj.scene_id == scene_id {
-                objects.push(obj.clone());
-                if let Some(data) = &obj.data {
-                    buffer_ids.extend(self.collect_buffer_ids(data));
-                }
+        for obj in &objects {
+            if let Some(data) = &obj.data {
+                buffer_ids.extend(self.collect_buffer_ids(data));
             }
         }
 
@@ -294,13 +362,15 @@ impl Host {
 
         Ok(SceneSnapshot {
             scene_id: scene_id.to_string(),
-            objects,
+            objects: objects.into_iter().cloned().collect(),
             buffers,
         })
     }
 
     pub fn command_buffers(&self, args: &Value) -> Vec<(String, BufferSnapshot, Vec<u8>)> {
-        let mut ids = self.collect_buffer_ids(args);
+        let mut ids: Vec<_> = args.as_object().into_iter().flatten()
+            .filter(|(key, _)| key.as_str() != "tags")
+            .flat_map(|(_, value)| self.collect_buffer_ids(value)).collect();
         ids.sort(); ids.dedup();
         ids.into_iter().filter_map(|id| self.buffers.get(&id).map(|entry| (id, BufferSnapshot {
             dtype: entry.dtype.clone(), shape: entry.shape.clone(), size_bytes: entry.size_bytes, data_base64: None
@@ -333,7 +403,7 @@ impl Host {
         if result.is_ok() {
             // Legacy add_* may create a scene, but only after the complete command succeeds.
             if let Some(scene) = args.get("scene_id").and_then(Value::as_str) {
-                if matches!(name, "attach_scene" | "add_primitive" | "add_points" | "add_lines" | "add_mesh" | "add_instances" | "load_mesh" | "add_text_3d") { self.ensure_scene(scene); }
+                if matches!(name, "attach_scene" | "add_node" | "add_primitive" | "add_points" | "add_lines" | "add_mesh" | "add_instances" | "load_mesh" | "add_text_3d") { self.ensure_scene(scene); }
             }
         } else {
             (self.scene_counter, self.view_counter, self.buffer_counter, self.handle_counter) = counters;
@@ -343,7 +413,11 @@ impl Host {
 
     fn execute_command(&mut self, name: &str, args: &mut Value) -> Result<Value, HostError> {
         if matches!(name, "add_points" | "add_lines" | "add_mesh" | "add_instances" | "update_instances") {
-            self.validate_buffer_refs(args)?;
+            for (key, value) in args.as_object().unwrap() {
+                if key != "tags" {
+                    self.validate_buffer_refs(value)?;
+                }
+            }
         }
         // Validate scope before any mutation, including updates and clones.
         if let Some(handle) = args.get("handle").and_then(Value::as_str) {
@@ -386,7 +460,7 @@ impl Host {
                     "set_object_visibilities" => { self.require_bool(item, "visible")?; }
                     "set_object_transforms" => {
                         let pose = item.get("pose").ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "pose is required"))?;
-                        self.parse_pose(Some(pose))?;
+                        self.parse_object_pose(item, Some(pose))?;
                     }
                     _ => unreachable!(),
                 }
@@ -435,18 +509,10 @@ impl Host {
             }
             "clear_scene" => {
                 let scene_id = self.require_scene_id(args, name)?;
-                let mut counts = self.build_buffer_ref_counts();
-                let handles: Vec<String> = self
-                    .objects
-                    .iter()
-                    .filter(|(_, obj)| obj.scene_id == scene_id)
-                    .map(|(handle, _)| handle.clone())
-                    .collect();
-                for handle in handles {
-                    if let Some(obj) = self.objects.remove(&handle) {
-                        self.release_buffers(self.collect_buffer_ids_from_object(&obj), &mut counts);
-                    }
-                }
+                let roots: Vec<_> = self.objects.values()
+                    .filter(|obj| obj.scene_id == scene_id && obj.parent.is_none())
+                    .map(|obj| obj.handle.clone()).collect();
+                self.remove_subtrees(roots);
                 if let Some(view_id) = self.get_optional_string(args, "view_id") {
                     let overlay_handles: Vec<String> = self
                         .overlays
@@ -504,18 +570,10 @@ impl Host {
             }
             "destroy_scene" => {
                 let scene_id = self.require_scene_id(args, name)?;
-                let mut counts = self.build_buffer_ref_counts();
-                let handles: Vec<String> = self
-                    .objects
-                    .iter()
-                    .filter(|(_, obj)| obj.scene_id == scene_id)
-                    .map(|(handle, _)| handle.clone())
-                    .collect();
-                for handle in handles {
-                    if let Some(obj) = self.objects.remove(&handle) {
-                        self.release_buffers(self.collect_buffer_ids_from_object(&obj), &mut counts);
-                    }
-                }
+                let roots: Vec<_> = self.objects.values()
+                    .filter(|obj| obj.scene_id == scene_id && obj.parent.is_none())
+                    .map(|obj| obj.handle.clone()).collect();
+                self.remove_subtrees(roots);
                 for view in self.views.values_mut() {
                     if view.scene_id.as_deref() == Some(scene_id.as_str()) {
                         view.scene_id = None;
@@ -673,103 +731,44 @@ impl Host {
             }
 
             // Primitives & geometry
+            "add_node" => {
+                let scene_id = self.require_scene_id(args, name)?;
+                self.add_scene_object(scene_id, "node", args, None, Value::Null)
+            }
             "add_primitive" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
                 let ptype = self.require_string(args, "type")?;
-                let pose = self.parse_pose(args.get("pose"))?;
                 let color = self.get_optional_color(args, "color")?;
                 self.assert_color_range(color.as_ref(), "add_primitive.color")?;
                 let params = args.get("params").cloned().unwrap_or_else(|| json!({}));
 
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "primitive".to_string(),
-                        scene_id,
-                        pose,
-                        color,
-                        visible: true,
-                        group_id: None,
-                        data: Some(json!({ "type": ptype, "params": params })),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "primitive" }))
+                let data = json!({ "type": ptype, "params": params });
+                self.add_scene_object(scene_id, "primitive", args, color, data)
             }
             "add_points" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
-                let positions = self.require_value(args, "positions")?;
-                let group_id = args
-                    .get("group_id")
-                    .and_then(|v| v.as_str())
-                    .map(|v| v.to_string());
-                
-                // P1-1: Soft warning for large point clouds
-                if let Some(buffer_ref) = positions.as_object() {
-                    if let Some(shape) = buffer_ref.get("shape").and_then(|v| v.as_array()) {
-                        if let Some(n_points) = shape.first().and_then(|v| v.as_u64()) {
-                            if n_points as usize > POINT_COUNT_WARNING_THRESHOLD {
-                                let estimated_mb = (n_points as usize * 12) / 1_000_000;
-                                self.add_log(
-                                    "warn",
-                                    "host",
-                                    format!(
-                                        "Large point cloud: {} points (~{}MB). Consider using chunked upload for better performance.",
-                                        n_points, estimated_mb
-                                    ),
-                                    HashMap::new(),
-                                );
-                            }
-                        }
-                    }
-                }
-                
-                let colors = args.get("colors").cloned();
+                let geometry = self.point_geometry(args)?;
                 let color = self.get_optional_color(args, "color")?;
                 self.assert_color_range(color.as_ref(), "add_points.color")?;
-                let size = self.get_optional_f64(args, "size").unwrap_or(3.0);
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "points".to_string(),
-                        scene_id,
-                        pose: Pose::identity(),
-                        color,
-                        visible: true,
-                        group_id,
-                        data: Some(json!({ "positions": positions, "colors": colors, "size": size })),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "points" }))
+                let point_count = geometry["point_count"].as_u64()
+                    .or_else(|| geometry["positions"]["shape"][0].as_u64()).unwrap_or(0);
+                let result = self.add_scene_object(scene_id, "points", args, color, geometry)?;
+                if point_count > POINT_COUNT_WARNING_THRESHOLD as u64 {
+                    self.add_log("warn", "host", format!("Large point cloud: {point_count} points"), HashMap::new());
+                }
+                Ok(result)
             }
             "add_lines" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
                 let positions = self.require_value(args, "positions")?;
                 let indices = args.get("indices").cloned();
                 let width = self.get_optional_f64(args, "width").unwrap_or(1.0);
                 let color = self.get_optional_color(args, "color")?;
                 self.assert_color_range(color.as_ref(), "add_lines.color")?;
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "lines".to_string(),
-                        scene_id,
-                        pose: Pose::identity(),
-                        color,
-                        visible: true,
-                        group_id: None,
-                        data: Some(json!({ "positions": positions, "indices": indices, "width": width })),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "lines" }))
+                let data = json!({ "positions": positions, "indices": indices, "width": width });
+                self.add_scene_object(scene_id, "lines", args, color, data)
             }
             "add_mesh" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
                 let vertices = self.require_value(args, "vertices")?;
                 let faces = self.require_value(args, "faces")?;
@@ -787,31 +786,14 @@ impl Host {
                     }
                     color = Some(rgba);
                 }
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "mesh".to_string(),
-                        scene_id,
-                        pose: Pose::identity(),
-                        color,
-                        visible: true,
-                        group_id: None,
-                        data: Some(json!({
-                            "vertices": vertices,
-                            "faces": faces,
-                            "faces_format": faces_format,
-                            "wireframe": args.get("wireframe"),
-                            "smooth_shading": args.get("smooth_shading"),
-                            "normals": normals,
-                            "colors": colors
-                        })),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "mesh" }))
+                let data = json!({
+                    "vertices": vertices, "faces": faces, "faces_format": faces_format,
+                    "wireframe": args.get("wireframe"), "smooth_shading": args.get("smooth_shading"),
+                    "normals": normals, "colors": colors,
+                });
+                self.add_scene_object(scene_id, "mesh", args, color, data)
             }
             "add_instances" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
                 let inst_type = self.require_string(args, "type")?;
                 let positions = self.require_value(args, "positions")?;
@@ -831,27 +813,11 @@ impl Host {
                     color = Some(rgba);
                 }
                 self.assert_color_range(color.as_ref(), "add_instances.color")?;
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "instances".to_string(),
-                        scene_id,
-                        pose: Pose::identity(),
-                        color,
-                        visible: true,
-                        group_id: None,
-                        data: Some(json!({
-                            "type": inst_type,
-                            "positions": positions,
-                            "quats": quats,
-                            "scales": scales,
-                            "colors": colors,
-                            "params": params,
-                        })),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "instances" }))
+                let data = json!({
+                    "type": inst_type, "positions": positions, "quats": quats,
+                    "scales": scales, "colors": colors, "params": params,
+                });
+                self.add_scene_object(scene_id, "instances", args, color, data)
             }
             "update_instances" => {
                 let handle = self.require_string(args, "handle")?;
@@ -916,56 +882,21 @@ impl Host {
                 Ok(json!({}))
             }
             "load_mesh" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
                 let url = self.require_string(args, "url")?;
-                let pose = self.parse_pose(args.get("pose"))?;
-                let scale = if let Some(value) = args.get("scale") {
-                    json!(self.require_vec3(value, "scale")?)
-                } else {
-                    json!([1.0, 1.0, 1.0])
-                };
                 let color = self.get_optional_color(args, "color")?;
                 self.assert_color_range(color.as_ref(), "load_mesh.color")?;
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "loaded_mesh".to_string(),
-                        scene_id,
-                        pose,
-                        color,
-                        visible: true,
-                        group_id: None,
-                        data: Some(json!({ "url": url, "scale": scale })),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "loaded_mesh" }))
+                self.add_scene_object(scene_id, "loaded_mesh", args, color, json!({"url": url}))
             }
             "add_text_3d" => {
-                let handle = format!("h_{}", self.next_handle_id());
                 let scene_id = self.require_scene_id(args, name)?;
-                let pose = self.parse_pose_from_pos(args.get("pos"))?;
                 let data = json!({
                     "text": args.get("text").cloned().unwrap_or_else(|| Value::String(String::new())),
                     "font_size": args.get("font_size").cloned(),
                     "color": args.get("color").cloned(),
                     "background_color": args.get("background_color").cloned(),
                 });
-                self.objects.insert(
-                    handle.clone(),
-                    SceneObject {
-                        handle: handle.clone(),
-                        object_type: "text3d".to_string(),
-                        scene_id,
-                        pose,
-                        color: None,
-                        visible: true,
-                        group_id: None,
-                        data: Some(data),
-                    },
-                );
-                Ok(json!({ "handle": handle, "object_type": "text3d" }))
+                self.add_scene_object(scene_id, "text3d", args, None, data)
             }
             "update_text_3d" => {
                 let handle = self.require_string(args, "handle")?;
@@ -991,7 +922,7 @@ impl Host {
                     }
                 }
                 if let Some(pose) = new_pose {
-                    obj.pose = pose;
+                    obj.pose.pos = pose.pos;
                 }
                 if let Some(font_size) = new_font_size {
                     if let Some(data) = obj.data.as_mut() {
@@ -1011,8 +942,11 @@ impl Host {
             }
             "remove_text_3d" => {
                 let handle = self.require_string(args, "handle")?;
-                self.objects.remove(&handle);
-                Ok(json!({}))
+                if let Some(obj) = self.objects.get(&handle) {
+                    args["scene_id"] = json!(obj.scene_id);
+                }
+                let removed = self.remove_subtrees([handle]);
+                Ok(json!({"removed": removed}))
             }
             "add_text_2d" => {
                 let handle = format!("h_{}", self.next_handle_id());
@@ -1088,19 +1022,15 @@ impl Host {
                     ));
                 }
                 let handle = self.require_string(args, "handle")?;
-                if let Some(scene_id) = scene_id {
+                if scene_id.is_some() {
                     if !self.objects.contains_key(&handle) {
                         return Err(HostError::new(
                             "ERR_NOT_FOUND",
                             format!("Object not found: {}", handle),
                         ));
                     }
-                    let mut counts = self.build_buffer_ref_counts();
-                    if let Some(obj) = self.objects.remove(&handle) {
-                        if obj.scene_id == scene_id {
-                            self.release_buffers(self.collect_buffer_ids_from_object(&obj), &mut counts);
-                        }
-                    }
+                    let removed = self.remove_subtrees([handle]);
+                    return Ok(json!({"removed": removed}));
                 } else if let Some(_view_id) = view_id {
                     if !self.overlays.contains_key(&handle) {
                         return Err(HostError::new(
@@ -1122,13 +1052,8 @@ impl Host {
                     let obj = self.objects.get(handle).ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
                     if obj.scene_id != scene_id { return Err(HostError::new("ERR_INVALID_SCOPE", "Object belongs to another scene")); }
                 }
-                let mut counts = self.build_buffer_ref_counts();
-                for value in handles {
-                    if let Some(obj) = self.objects.remove(value.as_str().unwrap()) {
-                        self.release_buffers(self.collect_buffer_ids_from_object(&obj), &mut counts);
-                    }
-                }
-                Ok(json!({}))
+                let removed = self.remove_subtrees(handles.iter().map(|h| h.as_str().unwrap().to_owned()));
+                Ok(json!({"removed": removed}))
             }
             "clone_object" => {
                 let handle = self.require_string(args, "handle")?;
@@ -1158,41 +1083,33 @@ impl Host {
             }
 
             // Transform & display
-            "set_transform" => {
-                let handle = self.require_string(args, "handle")?;
-                let pose_value = args.get("pose").ok_or_else(|| {
-                    HostError::new("ERR_INVALID_ARGS", "pose is required for set_transform")
-                })?;
-                let pose = self.parse_pose(Some(pose_value))?;
-                let obj = self
-                    .objects
-                    .get_mut(&handle)
-                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", format!("Object not found: {}", handle)))?;
-                obj.pose = pose;
+            "set_transform" => self.set_object_pose(args),
+            "set_object_transforms" => {
+                let items = args.get_mut("items").and_then(Value::as_array_mut)
+                    .expect("batch was validated");
+                for item in items {
+                    self.set_object_pose(item)?;
+                }
                 Ok(json!({}))
             }
-            "set_object_transforms" => {
-                let items = args.get("items").and_then(|v| v.as_array()).ok_or_else(|| {
-                    HostError::new("ERR_INVALID_ARGS", "items must be an array")
-                })?;
-                let scene_id = self.get_optional_string(args, "scene_id");
-                for item in items {
-                    if let Some(obj) = item.as_object() {
-                        let handle = obj.get("handle").and_then(|v| v.as_str());
-                        let pose_val = obj.get("pose");
-                        if let (Some(handle), Some(pose_val)) = (handle, pose_val) {
-                            let pose = self.parse_pose(Some(pose_val))?;
-                            if let Some(target) = self.objects.get_mut(handle) {
-                                if let Some(sid) = &scene_id {
-                                    if &target.scene_id != sid {
-                                        continue;
-                                    }
-                                }
-                                target.pose = pose;
-                            }
-                        }
-                    }
-                }
+            "set_parent" => self.set_parent(args),
+            "set_object_metadata" => {
+                let handle = self.require_string(args, "handle")?;
+                let (name, tags) = self.metadata(args)?;
+                let obj = self.objects.get_mut(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+                if let Some(name) = name { obj.name = name; }
+                if let Some(tags) = tags { obj.tags = tags; }
+                args["scene_id"] = json!(obj.scene_id);
+                Ok(json!({}))
+            }
+            "set_geometry_scale" => {
+                let handle = self.require_string(args, "handle")?;
+                let scale = self.require_vec3(&self.require_value(args, "geometry_scale")?, "geometry_scale")?;
+                let obj = self.objects.get_mut(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+                obj.geometry_scale = Some(scale);
+                args["scene_id"] = json!(obj.scene_id);
                 Ok(json!({}))
             }
             "set_color" => {
@@ -1210,8 +1127,13 @@ impl Host {
                     }
                 });
 
-                let old_refs = self.objects.get(&handle).and_then(|o| o.data.as_ref()).and_then(|data| data.get("colors"))
-                    .map(|colors| self.collect_buffer_ids(colors)).unwrap_or_default();
+                let old_refs = self.objects.get(&handle).and_then(|o| o.data.as_ref())
+                    .map(|data| {
+                        let chunk_colors = data["chunks"].as_array().into_iter().flatten()
+                            .filter_map(|chunk| chunk.get("colors"));
+                        data.get("colors").into_iter().chain(chunk_colors)
+                            .flat_map(|colors| self.collect_buffer_ids(colors)).collect::<Vec<_>>()
+                    }).unwrap_or_default();
                 let mut counts = if old_refs.is_empty() { HashMap::new() } else { self.build_buffer_ref_counts() };
                 if target == "overlay" {
                     if let Some(overlay) = self.overlays.get_mut(&handle) {
@@ -1228,6 +1150,13 @@ impl Host {
                     if let Some(data) = &mut obj.data {
                         if let Some(data_obj) = data.as_object_mut() {
                             data_obj.remove("colors");
+                            if let Some(chunks) = data_obj.get_mut("chunks").and_then(Value::as_array_mut) {
+                                for chunk in chunks {
+                                    if let Some(chunk) = chunk.as_object_mut() {
+                                        chunk.remove("colors");
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1287,11 +1216,26 @@ impl Host {
             // Getters
             "get_transform" => {
                 let handle = self.require_string(args, "handle")?;
-                let obj = self
-                    .objects
-                    .get(&handle)
-                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", format!("Object not found: {}", handle)))?;
-                Ok(json!({ "pose": obj.pose }))
+                let obj = self.objects.get(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+                let space = match args.get("space") {
+                    None => "local",
+                    Some(value) => value.as_str().unwrap_or(""),
+                };
+                let (pose, legacy_scale) = match space {
+                    "local" => (obj.pose.clone(), obj.geometry_scale),
+                    "world" => (self.world_pose(obj)?, None),
+                    _ => return Err(HostError::new("ERR_INVALID_ARGS", "space must be local or world")),
+                };
+                let mut result = json!({
+                    "pose": pose.legacy_wire(legacy_scale),
+                    "transform": {"position": pose.pos, "quaternion": pose.quat},
+                    "geometry_scale": obj.geometry_scale,
+                });
+                if args.get("matrix").and_then(Value::as_bool) == Some(true) {
+                    result["matrix"] = json!(pose.matrix());
+                }
+                Ok(result)
             }
             "get_color" => {
                 let handle = self.require_string(args, "handle")?;
@@ -1301,7 +1245,8 @@ impl Host {
                     .ok_or_else(|| HostError::new("ERR_NOT_FOUND", format!("Object not found: {}", handle)))?;
                 // Check if mesh has vertex colors (colors in data)
                 if let Some(data) = &obj.data {
-                    if matches!(data.get("colors"), Some(Value::Object(_))) {
+                    if data["colors"].is_object() || data["chunks"].as_array().is_some_and(|chunks|
+                        chunks.iter().any(|chunk| chunk["colors"].is_object())) {
                         return Ok(json!({ "has_vertex_colors": true }));
                     }
                 }
@@ -1332,49 +1277,32 @@ impl Host {
             }
             "list_objects" => {
                 let scene_id = self.require_scene_id(args, name)?;
-                let include_internal = args
-                    .get("include_internal")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true); // Default true for backward compatibility.
+                let include_internal = args.get("include_internal").and_then(Value::as_bool).unwrap_or(true);
                 let mut objects = Vec::new();
-                if include_internal {
-                    for obj in self.objects.values() {
-                        if obj.scene_id == scene_id {
-                            objects.push(json!({
-                                "handle": obj.handle,
-                                "type": obj.object_type,
-                                "visible": obj.visible
-                            }));
-                        }
-                    }
-                } else {
-                    let mut groups: HashMap<String, (&SceneObject, usize)> = HashMap::new();
-                    for obj in self.objects.values() {
-                        if obj.scene_id != scene_id {
-                            continue;
-                        }
-                        if let Some(group_id) = obj.group_id.as_ref() {
-                            let entry = groups.entry(group_id.clone()).or_insert((obj, 0));
-                            entry.1 += 1;
-                            continue;
-                        }
+                let mut effective = HashMap::new();
+                let mut groups: HashMap<&str, (&SceneObject, usize, bool)> = HashMap::new();
+                for obj in self.ordered_scene_objects(&scene_id) {
+                    let visible = obj.visible && obj.parent.as_deref()
+                        .and_then(|parent| effective.get(parent).copied()).unwrap_or(true);
+                    effective.insert(obj.handle.as_str(), visible);
+                    if let Some(group) = obj.group_id.as_deref().filter(|_| !include_internal) {
+                        let entry = groups.entry(group).or_insert((obj, 0, visible));
+                        entry.1 += 1;
+                    } else {
                         objects.push(json!({
-                            "handle": obj.handle,
-                            "type": obj.object_type,
-                            "visible": obj.visible
-                        }));
-                    }
-                    for (group_id, (rep, count)) in groups {
-                        objects.push(json!({
-                            "handle": group_id,
-                            "type": rep.object_type,
-                            "visible": rep.visible,
-                            "group": true,
-                            "group_size": count
+                            "handle": obj.handle, "type": obj.object_type, "parent": obj.parent,
+                            "name": obj.name, "tags": obj.tags, "visible": obj.visible,
+                            "effective_visible": visible,
                         }));
                     }
                 }
-                Ok(json!({ "objects": objects }))
+                for (group, (obj, count, visible)) in groups {
+                    objects.push(json!({
+                        "handle": group, "type": obj.object_type, "visible": obj.visible,
+                        "effective_visible": visible, "group": true, "group_size": count,
+                    }));
+                }
+                Ok(json!({"objects": objects}))
             }
 
             // Camera
@@ -1746,22 +1674,264 @@ impl Host {
         Ok(Some(result))
     }
 
-    fn parse_pose(&self, pose_val: Option<&Value>) -> Result<Pose, HostError> {
+    fn ordered_scene_objects(&self, scene_id: &str) -> Vec<&SceneObject> {
+        let mut by_parent: HashMap<Option<&str>, Vec<&SceneObject>> = HashMap::new();
+        for obj in self.objects.values().filter(|obj| obj.scene_id == scene_id) {
+            by_parent.entry(obj.parent.as_deref()).or_default().push(obj);
+        }
+        for siblings in by_parent.values_mut() {
+            siblings.sort_unstable_by(|a, b| b.handle.cmp(&a.handle));
+        }
+        let mut ordered = Vec::new();
+        let mut stack = by_parent.remove(&None).unwrap_or_default();
+        while let Some(obj) = stack.pop() {
+            ordered.push(obj);
+            if let Some(children) = by_parent.remove(&Some(obj.handle.as_str())) {
+                stack.extend(children);
+            }
+        }
+        ordered
+    }
+
+    fn remove_subtrees(&mut self, roots: impl IntoIterator<Item = String>) -> Vec<String> {
+        let mut children: HashMap<String, Vec<String>> = HashMap::new();
+        for obj in self.objects.values() {
+            if let Some(parent) = &obj.parent {
+                children.entry(parent.clone()).or_default().push(obj.handle.clone());
+            }
+        }
+        let mut stack: Vec<_> = roots.into_iter().collect();
+        let mut removed = HashSet::new();
+        let mut counts = self.build_buffer_ref_counts();
+        while let Some(handle) = stack.pop() {
+            if let Some(obj) = self.objects.remove(&handle) {
+                self.release_buffers(self.collect_buffer_ids_from_object(&obj), &mut counts);
+                if let Some(children) = children.remove(&handle) {
+                    stack.extend(children);
+                }
+                removed.insert(handle);
+            }
+        }
+        self.gizmos.retain(|_, gizmo| !removed.contains(&gizmo.handle));
+        let mut removed: Vec<_> = removed.into_iter().collect();
+        removed.sort_unstable();
+        removed
+    }
+
+    fn validate_parent(&self, scene: &str, parent: Option<&Value>) -> Result<Option<String>, HostError> {
+        let Some(value) = parent.filter(|value| !value.is_null()) else {
+            return Ok(None);
+        };
+        let id = value.as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "parent must be a handle or null"))?;
+        let obj = self.objects.get(id)
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Parent object not found"))?;
+        if obj.scene_id != scene {
+            return Err(HostError::new("ERR_INVALID_SCOPE", "Parent belongs to another scene"));
+        }
+        Ok(Some(id.to_owned()))
+    }
+
+    fn metadata(&self, args: &Value) -> Result<(Option<String>, Option<Value>), HostError> {
+        let name = args.get("name").map(|value| {
+            value.as_str().filter(|name| name.len() <= 1024).map(str::to_owned)
+                .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "name must be at most 1024 UTF-8 bytes"))
+        }).transpose()?;
+        let tags = args.get("tags").map(|value| {
+            if !value.is_object() || value.to_string().len() > 16 * 1024 {
+                return Err(HostError::new("ERR_INVALID_ARGS", "tags must be a JSON object of at most 16 KiB"));
+            }
+            Ok(value.clone())
+        }).transpose()?;
+        Ok((name, tags))
+    }
+
+    fn add_scene_object(
+        &mut self,
+        scene_id: String,
+        object_type: &str,
+        args: &mut Value,
+        color: Option<Vec<f64>>,
+        data: Value,
+    ) -> Result<Value, HostError> {
+        let parent = self.validate_parent(&scene_id, args.get("parent"))?;
+        let (name, tags) = self.metadata(args)?;
+        let (mut pose, geometry_scale) = self.parse_object_pose(args, args.get("pose"))?;
+        if object_type == "text3d" && args.get("pose").is_none() {
+            pose = self.parse_pose_from_pos(args.get("pos"))?;
+        }
+        let handle = format!("h_{}", self.next_handle_id());
+        // Existing renderer and SDK pose fields remain readable during migration.
+        args["pose"] = pose.legacy_wire(geometry_scale);
+        if let Some(scale) = geometry_scale {
+            args["geometry_scale"] = json!(scale);
+        }
+        if object_type == "text3d" {
+            args["pos"] = json!(pose.pos);
+        }
+        let group_id = if object_type == "points" {
+            self.get_optional_string(args, "group_id")
+        } else {
+            None
+        };
+        self.objects.insert(handle.clone(), SceneObject {
+            handle: handle.clone(),
+            object_type: object_type.to_owned(),
+            scene_id,
+            pose,
+            parent,
+            name: name.unwrap_or_default(),
+            tags: tags.unwrap_or_else(|| json!({})),
+            geometry_scale,
+            color,
+            visible: true,
+            group_id,
+            data: (!data.is_null()).then_some(data),
+        });
+        Ok(json!({"handle": handle, "object_type": object_type}))
+    }
+
+    fn point_geometry(&self, args: &Value) -> Result<Value, HostError> {
+        let size = self.get_optional_f64(args, "size").unwrap_or(3.0);
+        let Some(chunks) = args.get("chunks") else {
+            return Ok(json!({
+                "positions": self.require_value(args, "positions")?,
+                "colors": args.get("colors"), "size": size,
+            }));
+        };
+        if ["positions", "colors", "group_id"].iter().any(|key| args.get(*key).is_some()) {
+            return Err(HostError::new("ERR_INVALID_ARGS", "chunks cannot be combined with positions, colors or group_id"));
+        }
+        let chunks = chunks.as_array().filter(|chunks| !chunks.is_empty())
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "chunks must be a nonempty array"))?;
+        let mut count = 0_u64;
+        for chunk in chunks {
+            let positions = self.require_value(chunk, "positions")?;
+            let shape = positions["shape"].as_array().filter(|shape| shape.len() == 2 && shape[1] == 3);
+            let rows = shape.and_then(|shape| shape[0].as_u64())
+                .filter(|rows| *rows > 0 && positions["dtype"] == "f32" && positions["buffer_id"].is_string())
+                .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "chunk positions must reference an f32 Nx3 buffer"))?;
+            if let Some(colors) = chunk.get("colors").filter(|colors| !colors.is_null()) {
+                let valid_shape = colors["shape"].as_array().is_some_and(|shape|
+                    shape.len() == 2 && shape[0] == rows && (shape[1] == 3 || shape[1] == 4));
+                if !valid_shape || colors["dtype"] != "u8" || !colors["buffer_id"].is_string() {
+                    return Err(HostError::new("ERR_INVALID_ARGS", "chunk colors must reference a matching u8 RGB or RGBA buffer"));
+                }
+            }
+            count = count.checked_add(rows)
+                .ok_or_else(|| HostError::new("ERR_RESOURCE_LIMIT", "point count overflow"))?;
+        }
+        Ok(json!({"chunks": chunks, "size": size, "point_count": count}))
+    }
+
+    fn world_pose(&self, obj: &SceneObject) -> Result<Pose, HostError> {
+        let mut chain = vec![obj];
+        let mut parent = obj.parent.as_deref();
+        while let Some(id) = parent {
+            let ancestor = &self.objects[id];
+            chain.push(ancestor);
+            parent = ancestor.parent.as_deref();
+        }
+        chain.into_iter().rev().try_fold(Pose::identity(), |pose, obj| pose.compose(&obj.pose))
+    }
+
+    fn set_parent(&mut self, args: &mut Value) -> Result<Value, HostError> {
+        let handle = self.require_string(args, "handle")?;
+        let obj = self.objects.get(&handle)
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+        let parent_value = args.get("parent")
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "parent is required"))?;
+        let parent = self.validate_parent(&obj.scene_id, Some(parent_value))?;
+        let mut ancestor = parent.as_deref();
+        while let Some(id) = ancestor {
+            if id == handle {
+                return Err(HostError::new("ERR_INVALID_ARGS", "Parent relationship would create a cycle"));
+            }
+            ancestor = self.objects[id].parent.as_deref();
+        }
+        let pose = if let Some(local) = args.get("local_transform") {
+            self.parse_pose(Some(local), false)?
+        } else if obj.parent == parent {
+            obj.pose.clone()
+        } else {
+            let world = self.world_pose(obj)?;
+            if let Some(id) = &parent {
+                self.world_pose(&self.objects[id])?.inverse().compose(&world)?
+            } else {
+                world
+            }
+        };
+        let obj = self.objects.get_mut(&handle).expect("object was validated");
+        obj.parent = parent;
+        obj.pose = pose;
+        args["scene_id"] = json!(obj.scene_id);
+        Ok(json!({"parent": obj.parent, "pose": obj.pose}))
+    }
+
+    fn set_object_pose(&mut self, args: &mut Value) -> Result<Value, HostError> {
+        let handle = self.require_string(args, "handle")?;
+        let input = args.get("pose")
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "pose is required"))?;
+        let (pose, scale) = self.parse_object_pose(args, Some(input))?;
+        let obj = self.objects.get_mut(&handle)
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+        obj.pose = pose;
+        if let Some(scale) = scale {
+            obj.geometry_scale = Some(scale);
+        }
+        args["scene_id"] = json!(obj.scene_id);
+        args["pose"] = obj.pose.legacy_wire(scale);
+        Ok(json!({}))
+    }
+
+    fn parse_object_pose(&self, args: &Value, pose: Option<&Value>) -> Result<(Pose, Option<[f64; 3]>), HostError> {
+        let legacy_scale = pose.and_then(|p| p.get("scale")).or_else(|| args.get("scale"));
+        let mut scale = None;
+        for value in [args.get("geometry_scale"), legacy_scale].into_iter().flatten()
+        {
+            let parsed = self.require_vec3(value, "geometry_scale")?;
+            if scale.is_some_and(|previous| previous != parsed) {
+                return Err(HostError::new("ERR_INVALID_ARGS", "conflicting geometry scale fields"));
+            }
+            scale = Some(parsed);
+        }
+        Ok((self.parse_pose(pose, true)?, scale))
+    }
+
+    fn parse_pose(&self, value: Option<&Value>, legacy_scale: bool) -> Result<Pose, HostError> {
+        let Some(value) = value else { return Ok(Pose::identity()); };
+        if let Some(items) = value.as_array() {
+            if items.len() != 7 {
+                return Err(HostError::new("ERR_INVALID_ARGS", "pose array must contain 7 numbers"));
+            }
+            let mut numbers = [0.0; 7];
+            for (number, item) in numbers.iter_mut().zip(items) {
+                *number = item.as_f64()
+                    .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "pose array must contain numbers"))?;
+            }
+            let [x, y, z, qx, qy, qz, qw] = numbers;
+            return Ok(Pose { pos: [x, y, z], quat: Pose::normalized([qx, qy, qz, qw])? });
+        }
+        let map = value.as_object()
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "pose must be an object or a 7-element array"))?;
+        if !legacy_scale && map.contains_key("scale") || map.contains_key("geometry_scale") || map.contains_key("matrix") {
+            return Err(HostError::new("ERR_INVALID_ARGS", "pose accepts translation and rotation"));
+        }
         let mut pose = Pose::identity();
-        let Some(pose_val) = pose_val else {
-            return Ok(pose);
-        };
-        let Some(obj) = pose_val.as_object() else {
-            return Err(HostError::new("ERR_INVALID_ARGS", "pose must be an object"));
-        };
-        if let Some(pos) = obj.get("pos") {
-            pose.pos = self.require_vec3(pos, "pose.pos")?;
-        }
-        if let Some(quat) = obj.get("quat") {
-            pose.quat = self.require_vec4(quat, "pose.quat")?;
-        }
-        if let Some(scale) = obj.get("scale") {
-            pose.scale = Some(self.require_vec3(scale, "pose.scale")?);
+        for (canonical, alias) in [("position", "pos"), ("quaternion", "quat")] {
+            let primary = map.get(canonical);
+            let old = map.get(alias);
+            if primary.is_some() && old.is_some() && primary != old {
+                return Err(HostError::new("ERR_INVALID_ARGS", format!("conflicting {canonical} and {alias}")));
+            }
+            if let Some(value) = primary.or(old) {
+                if canonical == "position" {
+                    pose.pos = self.require_vec3(value, "position")?;
+                } else {
+                    pose.quat = Pose::normalized(self.require_vec4(value, "quaternion")?)?;
+                }
+            }
         }
         Ok(pose)
     }

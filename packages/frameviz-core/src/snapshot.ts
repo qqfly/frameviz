@@ -32,10 +32,11 @@ export function restoreSceneObject(core: FrameVizCore, object: any): void {
   };
   const command = commands[object.object_type];
   if (!command) return;
-  const args = { ...object.data, scene_id: object.scene_id, pose: object.pose,
+  const pose = object.pose && { ...object.pose, scale: object.geometry_scale ?? object.pose.scale };
+  const args = { ...object.data, scene_id: object.scene_id, pose,
     pos: object.pose?.pos, color: object.color ?? object.data?.color, group_id: object.group_id };
   core.handleCommand(command, args, { handle: object.handle });
-  if (object.pose) core.handleCommand('set_transform', { handle: object.handle, pose: object.pose });
+  if (pose) core.handleCommand('set_transform', { handle: object.handle, pose });
   if (object.color) core.handleCommand('set_alpha', { handle: object.handle, alpha: object.color[3] ?? 1 });
   core.handleCommand('set_visible', { handle: object.handle, visible: object.visible });
 }

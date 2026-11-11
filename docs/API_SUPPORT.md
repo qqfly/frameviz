@@ -7,6 +7,7 @@ This table records command-name literals in the implementation. Presence does no
 | `add_instances` | present | present | present | present |
 | `add_lines` | present | present | present | present |
 | `add_mesh` | present | present | present | present |
+| `add_node` | present | not directly referenced | not directly referenced | not directly referenced |
 | `add_points` | present | present | present | present |
 | `add_primitive` | present | present | present | present |
 | `add_text_2d` | present | present | present | present |
@@ -19,11 +20,9 @@ This table records command-name literals in the implementation. Presence does no
 | `create_buffer` | present | present | present | not directly referenced |
 | `create_scene` | present | not directly referenced | present | present |
 | `create_view` | present | not directly referenced | present | present |
-| `debug` | present | not directly referenced | not directly referenced | not directly referenced |
 | `destroy_scene` | present | present | present | present |
 | `destroy_view` | present | present | present | present |
 | `detach_gizmo` | present | present | present | present |
-| `error` | present | not directly referenced | present | present |
 | `free_buffer` | present | present | present | not directly referenced |
 | `get_alpha` | present | present | present | present |
 | `get_camera_controls` | present | present | present | present |
@@ -37,7 +36,6 @@ This table records command-name literals in the implementation. Presence does no
 | `get_view_config` | present | present | present | present |
 | `get_viewer_by_name` | present | not directly referenced | not directly referenced | not directly referenced |
 | `get_visible` | present | not directly referenced | present | not directly referenced |
-| `info` | present | not directly referenced | present | not directly referenced |
 | `is_object_alive` | present | not directly referenced | present | present |
 | `list_objects` | present | not directly referenced | present | not directly referenced |
 | `list_scenes` | present | not directly referenced | present | not directly referenced |
@@ -56,13 +54,16 @@ This table records command-name literals in the implementation. Presence does no
 | `set_camera_controls` | present | present | present | present |
 | `set_camera_pose` | present | present | present | present |
 | `set_color` | present | present | present | present |
+| `set_geometry_scale` | present | not directly referenced | not directly referenced | not directly referenced |
 | `set_gizmo_mode` | present | present | present | present |
 | `set_interaction_mode` | present | present | not directly referenced | not directly referenced |
 | `set_log_config` | present | not directly referenced | present | not directly referenced |
 | `set_object_alphas` | present | present | present | not directly referenced |
 | `set_object_colors` | present | present | present | not directly referenced |
+| `set_object_metadata` | present | not directly referenced | not directly referenced | not directly referenced |
 | `set_object_transforms` | present | present | present | present |
 | `set_object_visibilities` | present | present | present | not directly referenced |
+| `set_parent` | present | not directly referenced | not directly referenced | not directly referenced |
 | `set_performance_mode` | present | present | present | not directly referenced |
 | `set_pick_config` | present | present | present | present |
 | `set_render_mode` | present | present | present | present |
@@ -70,11 +71,9 @@ This table records command-name literals in the implementation. Presence does no
 | `set_view` | present | present | present | present |
 | `set_view_config` | present | present | present | present |
 | `set_visible` | present | present | present | present |
-| `trace` | present | not directly referenced | not directly referenced | not directly referenced |
 | `u16` | present | present | not directly referenced | not directly referenced |
 | `u8` | present | present | present | present |
 | `update_instances` | present | present | present | present |
 | `update_text_2d` | present | present | present | not directly referenced |
 | `update_text_3d` | present | present | present | not directly referenced |
 | `upload_buffer_chunk` | present | not directly referenced | present | not directly referenced |
-| `warn` | present | not directly referenced | not directly referenced | not directly referenced |
