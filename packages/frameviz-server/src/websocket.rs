@@ -713,12 +713,17 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
         return;
     }
 
-    let target_view_id = command
+    if name == "set_widget_value" {
+        command.args["source"] = json!("program");
+    }
+
+    let mut target_view_id = command
         .args
         .get("view_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    if name == "set_widget_value" { target_view_id = None; }
     let viewer_query = matches!(name.as_str(), "get_camera_pose" | "get_pick_config" | "get_picked_info");
     if viewer_query {
         let available = {
@@ -746,6 +751,7 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
                 if !name.starts_with("get_") && !name.starts_with("list_") && !name.starts_with("is_") { guard.revision += 1; }
                 if name == "get_scene_snapshot" { result["revision"] = json!(guard.revision); }
             }
+            let widget_event = if name == "set_widget_value" { result.as_object_mut().and_then(|r| r.remove("event")) } else { None };
             if viewer_query { result["request_id"] = command.args["request_id"].clone(); }
             send_ok_response(state, client_id, &command.id, result.clone()).await;
             // Destruction must reach the current subscribers before their bindings are removed.
@@ -756,6 +762,7 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
                 handle_mapping_updates(state, client_id, &command, &result).await;
                 forward_sync_to_viewers(state, &command, &result, target_scene_id.as_deref(), target_view_id.as_deref()).await;
             }
+            if let Some(event) = widget_event { broadcast_widget_change(state, event).await; }
         }
         Err(err) => {
             send_error_response(state, client_id, &command.id, &err.code, &err.message).await;
@@ -833,6 +840,7 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
     if command.name != "register_viewer" && !matches!(command.name.as_str(),
         "set_transform" | "set_object_transforms" | "set_camera_pose" | "set_camera_controls" |
         "get_camera_controls" | "get_view_config" | "set_view_config" | "get_scene_snapshot" |
+        "get_widget" | "list_widgets" | "set_widget_value" |
         "set_view" | "reset_camera" | "set_render_mode" | "set_performance_mode" |
         "set_pick_config" | "clear_pick_highlight" | "attach_gizmo" | "set_gizmo_mode" | "detach_gizmo") {
         send_error_response(state, client_id, &command.id, "ERR_FORBIDDEN", "Command is not allowed for a viewer").await; return;
@@ -976,6 +984,11 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
         }
     }
 
+    if command.name == "set_widget_value" {
+        command.args["source"] = json!("user");
+        command.args["emit"] = json!(true);
+    }
+
     let response = {
         let mut state_guard = state.lock().await;
         state_guard.host.handle_command(&command.name, &mut command.args)
@@ -984,12 +997,14 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
         Ok(mut result) => {
             {
                 let mut guard = state.lock().await;
-                if !command.name.starts_with("get_") { guard.revision += 1; }
+                if !command.name.starts_with("get_") && !command.name.starts_with("list_") { guard.revision += 1; }
                 if command.name == "get_scene_snapshot" { result["revision"] = json!(guard.revision); }
             }
-            let target_view = if matches!(command.name.as_str(), "set_transform" | "set_object_transforms") { None } else { view_id.as_deref() };
+            let widget_event = if command.name == "set_widget_value" { result.as_object_mut().and_then(|r| r.remove("event")) } else { None };
+            let target_view = if matches!(command.name.as_str(), "set_transform" | "set_object_transforms" | "set_widget_value") { None } else { view_id.as_deref() };
             forward_sync_to_viewers(state, &command, &result, scene_id.as_deref(), target_view).await;
             send_ok_response(state, client_id, &command.id, result).await;
+            if let Some(event) = widget_event { broadcast_widget_change(state, event).await; }
         }
         Err(err) => {
             send_error_response(state, client_id, &command.id, &err.code, &err.message).await;
@@ -1252,6 +1267,12 @@ async fn forward_text_to_viewers(
 }
 
 
+async fn broadcast_widget_change(state: &SharedState, mut data: Value) {
+    if data.is_null() { return; }
+    data["revision"] = json!(state.lock().await.revision);
+    broadcast_event_to_protocol(state, "widget_changed", data).await;
+}
+
 async fn broadcast_event_to_protocol(state: &SharedState, name: &str, data: Value) {
     let payload = json!({
         "protocol_version": PROTOCOL_VERSION,
@@ -1309,6 +1330,7 @@ async fn send_init_and_snapshot(
         "scene_id": snapshot.scene_id,
         "objects": snapshot.objects,
         "buffers": snapshot.buffers,
+        "widgets": snapshot.widgets,
         "view_config": view_state.get("view_config"),
         "camera_controls": view_state.get("camera_controls"),
         "overlays": view_state.get("overlays"),

@@ -15,6 +15,7 @@
 //! ```
 
 mod host;
+mod widgets;
 mod registry;
 pub mod version;
 mod server;

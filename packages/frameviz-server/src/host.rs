@@ -1,3 +1,4 @@
+use crate::widgets::{Widget, Widgets};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -179,6 +180,7 @@ pub struct SceneSnapshot {
     pub scene_id: String,
     pub objects: Vec<SceneObject>,
     pub buffers: HashMap<String, BufferSnapshot>,
+    pub(crate) widgets: Vec<Widget>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -215,6 +217,7 @@ pub struct Host {
     overlays: HashMap<String, ViewOverlay>,
     views: HashMap<String, ViewInfo>,
     scenes: HashMap<String, u64>,
+    widgets: Widgets,
     logs: Vec<LogEntry>,
     log_seq: u64,
     log_config: LogConfig,
@@ -275,6 +278,7 @@ impl Host {
             overlays: HashMap::new(),
             views: HashMap::new(),
             scenes: HashMap::new(),
+            widgets: Widgets::default(),
             logs: Vec::with_capacity(LOG_BUFFER_LIMIT),  // P3-3: Pre-allocate log buffer
             log_seq: 0,
             log_config: LogConfig {
@@ -364,6 +368,7 @@ impl Host {
             scene_id: scene_id.to_string(),
             objects: objects.into_iter().cloned().collect(),
             buffers,
+            widgets: self.widgets.list(scene_id).into_iter().cloned().collect(),
         })
     }
 
@@ -580,6 +585,7 @@ impl Host {
                     }
                 }
                 self.scenes.remove(&scene_id);
+                self.widgets.destroy_scene(&scene_id);
                 Ok(json!({}))
             }
             "destroy_view" => {
@@ -675,6 +681,30 @@ impl Host {
                 let scene_id = self.require_scene_id(args, name)?;
                 let snapshot = self.build_scene_snapshot(&scene_id)?;
                 Ok(serde_json::to_value(snapshot).unwrap_or_else(|_| json!({})))
+            }
+
+            "add_widget" => {
+                let scene = self.require_scene_id(args, name)?;
+                if !self.scenes.contains_key(&scene) {
+                    return Err(HostError::new("ERR_NOT_FOUND", "Scene not found"));
+                }
+                self.widgets.add(&scene, args)
+            }
+            "list_widgets" => {
+                let scene = self.require_scene_id(args, name)?;
+                Ok(json!({"widgets": self.widgets.list(&scene)}))
+            }
+            "get_widget" => {
+                let scene = self.require_scene_id(args, name)?;
+                self.widgets.get(&scene, args)
+            }
+            "set_widget_value" => {
+                let scene = self.require_scene_id(args, name)?;
+                self.widgets.set(&scene, args)
+            }
+            "remove_widget" => {
+                let scene = self.require_scene_id(args, name)?;
+                self.widgets.remove(&scene, args)
             }
 
             // Buffer management

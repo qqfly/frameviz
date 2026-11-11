@@ -16,9 +16,9 @@
 
 ## 4 七种小控件
 
-- Host 拥有场景级定义和值。控件类型是 number、checkbox、select、text_input、button、text、group。值与范围在 Host 校验。界面按纯文本渲染标签。嵌入 Vue 时面板默认隐藏，仍可查询和修改控件。
+- Host 拥有场景级定义和值。清空绘图时保留控件，销毁场景时回收控件。控件类型是 number、checkbox、select、text_input、button、text、group。值与范围在 Host 校验。界面按纯文本渲染标签。嵌入 Vue 时面板默认隐藏，仍可查询和修改控件。
 - 带范围数值同时显示滑条和精确数字输入。由应用选择 `update_mode="continuous"` 或 `"commit"`。前者可合并未执行的中间拖动值，必须保留每次结束值和离散事件。后者仅在松手或精确输入提交时执行一次。键盘调整也可提交。
-- 用户提交更新 Host 和各 View，事件携带控件 ID、值、来源及 revision。程序写值默认只同步显示，`emit=True` 时触发一次事件。按钮一次点击对应一次离散事件。
+- 用户提交更新 Host 和各 View，事件携带场景、视图、控件 ID、值、来源、阶段及 revision。来源为 `user` 或 `program`，阶段为 `input` 或 `commit`。程序写值默认只同步显示，`emit=True` 时触发一次事件。按钮一次点击对应一次离散事件。
 - 同一客户端对同一控件重复调用 `on_widget_change(id, handler)` 时替换原有处理逻辑。 `append=True` 显式追加，按注册顺序调用。应用自有控件通过读写和事件接口联动。
 - 验收包含两种真实拖动模式、数字输入、重绑定与追加的次数、多视图同步、静默重置、显式事件和 Vue 面板开关。
 
