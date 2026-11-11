@@ -231,6 +231,7 @@ impl Host {
         config.insert("show_grid".to_string(), Value::Bool(false));
         config.insert("show_ground".to_string(), Value::Bool(false));
         config.insert("show_axes".to_string(), Value::Bool(true));
+        config.insert("show_widgets".to_string(), Value::Bool(true));
         config.insert(
             "grid_color".to_string(),
             json!([0.27, 0.27, 0.27]),

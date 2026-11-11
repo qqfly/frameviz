@@ -1,3 +1,4 @@
+import { WidgetPanel, type WidgetDefinition } from './WidgetPanel.js';
 import { restoreSceneObject } from './snapshot.js';
 import * as THREE from "three";
 import { GeometryFactory, type Pose, type ColorArray } from "./GeometryFactory.js";
@@ -46,6 +47,9 @@ export class FrameVizCore {
   private gizmoManager?: GizmoManager;
   private pickingManager?: PickingManager;
   private meshLoader?: MeshLoader;
+  private widgetPanel?: WidgetPanel;
+  private widgetPanelEnabled = false;
+  private widgetPanelViewEnabled = true;
   private keyboardShortcutsEnabled = true;
   private keydownHandler?: (event: KeyboardEvent) => void;
 
@@ -65,6 +69,11 @@ export class FrameVizCore {
     this.keyboardShortcutsEnabled = options.keyboardShortcuts !== false;
 
     if (options.container) {
+      this.widgetPanelEnabled = options.showWidgetPanel === true;
+      this.widgetPanel = new WidgetPanel(options.container, (widget_id, value, phase) => {
+        this.options.onCommand?.("set_widget_value", { widget_id, value, phase });
+      });
+      this.setWidgetPanelEnabled(this.widgetPanelEnabled);
       this.sceneManager = new SceneManager({
         container: options.container,
         canvas: options.canvas,
@@ -160,6 +169,15 @@ export class FrameVizCore {
     this.sceneManager?.resize(width, height);
   }
 
+  setWidgetPanelEnabled(enabled: boolean): void {
+    this.widgetPanelEnabled = enabled;
+    this.widgetPanel?.setVisible(this.widgetPanelEnabled && this.widgetPanelViewEnabled);
+  }
+
+  restoreWidgets(widgets: WidgetDefinition[]): void {
+    this.widgetPanel?.reset(widgets);
+  }
+
   clearBuffers(): void {
     this.buffers.clear();
     this.pendingRenders = [];
@@ -192,6 +210,8 @@ export class FrameVizCore {
     this.gizmoManager = undefined;
     this.pickingManager = undefined;
     this.meshLoader = undefined;
+    this.widgetPanel?.dispose();
+    this.widgetPanel = undefined;
   }
 
   setKeyboardShortcutsEnabled(enabled: boolean): void {
@@ -1005,10 +1025,23 @@ export class FrameVizCore {
         }
         return;
       }
+      case "add_widget":
+        if (result.widget) this.widgetPanel?.add(result.widget as WidgetDefinition);
+        return;
+      case "set_widget_value":
+        if (result.widget) this.widgetPanel?.update(result.widget as WidgetDefinition);
+        return;
+      case "remove_widget":
+        if (Array.isArray(result.removed)) this.widgetPanel?.remove(result.removed);
+        return;
       case "set_view_config": {
         if (!this.sceneManager) return;
         const config = args.config as Record<string, unknown> | undefined;
         if (config) {
+          if (typeof config.show_widgets === "boolean") {
+            this.widgetPanelViewEnabled = config.show_widgets;
+            this.setWidgetPanelEnabled(this.widgetPanelEnabled);
+          }
           const axesLength = (config.axes_length ?? config.axes_size) as number | undefined;
           const axesRadius = config.axes_radius as number | undefined;
           this.sceneManager.setEnvironment({
@@ -1112,6 +1145,7 @@ export class FrameVizCore {
         return;
       }
       case "destroy_scene": {
+        this.widgetPanel?.reset([]);
         const sceneId = args.scene_id as string | undefined;
         this.clearSceneContents();
         if (sceneId) {

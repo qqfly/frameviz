@@ -25,6 +25,7 @@ export interface FrameVizCoreOptions {
   performanceMode?: 'performance' | 'balanced' | 'quality';
   background?: number;  // Initial background color (hex, e.g., 0x1e1e2a)
   keyboardShortcuts?: boolean;
+  showWidgetPanel?: boolean;
   debug?: boolean;
   onEvent?: (name: string, data: Record<string, unknown>) => void;
   onCommand?: (name: string, args: Record<string, unknown>) => void;

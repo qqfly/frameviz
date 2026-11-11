@@ -12,6 +12,7 @@ export function applySceneSnapshot(core: FrameVizCore, snapshot: any): void {
     }
   }
   for (const object of snapshot.objects ?? []) restoreSceneObject(core, object);
+  core.restoreWidgets(snapshot.widgets ?? []);
   if (snapshot.view_config) core.handleCommand('set_view_config', { config: snapshot.view_config });
   if (snapshot.camera_controls) core.handleCommand('set_camera_controls', snapshot.camera_controls);
   if (snapshot.camera_pose) core.handleCommand('set_camera_pose', snapshot.camera_pose);
