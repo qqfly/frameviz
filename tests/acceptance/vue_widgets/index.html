@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Embedded scene controls</title></head>
+<body>
+<div id="app" style="height: 560px; position: relative"></div>
+<script type="module">
+import { createApp, h, ref } from '../../../examples/apps/simple_slider/node_modules/vue/dist/vue.esm-bundler.js';
+import { FrameVizViewer } from '../../../examples/apps/simple_slider/node_modules/@frameviz/vue/dist/index.js';
+const viewId = new URLSearchParams(location.search).get('view_id');
+const show = ref(false);
+const registered = ref(false);
+createApp(() => h('main', { style: 'height: 100%' }, [
+  h('button', { onClick: () => show.value = !show.value }, 'Show scene controls'),
+  h('output', registered.value ? 'Registered' : 'Connecting'),
+  h(FrameVizViewer, { name: 'widget_test', viewId, showWidgetPanel: show.value,
+    onRegistered: () => { registered.value = true }, style: 'height: 500px' }),
+])).mount('#app');
+</script>
+</body>
+</html>

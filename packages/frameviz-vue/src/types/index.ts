@@ -17,6 +17,8 @@ export interface FrameVizViewerProps {
     showGrid?: boolean
     /** Show axes helper */
     showAxes?: boolean
+    /** Show the scene controls panel. Defaults to false. */
+    showWidgetPanel?: boolean
     /** Enable keyboard shortcuts (space/home/W/ctrl+num) */
     enableKeyboardShortcuts?: boolean
 }

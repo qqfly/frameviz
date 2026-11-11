@@ -63,6 +63,10 @@ let cameraPoseCleanup: (() => void) | null = null
 let lastBufferSize: { width: number; height: number } | null = null
 const CAMERA_PERSIST_INTERVAL_MS = 1000
 
+watch(() => props.showWidgetPanel, enabled => {
+  coreRef.value?.setWidgetPanelEnabled(enabled === true)
+})
+
 onMounted(async () => {
   if (!containerRef.value) return
   
@@ -71,6 +75,7 @@ onMounted(async () => {
     const core = new FrameVizCore({
       container: containerRef.value,
       keyboardShortcuts: props.enableKeyboardShortcuts,
+      showWidgetPanel: props.showWidgetPanel,
       background: props.background,
       onEvent: (name, data) => sendEvent(name, data),
       onCommand: (name, data) => { sendCommand(name, data).catch(err => emit('error', err)) },
