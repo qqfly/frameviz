@@ -202,6 +202,8 @@ C++ SDK 使用同一 Host/协议与对象句柄流程，API 采用 `addMesh`、`
 - [工作空间方块](examples/python/05_developer_features/workspace_instances.py)。用一个实例化对象显示占据采样。
 
 
+更多可运行例子见[场景树、控件、PNG 和离线教程](docs/SCENE_TREE.md)。
+
 ## 从源码构建
 
 需要 Node.js 20+、pnpm 10、Python 3.9+、Rust、CMake 与 C++17 编译器。依赖缓存不完整时需要网络。

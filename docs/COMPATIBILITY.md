@@ -6,11 +6,22 @@ Versions use canonical `major.minor.patch` numeric strings, with each component 
 
 Package version fields follow `version.json`; the minimum compatible version is the start of the current series (`major.minor.0`). Public Python/npm package names and a remote repository URL are not reserved by this source tree.
 
+## Before 1.0
+
+Patch releases preserve the public Python/C++ APIs and wire behavior of their
+series. Minor releases may change APIs or the protocol. Upgrade the matching
+Host, Viewer and SDK together and follow the migration notes.
+
+The 0.5 series introduces rigid scene nodes, whole-cloud IDs and new controls.
+Existing geometry dimensions and scale parameters apply to each object's own
+geometry. Existing 0.4 runtime packages continue using the matching 0.4 SDK.
+A 0.5 SDK requires a 0.5 runtime.
+
 Scenes and views recover across viewer reconnects only while the same Host is alive. The revision is a Host-wide state sequence; equal revisions or gaps across different scenes are not a per-stream loss detector. Host restart persistence and full interaction-state persistence are not implemented.
 
 A single buffer is limited to 256 MiB, total buffer storage to 512 MiB, and upload chunks to 16 MiB. The viewer transport uses self-describing base64 chunks. Shared memory is disabled with an explicit unsupported error. These limits do not provide a complete budget for every model, texture, object, event, and zero-byte allocation.
 
-C++ synchronous query replies have a separate bounded inbox, consumed by correlation ID. Ordinary subscribed events still require polling/consumption. A disconnected or unavailable viewer must not be replaced by fabricated camera/pick results. Model cancellation prevents resurrection of removed objects; it does not promise that every underlying download is aborted.
+C++ synchronous Viewer query replies have a separate bounded inbox, consumed by correlation ID. C++ callbacks run serially on a background thread by default. Applications can select manual mode and call `pollEvents()` on their own loop. A disconnected or unavailable viewer must not be replaced by fabricated camera/pick results. Model cancellation prevents resurrection of removed objects; it does not promise that every underlying download is aborted.
 
 Default state is under `~/.local/share/qqfly/frameviz` on macOS/Linux and `%LOCALAPPDATA%/qqfly/FrameViz` on Windows. `FRAMEVIZ_HOME` selects an explicit state root, and `FRAMEVIZ_DISCOVERY_PATH`, `FRAMEVIZ_LOG_DIR`, and `FRAMEVIZ_RUNTIME_MANIFEST` override individual paths. Template Python uses `FRAMEVIZ_PYTHON`, then PATH. No internal interpreter or tool installation is searched.
 

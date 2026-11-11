@@ -202,6 +202,8 @@ Application examples include a [generated robot arm](examples/python/04_robotics
 - [Workspace boxes](examples/python/05_developer_features/workspace_instances.py). Render occupancy samples as one instanced object.
 
 
+See [scene trees, controls, PNG and offline tutorials](docs/SCENE_TREE.md) for runnable 0.5 examples.
+
 ## Build from source
 
 Use Node.js 20+, pnpm 10, Python 3.9+, Rust, CMake, and a C++17 compiler. Network access is needed unless dependency caches are complete.
