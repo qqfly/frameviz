@@ -1,4 +1,6 @@
 use crate::widgets::{Widget, Widgets};
+#[path = "bounds.rs"]
+mod bounds;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -432,7 +434,7 @@ impl Host {
         self.set_camera_view(view_id, camera).is_ok()
     }
 
-    fn display_state(&self, view_id: &str) -> Result<Value, HostError> {
+    fn display_state(&self, view_id: &str, include_bounds: bool) -> Result<Value, HostError> {
         let view = self.views.get(view_id)
             .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
         let scene_id = view.scene_id.as_deref()
@@ -444,13 +446,20 @@ impl Host {
                 .and_then(|parent| effective.get(parent).copied()).unwrap_or(true);
             effective.insert(obj.handle.as_str(), visible);
             let world = self.world_pose(obj)?;
-            objects.push(json!({
+            let mut record = json!({
                 "handle": obj.handle, "type": obj.object_type, "name": obj.name, "tags": obj.tags,
                 "parent": obj.parent, "visible": obj.visible, "effective_visible": visible,
                 "local_transform": {"position": obj.pose.pos, "quaternion": obj.pose.quat},
                 "world_transform": {"position": world.pos, "quaternion": world.quat},
                 "geometry_scale": obj.geometry_scale, "color": obj.color, "data": obj.data,
-            }));
+            });
+            if include_bounds {
+                let world_bounds = self.geometry_bounds(obj, &world);
+                record["bounds_status"] = json!(if world_bounds.is_some() { "computed" }
+                    else if obj.object_type == "node" { "no_geometry" } else { "unavailable" });
+                record["world_bounds"] = json!(world_bounds);
+            }
+            objects.push(record);
         }
         Ok(json!({
             "scene_id": scene_id, "view_id": view_id, "width": view.width, "height": view.height,
@@ -739,7 +748,11 @@ impl Host {
                 self.set_camera_view(&view_id, &args["camera_view"])?;
                 self.camera_view(&view_id)
             }
-            "get_display_state" => self.display_state(&self.require_string(args, "view_id")?),
+            "get_display_state" => {
+                let include_bounds = args.get("include_bounds").map_or(Some(false), Value::as_bool)
+                    .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "include_bounds must be a boolean"))?;
+                self.display_state(&self.require_string(args, "view_id")?, include_bounds)
+            }
             "get_camera_controls" => {
                 let view_id = self.require_string(args, "view_id")?;
                 if let Some(view) = self.views.get(&view_id) {

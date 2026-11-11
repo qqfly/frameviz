@@ -36,7 +36,7 @@ python examples/python/03_interaction/use_scene_slider.py --mode commit
 ## 6 显示状态查询、截图与教程 HTML 导出
 
 - `get_camera_view()` 返回 `eye`、`target`、`up` 以及 `projection={"type": "perspective", "fov": 30}`。`fov` 是垂直视场角，单位为度。`set_camera_view(camera_view)` 一次应用完整参数。截屏可以直接使用这一结构。
-- `get_display_state()` 返回当前 View 和场景的显示记录。对象以父节点在前的顺序返回，带局部和世界位姿。浏览器操作更新所属 View 的 Camera View，供再次连接和脚本查询。
+- `get_display_state()` 返回当前 View 和场景的显示记录。对象以父节点在前的顺序返回，带局部和世界位姿。使用 `get_display_state(include_bounds=True)` 请求 Host 可计算的世界轴对齐包围盒，或用 `print(viz.describe_scene())` 查看文字摘要。外部模型或其它缺少 Host 几何的数据会标明包围盒未采集。浏览器操作更新所属 View 的 Camera View，供再次连接和脚本查询。
 - 查询提供显示对象及层级、刚体位姿、可见性、颜色、几何属性、元数据和每个 View 的 Camera View。文字摘要包含有数据支撑的世界包围盒，缺失时明确标注。场景同步继续服务新连接、刷新和恢复。
 - `viz.screenshot(path=None, *, camera_view=None, width=None, height=None)` 默认使用此 View 的观看参数，支持另给临时 Camera View。返回 PNG 字节，给路径时同时保存。后台渲染器独立于已打开的 Viewer，截图不改变任何窗口尺寸或相机。无窗口时自动准备后台渲染环境，连续请求可复用。后台组件需要额外安装时提供一次性安装流程。
 - 截图在此前已接受的场景更新、缓冲和引用资源就绪后输出；失败时报告具体资源或渲染错误。验证普通与临时视角确实产生不同画面，并测试未打开窗口、迟到资源、连续截图、原窗口视角和尺寸。

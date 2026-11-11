@@ -1641,9 +1641,35 @@ class Viz:
             "view_id": self._view_id, "camera_view": camera_view,
         })
 
-    def get_display_state(self) -> Dict[str, Any]:
-        """Query the current view and its scene's display objects."""
-        return self._client.send_command("get_display_state", {"view_id": self._view_id})
+    def get_display_state(self, *, include_bounds: bool = False) -> Dict[str, Any]:
+        """Query the view and scene. Request conservative world-space geometry bounds."""
+        return self._client.send_command("get_display_state", {
+            "view_id": self._view_id, "include_bounds": include_bounds,
+        })
+
+    def describe_scene(self) -> str:
+        """Format display state and available geometry bounds as readable text."""
+        state = self.get_display_state(include_bounds=True)
+        lines = [f"Scene {state['scene_id']} · View {state['view_id']}",
+                 "Camera View " + json.dumps(state["camera_view"], ensure_ascii=False)]
+        depths: Dict[str, int] = {}
+        for obj in state["objects"]:
+            parent = obj["parent"]
+            depth = 0 if parent is None else depths[parent] + 1
+            depths[obj["handle"]] = depth
+            name = json.dumps(obj["name"], ensure_ascii=False)
+            tags = json.dumps(obj["tags"], ensure_ascii=False)
+            bounds = obj["bounds_status"]
+            if obj["world_bounds"] is not None:
+                bounds = json.dumps(obj["world_bounds"])
+            lines.append(
+                f"{'  ' * depth}{obj['handle']} {obj['type']} {name} "
+                f"visible={obj['visible']} effective_visible={obj['effective_visible']} "
+                f"tags={tags} local={json.dumps(obj['local_transform'])} "
+                f"world={json.dumps(obj['world_transform'])} color={json.dumps(obj['color'])} "
+                f"geometry_scale={json.dumps(obj['geometry_scale'])} bounds={bounds}"
+            )
+        return "\n".join(lines)
 
     def screenshot(self, path=None, *, camera_view=None, width=None, height=None) -> bytes:
         """Render PNG bytes in the background and optionally save them to path."""

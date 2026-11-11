@@ -67,3 +67,23 @@ def test_orbit_persists_per_view_and_large_cloud_replays(widget_pages):
     viz.clear()
     for page in (first, other):
         page.wait_for_function("h => !window.__FRAMEVIZ_CORE__?.objects.has(h)", arg=cloud)
+
+
+def test_summary_lists_world_bounds_and_explicitly_labels_unavailable_geometry(tree_viz):
+    viz, _ = tree_viz
+    root = viz.add_node(position=[2, 0, 0], quaternion=[0, 0, 1, 1], name="Root")
+    box = viz.add_box(parent=root, position=[1, 0, 0], size=[2, 1, 1],
+                      geometry_scale=[3, 2, 1], name="Beam", tags={"role": "link"})
+    cloud = viz.add_points(np.array([[-2, 1, 0], [2, 3, 1]]), name="Scan")
+    model = viz.load_mesh("http://127.0.0.1:9/missing.stl", name="External")
+    state = viz.get_display_state(include_bounds=True)
+    objects = {item["handle"]: item for item in state["objects"]}
+    assert objects[root]["bounds_status"] == "no_geometry"
+    assert objects[box]["world_bounds"]["min"] == pytest.approx([1, -2, -.5])
+    assert objects[box]["world_bounds"]["max"] == pytest.approx([3, 4, .5])
+    assert objects[cloud]["world_bounds"] == {"min": [-2, 1, 0], "max": [2, 3, 1]}
+    assert objects[model]["world_bounds"] is None and objects[model]["bounds_status"] == "unavailable"
+    summary = viz.describe_scene()
+    assert f'  {box} primitive "Beam"' in summary
+    assert '"role": "link"' in summary
+    assert f'{model} loaded_mesh "External"' in summary and 'bounds=unavailable' in summary
