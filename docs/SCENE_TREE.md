@@ -22,6 +22,17 @@
 - 同一客户端对同一控件重复调用 `on_widget_change(id, handler)` 时替换原有处理逻辑。 `append=True` 显式追加，按注册顺序调用。应用自有控件通过读写和事件接口联动。
 - 验收包含两种真实拖动模式、数字输入、重绑定与追加的次数、多视图同步、静默重置、显式事件和 Vue 面板开关。
 
+运行 [滑条和重置示例](../examples/python/03_interaction/use_scene_slider.py)。
+
+```bash
+python examples/python/03_interaction/use_scene_slider.py --mode continuous
+python examples/python/03_interaction/use_scene_slider.py --mode commit
+```
+
+拖动滑条可调整立方体的位置。数字输入框支持直接键入精确值并按 Enter 提交。
+程序可用 `get_widget_value(id)` 读取，调用 `set_widget_value(id, value)` 更新所有视图。
+要在程序赋值时执行已注册处理逻辑，传入 `emit=True`。
+
 ## 6 显示状态查询、截图与教程 HTML 导出
 
 - 查询提供显示对象及层级、刚体位姿、可见性、颜色、几何属性、元数据和每个 View 的 Camera View。文字摘要包含有数据支撑的世界包围盒，缺失时明确标注。场景同步继续服务新连接、刷新和恢复。

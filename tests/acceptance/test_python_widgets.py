@@ -66,3 +66,17 @@ def test_reset_silently_updates_object_and_slider_inside_button_callback(tree_vi
     assert viz.get_transform(box)["position"] == [0, 0, 0]
     with pytest.raises(Empty):
         moves.get(timeout=.15)
+
+
+def test_slider_tutorial_builds_on_headless_host(tree_viz):
+    from pathlib import Path
+    import runpy
+
+    viz, _ = tree_viz
+    root = Path(__file__).resolve().parents[2]
+    module = runpy.run_path(str(root / "examples/python/03_interaction/use_scene_slider.py"))
+    box, slider, reset = module["build"](viz, "commit")
+    assert len(viz.list_objects()) == 1
+    assert viz.get_widget(slider)["update_mode"] == "commit"
+    assert viz.get_widget(reset)["kind"] == "button"
+    assert viz.get_transform(box)["position"] == [0, 0, 0]
