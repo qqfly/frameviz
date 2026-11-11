@@ -28,7 +28,9 @@ This table records command-name literals in the implementation. Presence does no
 | `get_alpha` | present | present | present | present |
 | `get_camera_controls` | present | present | present | present |
 | `get_camera_pose` | present | present | present | present |
+| `get_camera_view` | present | not directly referenced | present | not directly referenced |
 | `get_color` | present | present | present | present |
+| `get_display_state` | present | not directly referenced | present | not directly referenced |
 | `get_pick_config` | present | present | present | present |
 | `get_picked_info` | present | present | present | not directly referenced |
 | `get_resource_counts` | present | not directly referenced | not directly referenced | not directly referenced |
@@ -57,6 +59,7 @@ This table records command-name literals in the implementation. Presence does no
 | `set_alpha` | present | present | present | present |
 | `set_camera_controls` | present | present | present | present |
 | `set_camera_pose` | present | present | present | present |
+| `set_camera_view` | present | present | present | not directly referenced |
 | `set_color` | present | present | present | present |
 | `set_geometry_scale` | present | present | present | present |
 | `set_gizmo_mode` | present | present | present | present |

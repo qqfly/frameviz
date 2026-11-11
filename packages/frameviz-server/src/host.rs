@@ -397,6 +397,69 @@ impl Host {
         })
     }
 
+    fn camera_view(&self, view_id: &str) -> Result<Value, HostError> {
+        let view = self.views.get(view_id)
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+        let mut pose = view.camera_pose.clone().unwrap_or_else(|| json!({
+            "eye": [1.5, 1.5, 1.5], "target": [0, 0, 0], "up": [0, 0, 1],
+        }));
+        pose["projection"] = json!({"type": "perspective",
+            "fov": view.camera_controls.get("fov").and_then(Value::as_f64).unwrap_or(30.0)});
+        Ok(pose)
+    }
+
+    fn set_camera_view(&mut self, view_id: &str, camera: &Value) -> Result<(), HostError> {
+        let eye = self.require_vec3(&camera["eye"], "eye")?;
+        let target = self.require_vec3(&camera["target"], "target")?;
+        let up = self.require_vec3(&camera["up"], "up")?;
+        if eye == target || up == [0.0; 3] {
+            return Err(HostError::new("ERR_INVALID_ARGS", "Camera direction and up must be nonzero"));
+        }
+        let projection = &camera["projection"];
+        if projection["type"].as_str() != Some("perspective") {
+            return Err(HostError::new("ERR_INVALID_ARGS", "Camera projection must be perspective"));
+        }
+        let fov = projection["fov"].as_f64().filter(|v| *v > 0.0 && *v < 180.0)
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "Camera fov must be between 0 and 180 degrees"))?;
+        let view = self.views.get_mut(view_id)
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+        view.camera_pose = Some(json!({"eye": eye, "target": target, "up": up}));
+        view.camera_controls.insert("fov".into(), json!(fov));
+        Ok(())
+    }
+
+    pub(crate) fn update_view_camera_from_renderer(&mut self, view_id: &str, camera: &Value) -> bool {
+        self.set_camera_view(view_id, camera).is_ok()
+    }
+
+    fn display_state(&self, view_id: &str) -> Result<Value, HostError> {
+        let view = self.views.get(view_id)
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+        let scene_id = view.scene_id.as_deref()
+            .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View is not attached to a scene"))?;
+        let mut objects = Vec::new();
+        let mut effective = HashMap::new();
+        for obj in self.ordered_scene_objects(scene_id) {
+            let visible = obj.visible && obj.parent.as_deref()
+                .and_then(|parent| effective.get(parent).copied()).unwrap_or(true);
+            effective.insert(obj.handle.as_str(), visible);
+            let world = self.world_pose(obj)?;
+            objects.push(json!({
+                "handle": obj.handle, "type": obj.object_type, "name": obj.name, "tags": obj.tags,
+                "parent": obj.parent, "visible": obj.visible, "effective_visible": visible,
+                "local_transform": {"position": obj.pose.pos, "quaternion": obj.pose.quat},
+                "world_transform": {"position": world.pos, "quaternion": world.quat},
+                "geometry_scale": obj.geometry_scale, "color": obj.color, "data": obj.data,
+            }));
+        }
+        Ok(json!({
+            "scene_id": scene_id, "view_id": view_id, "width": view.width, "height": view.height,
+            "camera_view": self.camera_view(view_id)?, "view_config": view.view_config,
+            "objects": objects, "widgets": self.widgets.list(scene_id),
+            "overlays": self.overlays.values().filter(|overlay| overlay.view_id == view_id).collect::<Vec<_>>(),
+        }))
+    }
+
     pub fn handle_command(&mut self, name: &str, args: &mut Value) -> Result<Value, HostError> {
         if !args.is_object() { return Err(HostError::new("ERR_INVALID_ARGS", "args must be an object")); }
         for key in ["scene_id", "view_id"] {
@@ -670,6 +733,13 @@ impl Host {
                     Err(HostError::new("ERR_NOT_FOUND", format!("View not found: {}", view_id)))
                 }
             }
+            "get_camera_view" => self.camera_view(&self.require_string(args, "view_id")?),
+            "set_camera_view" => {
+                let view_id = self.require_string(args, "view_id")?;
+                self.set_camera_view(&view_id, &args["camera_view"])?;
+                self.camera_view(&view_id)
+            }
+            "get_display_state" => self.display_state(&self.require_string(args, "view_id")?),
             "get_camera_controls" => {
                 let view_id = self.require_string(args, "view_id")?;
                 if let Some(view) = self.views.get(&view_id) {

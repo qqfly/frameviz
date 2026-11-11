@@ -1631,6 +1631,20 @@ class Viz:
             },
         )
 
+    def get_camera_view(self) -> Dict[str, Any]:
+        """Get this View's camera pose and projection, including with no window."""
+        return self._client.send_command("get_camera_view", {"view_id": self._view_id})
+
+    def set_camera_view(self, camera_view: Dict[str, Any]) -> None:
+        """Set this View's camera pose and projection together."""
+        self._client.send_command("set_camera_view", {
+            "view_id": self._view_id, "camera_view": camera_view,
+        })
+
+    def get_display_state(self) -> Dict[str, Any]:
+        """Query the current view and its scene's display objects."""
+        return self._client.send_command("get_display_state", {"view_id": self._view_id})
+
     def get_camera_pose(self) -> Dict[str, Any]:
         """Get the current camera pose (viewer-side).
 

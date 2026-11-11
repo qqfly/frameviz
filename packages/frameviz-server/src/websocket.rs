@@ -544,6 +544,16 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
             if message_type == "event" {
                 if let Some(name) = parsed.get("name").and_then(|v| v.as_str()) {
                     let mut data = parsed.get("data").cloned().unwrap_or_else(|| json!({}));
+                    if name == "camera_view_changed" {
+                        let mut guard = state.lock().await;
+                        let view = guard.clients.get(&client_id).and_then(|c| c.view_id.clone());
+                        if let Some(view) = view {
+                            if guard.host.update_view_camera_from_renderer(&view, &data) {
+                                guard.revision += 1;
+                            }
+                        }
+                        return;
+                    }
                     if !matches!(name, "picked" | "transformed" | "camera_pose_response" | "pick_config_response" | "pick_info_response" | "object_ready" | "object_failed" | "key_down") { return; }
                     let guard = state.lock().await;
                     let Some(client) = guard.clients.get(&client_id) else { return; };
@@ -723,7 +733,7 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    if name == "set_widget_value" { target_view_id = None; }
+    if matches!(name.as_str(), "set_widget_value" | "clear_scene") { target_view_id = None; }
     let viewer_query = matches!(name.as_str(), "get_camera_pose" | "get_pick_config" | "get_picked_info");
     if viewer_query {
         let available = {
@@ -841,6 +851,7 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
         "set_transform" | "set_object_transforms" | "set_camera_pose" | "set_camera_controls" |
         "get_camera_controls" | "get_view_config" | "set_view_config" | "get_scene_snapshot" |
         "get_widget" | "list_widgets" | "set_widget_value" |
+        "get_camera_view" | "set_camera_view" | "get_display_state" |
         "set_view" | "reset_camera" | "set_render_mode" | "set_performance_mode" |
         "set_pick_config" | "clear_pick_highlight" | "attach_gizmo" | "set_gizmo_mode" | "detach_gizmo") {
         send_error_response(state, client_id, &command.id, "ERR_FORBIDDEN", "Command is not allowed for a viewer").await; return;

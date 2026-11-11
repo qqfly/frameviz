@@ -44,6 +44,7 @@ export class FrameVizCore {
   private labelManager?: LabelManager;
   private renderModeManager?: RenderModeManager;
   private cameraController?: CameraController;
+  private cameraViewDirty = false;
   private gizmoManager?: GizmoManager;
   private pickingManager?: PickingManager;
   private meshLoader?: MeshLoader;
@@ -88,6 +89,7 @@ export class FrameVizCore {
         domElement: this.sceneManager.renderer.domElement,
       });
       this.cameraController.setObjectsProvider(() => this.objects);
+      this.watchCameraView();
       this.gizmoManager = new GizmoManager(
         this.sceneManager.camera,
         this.sceneManager.renderer.domElement,
@@ -834,6 +836,7 @@ export class FrameVizCore {
             domElement: newCanvas,
           });
           this.cameraController.setObjectsProvider(() => this.objects);
+          this.watchCameraView();
 
           // Restore camera state
           if (savedCameraState) {
@@ -872,6 +875,15 @@ export class FrameVizCore {
 
         return;
       }
+      case "set_camera_view": {
+        const camera = args.camera_view as Record<string, unknown> | undefined;
+        if (camera) {
+          this.handleCommand("set_camera_pose", camera);
+          const projection = camera.projection as Record<string, unknown> | undefined;
+          if (projection) this.handleCommand("set_camera_controls", projection);
+        }
+        return;
+      }
       case "set_camera_pose": {
         const eye = args.eye as number[] | undefined;
         const target = args.target as number[] | undefined;
@@ -884,6 +896,7 @@ export class FrameVizCore {
           }
           this.cameraController.controls.target.set(target[0], target[1], target[2]);
           this.cameraController.controls.update();
+          this.cameraViewDirty = false;
         }
         return;
       }
@@ -1141,7 +1154,7 @@ export class FrameVizCore {
         return;
       }
       case "clear_scene": {
-        this.clearSceneContents();
+        this.clearSceneContents(!args.view_id || args.view_id === this.viewId);
         return;
       }
       case "destroy_scene": {
@@ -1298,6 +1311,24 @@ export class FrameVizCore {
     this.sceneManager.updateClipPlanes(this.cameraController?.controls.target);
     this.sceneManager.render();
     this.renderModeManager?.cleanupHelpers(this.objects);
+    if (this.cameraViewDirty) {
+      this.cameraViewDirty = false;
+      const camera = this.getCameraView();
+      if (camera && this.viewId) this.emitEvent("camera_view_changed", camera);
+    }
+  }
+
+  private watchCameraView(): void {
+    this.cameraController?.controls.addEventListener?.("change", () => {
+      this.cameraViewDirty = true;
+    });
+  }
+
+  getCameraView() {
+    const pose = this.getCameraPose();
+    const camera = this.sceneManager?.camera;
+    if (!pose || !camera) return null;
+    return { ...pose, projection: { type: "perspective", fov: camera.fov } };
   }
 
   getCameraPose(): { eye: number[]; target: number[]; up: number[] } | null {
@@ -1660,7 +1691,7 @@ export class FrameVizCore {
     this.releaseUnusedBuffers(bufferIds);
   }
 
-  private clearSceneContents(): void {
+  private clearSceneContents(clearOverlays = true): void {
     if (!this.sceneManager) return;
     for (const [handle, obj] of this.objects) {
       this.disposeObject(obj);
@@ -1671,10 +1702,10 @@ export class FrameVizCore {
     this.frames.clear();
     this.gizmoManager?.detach();
     this.pickingManager?.clearHighlight();
-    for (const overlay of this.overlays2d.values()) {
-      overlay.remove();
+    if (clearOverlays) {
+      for (const overlay of this.overlays2d.values()) overlay.remove();
+      this.overlays2d.clear();
     }
-    this.overlays2d.clear();
     this.renderModeManager?.cleanupHelpers(this.objects);
     this.pendingRenders = [];
     this.pendingLoads.clear();
