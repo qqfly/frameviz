@@ -17,7 +17,7 @@ from .exceptions import (
     TimeoutError as FrameVizTimeoutError,
     ProtocolError,
 )
-from .discovery import get_discovery_path, get_token_from_discovery, get_ws_url_from_discovery
+from .discovery import get_discovery_path, get_registered_host_token, read_discovery_file
 from .version import host_version_error
 
 PROTOCOL_VERSION = "0.5.0"
@@ -233,16 +233,19 @@ class FrameVizClient:
         if explicit:
             return explicit
         from urllib.parse import urlsplit
-        discovered = get_ws_url_from_discovery()
-        if not discovered:
-            return None
+        record = read_discovery_file() or {}
+        discovered = record.get("ws_url") or record.get("url")
+
         def endpoint(url):
             value = urlsplit(url)
             host = value.hostname
             if host in ("localhost", "127.0.0.1", "::1"):
                 host = "loopback"
             return value.scheme, host, value.port or (443 if value.scheme == "wss" else 80)
-        return get_token_from_discovery() if endpoint(discovered) == endpoint(self.url) else None
+        if (isinstance(discovered, str) and isinstance(record.get("token"), str)
+                and endpoint(discovered) == endpoint(self.url)):
+            return record["token"]
+        return get_registered_host_token(self.url)
 
     def close(self) -> None:
         """Close the WebSocket connection."""

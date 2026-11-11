@@ -2707,6 +2707,24 @@ def _resolve_connect_target(
     )
 
 
+def list_hosts() -> List[Dict[str, Any]]:
+    """List live local runtimes in the selected state directory without credentials."""
+    from .discovery import local_host_records
+
+    results = []
+    for record in local_host_records():
+        client = FrameVizClient(url=record["ws_url"], token=record["token"], timeout=.5, auto_events=False)
+        try:
+            client.connect()
+            client.send_command("list_views", {})
+        except Exception:
+            continue
+        finally:
+            client.close()
+        results.append({key: record[key] for key in ("pid", "port", "ws_url", "version", "started_at_ms")})
+    return sorted(results, key=lambda item: (item["started_at_ms"], item["port"]), reverse=True)
+
+
 def _resolve_connection_url(url: Optional[str]) -> str:
     """
     Resolve connection URL for connect flows.
@@ -2717,11 +2735,16 @@ def _resolve_connection_url(url: Optional[str]) -> str:
     3. Default localhost URL
     Then apply discovery-based port resolution for localhost defaults.
     """
-    if url is None:
-        url = os.environ.get("FRAMEVIZ_HOST")
-    if url is None:
-        url = DEFAULT_WS_URL
-    return _resolve_ws_url(url, allow_discovery=True)
+    if url is not None:
+        return url
+    configured = os.environ.get("FRAMEVIZ_HOST")
+    if configured:
+        return _resolve_ws_url(configured, allow_discovery=True)
+    discovered = _resolve_ws_url(DEFAULT_WS_URL, allow_discovery=True)
+    if discovered != DEFAULT_WS_URL:
+        return discovered
+    hosts = list_hosts()
+    return hosts[0]["ws_url"] if hosts else discovered
 
 
 def connect(

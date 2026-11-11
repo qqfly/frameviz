@@ -13,7 +13,7 @@ use std::fs;
 use std::io::Write;
 use std::net::TcpListener as StdTcpListener;
 use std::net::TcpStream as StdTcpStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::thread;
@@ -170,12 +170,13 @@ struct ServerState {
     log_writer: Option<LogWriter>,
     log_path: Option<PathBuf>,
     discovery_path: Option<PathBuf>,
+    port: u16,
     auth_token: String,  // P0-2: Authentication token
     viewer_registry: HashMap<String, RegisteredViewer>,  // Viewer name -> info
 }
 
 impl ServerState {
-    fn new(host: Host, diagnostics: ServerDiagnostics) -> Self {
+    fn new(host: Host, diagnostics: ServerDiagnostics, port: u16) -> Self {
         Self {
             host,
             clients: HashMap::new(),
@@ -185,6 +186,7 @@ impl ServerState {
             log_writer: diagnostics.log_writer,
             log_path: diagnostics.log_path,
             discovery_path: diagnostics.discovery_path,
+            port,
             auth_token: generate_auth_token(),
             viewer_registry: HashMap::new(),
         }
@@ -225,7 +227,7 @@ pub async fn run_server_on_listener(
         return Err("Cannot resolve the standalone Host state directory".into());
     }
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<LogEntry>();
-    let state = Arc::new(Mutex::new(ServerState::new(Host::new(Some(log_tx)), diagnostics)));
+    let state = Arc::new(Mutex::new(ServerState::new(Host::new(Some(log_tx)), diagnostics, port)));
 
     {
         let state_guard = state.lock().await;
@@ -301,10 +303,15 @@ pub async fn run_server_on_listener(
         }
     }
 
-    if let Some(path) = state.lock().await.discovery_path.clone() {
-        let owned=fs::read_to_string(&path).ok().and_then(|s|serde_json::from_str::<Value>(&s).ok())
-            .and_then(|data|data.get("pid").and_then(Value::as_u64))==Some(std::process::id() as u64);
-        if owned { let _ = fs::remove_file(path); }
+    {
+        let guard = state.lock().await;
+        if let Some(path) = &guard.discovery_path {
+            for candidate in [path.clone(), discovery_record_path(path, port)] {
+                if discovery_record_owned(&candidate, port, &guard.auth_token) {
+                    let _ = fs::remove_file(candidate);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -652,12 +659,12 @@ async fn handle_binary_message(state: &SharedState, client_id: usize, data: Vec<
 }
 
 fn rendering_endpoint(state: &ServerState) -> Option<String> {
-    let text = fs::read_to_string(state.discovery_path.as_ref()?).ok()?;
-    let value: Value = serde_json::from_str(&text).ok()?;
-    if value["pid"].as_u64() != Some(u64::from(std::process::id()))
-        || value["token"].as_str() != Some(state.auth_token.as_str()) {
-        return None;
-    }
+    let path = state.discovery_path.as_ref()?;
+    let value = [path.clone(), discovery_record_path(path, state.port)]
+        .into_iter().filter_map(|path| read_discovery_record(&path))
+        .find(|value| value["pid"].as_u64() == Some(u64::from(std::process::id()))
+            && value["token"].as_str() == Some(state.auth_token.as_str())
+            && value["viewer_url"].is_string())?;
     let endpoint = url::Url::parse(value["viewer_url"].as_str()?).ok()?;
     if endpoint.scheme() != "http"
         || !matches!(endpoint.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
@@ -1607,6 +1614,22 @@ pub fn resolve_discovery_path() -> Option<PathBuf> {
     home_dir().map(|home| home.join(".local/share/qqfly/frameviz").join("host.json"))
 }
 
+fn discovery_record_path(path: &Path, port: u16) -> PathBuf {
+    path.with_extension("hosts").join(format!("{port}.json"))
+}
+
+fn read_discovery_record(path: &Path) -> Option<Value> {
+    serde_json::from_str(&fs::read_to_string(path).ok()?).ok()
+}
+
+fn discovery_record_owned(path: &Path, port: u16, token: &str) -> bool {
+    read_discovery_record(path).is_some_and(|value| {
+        value["pid"].as_u64() == Some(u64::from(std::process::id()))
+            && value["port"].as_u64() == Some(u64::from(port))
+            && value["token"].as_str() == Some(token)
+    })
+}
+
 fn write_discovery_file(
     path: &PathBuf,
     port: u16,
@@ -1634,7 +1657,13 @@ fn write_discovery_file(
         payload["viewer_url"] = json!(format!("http://127.0.0.1:{}/", http_port));
     }
 
-    atomic_discovery_write(path,payload.to_string().as_bytes())?;
+    let bytes = payload.to_string();
+    atomic_discovery_write(path, bytes.as_bytes())?;
+    let record = discovery_record_path(path, port);
+    if let Err(error) = fs::create_dir_all(record.parent().unwrap())
+        .and_then(|_| atomic_discovery_write(&record, bytes.as_bytes())) {
+        eprintln!("[FrameViz] Cannot write Host registry record: {error}");
+    }
 
     if let Some(http_port) = http_port {
         println!("[FrameViz] Viewer URL: http://127.0.0.1:{http_port}/?ws_port={port}#token={auth_token}");
@@ -1747,7 +1776,14 @@ pub fn update_discovery_http_port(http_port: u16) -> Result<(), String> {
     data["http_port"] = json!(http_port);
     data["viewer_url"] = json!(format!("http://127.0.0.1:{}/", http_port));
 
-    atomic_discovery_write(&path,data.to_string().as_bytes()).map_err(|e|e.to_string())?;
+    let bytes = data.to_string();
+    atomic_discovery_write(&path, bytes.as_bytes()).map_err(|e| e.to_string())?;
+    if let Some(port) = data["port"].as_u64().and_then(|port| u16::try_from(port).ok()) {
+        let record = discovery_record_path(&path, port);
+        if data["token"].as_str().is_some_and(|token| discovery_record_owned(&record, port, token)) {
+            atomic_discovery_write(&record, bytes.as_bytes()).map_err(|e| e.to_string())?;
+        }
+    }
     println!("[FrameViz] Updated discovery file with HTTP port: {}", http_port);
     Ok(())
 }
@@ -1878,8 +1914,13 @@ fn generate_auth_token() -> String {
 /// Read this user's local credential only when it belongs to the selected endpoint.
 pub fn local_auth_token(port: u16) -> Option<String> {
     let path = resolve_discovery_path()?;
-    let value: Value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
-    let url = url::Url::parse(value.get("ws_url")?.as_str()?).ok()?;
-    if url.port() != Some(port) { return None; }
-    value.get("token")?.as_str().map(str::to_owned)
+    for candidate in [path.clone(), discovery_record_path(&path, port)] {
+        if let Some(value) = read_discovery_record(&candidate) {
+            let url = value["ws_url"].as_str().and_then(|url| url::Url::parse(url).ok());
+            if url.is_some_and(|url| url.port() == Some(port)) {
+                return value["token"].as_str().map(str::to_owned);
+            }
+        }
+    }
+    None
 }

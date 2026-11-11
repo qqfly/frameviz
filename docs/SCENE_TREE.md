@@ -103,3 +103,18 @@ viz->setParent(box, std::nullopt);
 旧绘图参数仍可直接使用。提供 `SceneNodeOptions::pose` 时，以它为准。
 `loadMesh` 的 `scale` 和 `SceneNodeOptions::geometryScale` 都作用于对象自身。
 `getTransformMatrix` 返回列主序的刚体矩阵。
+
+
+### 接入正在运行的应用
+
+```python
+import frameviz as fv
+
+viz = fv.connect(view_id="v_1")
+hosts = fv.list_hosts()
+other = fv.connect(url=hosts[-1]["ws_url"], view_id="v_1")
+```
+
+`list_hosts()` 返回当前本地状态目录中能认证的兼容 Host，按启动时间排序。
+应用已有多个 View 时指定 View ID。显式提供 URL 时直接选择对应的 Host，
+SDK 从本地状态目录取得凭据。

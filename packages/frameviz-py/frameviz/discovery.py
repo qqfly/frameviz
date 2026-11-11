@@ -10,7 +10,8 @@ import os
 import sys
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
+from urllib.parse import urlsplit
 
 
 def get_discovery_path() -> Optional[Path]:
@@ -146,4 +147,46 @@ def get_http_port_from_discovery() -> Optional[int]:
         port = data.get("http_port")
         if isinstance(port, int):
             return port
+    return None
+
+
+def local_host_records() -> Iterator[Dict[str, Any]]:
+    """Read compatible loopback records from the selected user state directory."""
+    from .client import PROTOCOL_VERSION
+    from .version import host_version_error
+
+    primary = get_discovery_path()
+    if primary is None:
+        return
+    candidates = [primary, *primary.with_suffix(".hosts").glob("*.json")]
+    endpoints = set()
+    for path in candidates:
+        info = read_discovery_file(path)
+        if not info or not isinstance(info.get("ws_url"), str) or not isinstance(info.get("token"), str):
+            continue
+        try:
+            url = urlsplit(info["ws_url"])
+            port = url.port
+        except ValueError:
+            continue
+        if (url.scheme != "ws" or url.hostname not in ("localhost", "127.0.0.1", "::1")
+                or not port or port != info.get("port") or url.username or url.password
+                or url.path not in ("", "/") or url.query or url.fragment
+                or not isinstance(info.get("pid"), int) or not isinstance(info.get("started_at_ms"), int)
+                or host_version_error(info.get("version"), PROTOCOL_VERSION)):
+            continue
+        if port not in endpoints:
+            endpoints.add(port)
+            yield info
+
+
+def get_registered_host_token(url: str) -> Optional[str]:
+    selected = urlsplit(url)
+    if (selected.scheme != "ws" or selected.hostname not in ("localhost", "127.0.0.1", "::1")
+            or selected.username or selected.password or selected.path not in ("", "/")
+            or selected.query or selected.fragment):
+        return None
+    for info in local_host_records():
+        if info["port"] == selected.port:
+            return info["token"]
     return None

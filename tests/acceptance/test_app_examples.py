@@ -46,7 +46,7 @@ def running(command, cwd, env, log_path, port):
     ("simple_slider", "python"), ("simple_slider", "cpp"),
     ("urdf_robot", "python"), ("urdf_robot", "cpp"),
 ])
-def test_existing_app_slider_changes_the_real_scene(app, language, tree_viz, standalone, tmp_path):
+def test_existing_app_slider_changes_the_real_scene(app, language, tree_viz, standalone, tmp_path, monkeypatch):
     from playwright.sync_api import expect, sync_playwright
     from websockets.exceptions import ConnectionClosed
     from websockets.sync.client import connect
@@ -124,3 +124,17 @@ def test_existing_app_slider_changes_the_real_scene(app, language, tree_viz, sta
         else:
             pytest.fail("Application slider did not change any Host pose")
         assert page.locator("canvas").count() >= (1 if slider_app else 2)
+        if slider_app and language == "cpp":
+            import frameviz as fv
+
+            monkeypatch.setenv("FRAMEVIZ_DISCOVERY_PATH", str(discovery))
+            monkeypatch.delenv("FRAMEVIZ_AUTH_TOKEN", raising=False)
+            monkeypatch.delenv("FRAMEVIZ_HOST", raising=False)
+            attached = fv.connect(view_id=viewer["view_id"])
+            try:
+                handle = current[0]["handle"]
+                attached.set_transform(handle, position=[-.75, 0, .5])
+                state = viz._client.send_command("get_scene_snapshot", query)
+                assert next(o for o in state["objects"] if o["handle"] == handle)["pose"]["pos"] == [-.75, 0, .5]
+            finally:
+                attached.close()
