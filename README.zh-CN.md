@@ -194,6 +194,14 @@ C++ SDK 使用同一 Host/协议与对象句柄流程，API 采用 `addMesh`、`
 
 应用场景还包括[合成机械臂](examples/python/04_robotics/use_robot_arm.py)、[动态占据盒](examples/python/04_robotics/use_octomap_dynamic.py)和[独立应用](examples/apps/README.md)。
 
+### 开发者教程
+
+- [点云拾取](examples/python/05_developer_features/point_cloud_picking.py)。读取全局点索引和命中的世界坐标。
+- [拖动目标和轨迹](examples/python/05_developer_features/target_trajectory.py)。用 Gizmo 事件更新应用计算的轨迹。
+- [旋转插值](examples/python/05_developer_features/rotation_interpolation.py)。展示 SO(3) 测地线上的姿态采样。
+- [工作空间方块](examples/python/05_developer_features/workspace_instances.py)。用一个实例化对象显示占据采样。
+
+
 ## 从源码构建
 
 需要 Node.js 20+、pnpm 10、Python 3.9+、Rust、CMake 与 C++17 编译器。依赖缓存不完整时需要网络。

@@ -194,6 +194,14 @@ C++ uses the same Host/protocol and object handles, with APIs such as `addMesh`,
 
 Application examples include a [generated robot arm](examples/python/04_robotics/use_robot_arm.py), [dynamic occupancy boxes](examples/python/04_robotics/use_octomap_dynamic.py), and [standalone applications](examples/apps/README.md).
 
+### Developer tutorials
+
+- [Point cloud picking](examples/python/05_developer_features/point_cloud_picking.py). Read the point index and its world-space hit position.
+- [Draggable target and trajectory](examples/python/05_developer_features/target_trajectory.py). Use a Gizmo event to redraw an application-computed path.
+- [Rotation interpolation](examples/python/05_developer_features/rotation_interpolation.py). View samples along a geodesic in SO(3).
+- [Workspace boxes](examples/python/05_developer_features/workspace_instances.py). Render occupancy samples as one instanced object.
+
+
 ## Build from source
 
 Use Node.js 20+, pnpm 10, Python 3.9+, Rust, CMake, and a C++17 compiler. Network access is needed unless dependency caches are complete.
