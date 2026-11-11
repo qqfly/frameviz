@@ -651,11 +651,42 @@ async fn handle_binary_message(state: &SharedState, client_id: usize, data: Vec<
     }
 }
 
+fn rendering_endpoint(state: &ServerState) -> Option<String> {
+    let text = fs::read_to_string(state.discovery_path.as_ref()?).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    if value["pid"].as_u64() != Some(u64::from(std::process::id()))
+        || value["token"].as_str() != Some(state.auth_token.as_str()) {
+        return None;
+    }
+    let endpoint = url::Url::parse(value["viewer_url"].as_str()?).ok()?;
+    if endpoint.scheme() != "http"
+        || !matches!(endpoint.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+        || !endpoint.username().is_empty() || endpoint.password().is_some()
+        || endpoint.fragment().is_some() {
+        return None;
+    }
+    Some(endpoint.to_string())
+}
+
 async fn handle_protocol_command(state: &SharedState, client_id: usize, mut command: CommandEnvelope) {
     let name = command.name.clone();
 
     if name == "present_view" {
         handle_present_view(state, client_id, &command).await;
+        return;
+    }
+
+    if name == "get_render_endpoint" {
+        let endpoint = {
+            let guard = state.lock().await;
+            rendering_endpoint(&guard)
+        };
+        if let Some(url) = endpoint {
+            send_ok_response(state, client_id, &command.id, json!({"viewer_url": url})).await;
+        } else {
+            send_error_response(state, client_id, &command.id, "ERR_RENDERER_UNAVAILABLE",
+                "This runtime has no matching local Viewer endpoint").await;
+        }
         return;
     }
 

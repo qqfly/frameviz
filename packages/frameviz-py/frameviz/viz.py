@@ -1645,6 +1645,11 @@ class Viz:
         """Query the current view and its scene's display objects."""
         return self._client.send_command("get_display_state", {"view_id": self._view_id})
 
+    def screenshot(self, path=None, *, camera_view=None, width=None, height=None) -> bytes:
+        """Render PNG bytes in the background and optionally save them to path."""
+        from ._capture import screenshot
+        return screenshot(self, path, camera_view=camera_view, width=width, height=height)
+
     def get_camera_pose(self) -> Dict[str, Any]:
         """Get the current camera pose (viewer-side).
 

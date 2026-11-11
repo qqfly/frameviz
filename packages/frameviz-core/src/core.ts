@@ -61,6 +61,7 @@ export class FrameVizCore {
   private pendingRenders: PendingRender[] = [];
   private deferredMutations = new Map<string, Array<[string, Record<string, unknown>]>>();
   private pendingLoads = new Map<string, number>();
+  private failedModels = new Set<string>();
   private loadTokenCounter = 0;
 
   constructor(options: FrameVizCoreOptions = {}) {
@@ -577,6 +578,7 @@ export class FrameVizCore {
         }
         const token = ++this.loadTokenCounter;
         this.pendingLoads.set(handle, token);
+        this.failedModels.delete(handle);
         this.meshLoader
           .load(url, { color: color ? [color[0], color[1], color[2]] : undefined })
           .then((obj) => {
@@ -598,6 +600,7 @@ export class FrameVizCore {
             if (this.pendingLoads.get(handle) === token) {
               this.pendingLoads.delete(handle);
               this.deferredMutations.delete(handle);
+              this.failedModels.add(handle);
               this.emitEvent('object_failed', { handle, view_id: this.viewId, message: String(err) });
             }
           });
@@ -1305,6 +1308,13 @@ export class FrameVizCore {
     }
   }
 
+  getRenderStatus(): { ready: boolean; failed: string[] } {
+    return {
+      ready: this.pendingLoads.size === 0 && this.pendingRenders.length === 0,
+      failed: [...this.failedModels],
+    };
+  }
+
   render(): void {
     if (!this.sceneManager) return;
     this.cameraController?.controls.update();
@@ -1674,6 +1684,7 @@ export class FrameVizCore {
     }
     this.removePendingRendersForHandle(handle);
     this.pendingLoads.delete(handle);
+    this.failedModels.delete(handle);
     if (this.gizmoManager?.getAttachedHandle() === handle) {
       this.gizmoManager.detach();
     }
@@ -1709,6 +1720,7 @@ export class FrameVizCore {
     this.renderModeManager?.cleanupHelpers(this.objects);
     this.pendingRenders = [];
     this.pendingLoads.clear();
+    this.failedModels.clear();
     this.deferredMutations.clear();
     this.buffers.clear();
   }

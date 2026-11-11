@@ -33,6 +33,7 @@ This table records command-name literals in the implementation. Presence does no
 | `get_display_state` | present | not directly referenced | present | not directly referenced |
 | `get_pick_config` | present | present | present | present |
 | `get_picked_info` | present | present | present | not directly referenced |
+| `get_render_endpoint` | present | not directly referenced | present | not directly referenced |
 | `get_resource_counts` | present | not directly referenced | not directly referenced | not directly referenced |
 | `get_scene_snapshot` | present | not directly referenced | not directly referenced | not directly referenced |
 | `get_transform` | present | not directly referenced | present | present |

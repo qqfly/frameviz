@@ -212,6 +212,7 @@ class FrameVizClient:
             raise ProtocolError("Authentication failed: invalid token",
                                 code="AUTH_FAILED")
         self._check_version_compatibility(self._host_protocol_version)
+        self._auth_token = token
 
     def _check_version_compatibility(self, host_version: str) -> None:
         """Reject incompatible series on the calling thread after authentication."""

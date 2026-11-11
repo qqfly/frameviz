@@ -98,6 +98,9 @@
       padding-top: 8px;
       border-top: 1px solid rgba(255, 255, 255, 0.2);
     }
+    html[data-capture] #status,
+    html[data-capture] #shortcuts,
+    html[data-capture] #info { display: none; }
   </style>
 </head>
 
@@ -141,6 +144,8 @@
     const injectedWsPort = window.__FRAMEVIZ_WS_PORT__;
     const injectedPerfMode = window.__FRAMEVIZ_PERFORMANCE_MODE__;
     const injectedBackground = window.__FRAMEVIZ_BACKGROUND__;
+    const capture = urlParams.get('capture') === '1';
+    if (capture) document.documentElement.dataset.capture = 'true';
     const isTauri = typeof window.__TAURI__ !== 'undefined';
     const disableConnect = window.__FRAMEVIZ_DISABLE_CONNECT__ ||
       (isTauri && !injectedViewId && !urlParams.get('view_id'));
@@ -259,6 +264,7 @@
       if (!core) return;
       sceneId = snapshot.scene_id;
       replaySnapshot(core, snapshot);
+      document.documentElement.dataset.sceneReady = "true";
       updateObjectCount();
     }
 
@@ -359,7 +365,7 @@
     }
 
     function handleSyncMessage(msg) {
-      if (!core) return;
+      if (!core || (capture && document.documentElement.dataset.sceneReady === 'true')) return;
       if (!core.acceptRevision(msg.revision)) return;
       const { command, args, result } = msg;
       core.handleCommand(command, args, result || {});
@@ -511,6 +517,7 @@
         return;
       }
       if (msg.type === 'init') {
+        document.documentElement.dataset.sceneReady = 'false';
         if (core) core.sceneRevision = 0;
         if (msg.view_id && msg.view_id !== viewId) {
           viewId = msg.view_id;
@@ -723,7 +730,7 @@
         overlay: overlay2d,
         viewId,
         performanceMode,
-        showWidgetPanel: true,
+        showWidgetPanel: !capture,
         background: initialBackground,  // Pass background from URL param
         onEvent: (name, data) => sendEvent(name, data),
         onCommand: (name, args) => sendCommand(name, args),

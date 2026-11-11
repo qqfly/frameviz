@@ -43,6 +43,28 @@ python examples/python/03_interaction/use_scene_slider.py --mode commit
 - `viz.export_html(path, *, animation=None)` 导出自包含页面。独立打开和教程嵌入均可用，浏览器可旋转、缩放。可选动画为上层给定的时间和对象刚体位姿，提供播放、暂停、进度调整；观看相机独立于动画。验证断网、几何与资源完整、真实交互和文本安全转义。
 - 应用或 robotics runtime 管理业务状态和项目重建。通用场景文件格式及公开文件保存、加载、导入暂缓。教程 HTML 直接使用显示数据。交互式规划和求解由教程的上层程序提供。
 
+### PNG 截图
+
+先在使用 FrameViz 的 Python 环境安装同版本 SDK 的 `capture` extra 和后台浏览器。
+从源码开发时运行以下命令。
+
+```bash
+python -m pip install -e 'packages/frameviz-py[capture]'
+python -m playwright install chromium
+```
+
+```python
+import frameviz as fv
+
+viz = fv.open(window_mode=0)
+viz.add_box(color="#157db5")
+png = viz.screenshot("scene.png", width=720, height=480)
+viz.close()
+```
+
+也可传入 `camera_view=viz.get_camera_view()` 的同结构数据，改变这一次的拍摄视角。
+后台 Chromium 自动启动并在同一个 Python 进程中复用。默认使用同版本本机 Host 提供的 Viewer。
+
 ### C++ 场景节点
 
 ```cpp
