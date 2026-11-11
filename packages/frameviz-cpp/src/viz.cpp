@@ -454,13 +454,21 @@ Viz &Viz::operator=(Viz &&) noexcept = default;
 std::string Viz::sceneId() const { return m_sceneId; }
 std::string Viz::viewId() const { return m_viewId; }
 bool Viz::waitForViewer(std::chrono::seconds timeout) {
-  auto event = m_client->waitForEvent(
-      "viewer_ready",
-      [this](const json &data) {
-        return data.value("view_id", "") == m_viewId;
-      },
-      timeout);
-  return event.has_value();
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  do {
+    if (!m_client->isConnected()) return false;
+    try {
+      if (m_client->sendCommand("get_viewer_status", {{"view_id", m_viewId}}).value("ready", false)) {
+        return true;
+      }
+    } catch (const std::exception &) {
+      if (!m_client->isConnected()) return false;
+      throw;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= deadline) return false;
+    std::this_thread::sleep_until(std::min(deadline, now + std::chrono::milliseconds(50)));
+  } while (true);
 }
 void Viz::close() {
   if (!m_client) {

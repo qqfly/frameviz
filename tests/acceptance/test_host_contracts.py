@@ -1,8 +1,9 @@
 """Real Host boundary contracts and synthetic security regression scenarios."""
-import base64,json,os,pathlib,socket,subprocess,time
+import base64,json,os,pathlib,time
 import pytest
 from websockets.sync.client import connect
 from frameviz.client import FrameVizClient
+from test_standalone_viewer import standalone_runtime
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 OUT=pathlib.Path(os.environ.get('FRAMEVIZ_EVIDENCE',ROOT/'.validation/evidence'))
 (OUT/'logs').mkdir(parents=True,exist_ok=True)
@@ -28,22 +29,14 @@ class Session:
   self.cmd('upload_buffer_chunk',buffer_id=b,offset_bytes=0,chunk_bytes=len(values),data_base64=base64.b64encode(values).decode())
   return {'buffer_id':b,'dtype':'f32','shape':[1,len(values)//4]}
 @pytest.fixture
-def h(tmp_path,request):
- with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
- env=dict(os.environ,HOME=str(tmp_path),FRAMEVIZ_DISCOVERY_PATH=str(tmp_path/'host.json'),FRAMEVIZ_LOG_DIR=str(tmp_path/'logs'))
- with (OUT/'logs'/('host-'+request.node.name.replace('/','_')+'.log')).open('w') as log:
-  proc=subprocess.Popen([str(ROOT/'packages/frameviz-server/target/debug/frameviz-server'),str(port)],env=env,stdout=log,stderr=log)
-  ss=None
-  try:
-   for _ in range(100):
-    if (tmp_path/'host.json').exists():break
-    time.sleep(.02)
-   token=json.loads((tmp_path/'host.json').read_text())['token'];ss=Session(f'ws://127.0.0.1:{port}',token);yield ss
+def h(tmp_path, request):
+ with standalone_runtime(tmp_path) as (info, _, log, _):
+  session = Session(info['ws_url'], info['token'])
+  try:yield session
   finally:
-   if ss:
-    for ws in ss.sockets:ws.close()
-    ss.c.close()
-   proc.terminate();proc.wait(timeout=10)
+   for ws in session.sockets:ws.close()
+   session.c.close()
+   (OUT/'logs'/('host-'+request.node.name.replace('/','_')+'.log')).write_bytes(log.read_bytes())
 def test_pre_auth_existing_view_attach_has_no_snapshot(h):
  v=h.view('private');obj=h.box('private');ws=h.viewer(v,auth=False)
  h.cmd('attach_scene',view_id=v,scene_id='private')
@@ -140,3 +133,105 @@ def test_python_scene_binding_changes_only_after_real_host_accepts(h):
  viz.attach_scene(target)
  assert viz.scene_id==target
  assert next(v for v in h.cmd('list_views')['views'] if v['view_id']==view)['scene_id']==target
+
+
+def test_named_viewer_uses_host_ids_and_cannot_rebind_existing_view(h):
+    original = h.view('existing')
+    h.box('existing')
+    ws = h.viewer()
+    reply = h.request(ws, 'register_viewer', {'viewer_name': 'embedded', 'scene_id': 'embedded-scene'})
+    assert reply['ok'], reply
+    embedded = reply['result']['view_id']
+    assert embedded != h.view('new')
+    assert {v['view_id']: v['scene_id'] for v in h.cmd('list_views')['views']}[original] == 'existing'
+    conflicting = h.viewer(original)
+    before = h.cmd('list_views')
+    reply = h.request(conflicting, 'register_viewer', {
+        'viewer_name': 'different', 'scene_id': 'embedded-scene',
+    })
+    assert not reply['ok'], reply
+    assert h.cmd('list_views') == before
+
+
+def test_named_viewer_refresh_uses_current_binding(h):
+    ws = h.viewer()
+    args = {'viewer_name': 'embedded', 'scene_id': 'initial'}
+    first = h.request(ws, 'register_viewer', args)
+    assert first['ok']
+    view = first['result']['view_id']
+    right = h.box('current')
+    h.cmd('attach_scene', view_id=view, scene_id='current')
+    ws.close()
+    named = h.cmd('get_viewer_by_name', viewer_name='embedded')
+    assert (named['view_id'], named['scene_id']) == (view, 'current')
+    refreshed = h.viewer()
+    result = h.request(refreshed, 'register_viewer', args)
+    assert result['ok'], result
+    assert (result['result']['view_id'], result['result']['scene_id']) == (view, 'current')
+    assert json.loads(refreshed.recv(timeout=2))['type'] == 'init'
+    snapshot = json.loads(refreshed.recv(timeout=2))
+    assert {obj['handle'] for obj in snapshot['objects']} == {right}
+
+
+def test_missing_handle_and_invalid_gizmo_bindings_are_rejected(h):
+    view = h.view('local')
+    valid = h.box('local')
+    foreign = h.box('foreign')
+    ws = h.viewer(view)
+    assert h.request(ws, 'attach_gizmo', {'handle': valid})['ok']
+    for handle, code in [('missing', 'ERR_NOT_FOUND'), (foreign, 'ERR_INVALID_SCOPE')]:
+        with pytest.raises(RuntimeError, match=code):
+            h.cmd('attach_gizmo', view_id=view, handle=handle)
+    for command, values in [
+        ('set_color', {'rgba': [1, 0, 0]}),
+        ('set_alpha', {'alpha': .5}),
+        ('set_visible', {'visible': False}),
+    ]:
+        with pytest.raises(RuntimeError, match='ERR_NOT_FOUND'):
+            h.cmd(command, handle='missing', **values)
+    original = h.cmd('get_scene_snapshot', scene_id='local')
+    with pytest.raises(RuntimeError, match='ERR_NOT_FOUND'):
+        h.cmd('set_object_alphas', scene_id='local', items=[
+            {'handle': valid, 'alpha': .2}, {'handle': 'missing', 'alpha': .4},
+        ])
+    assert h.cmd('get_scene_snapshot', scene_id='local') == original
+
+
+def test_delayed_camera_event_cannot_override_new_camera_command(h):
+    view = h.view('camera')
+    ws = h.viewer(view)
+    before = h.cmd('get_scene_snapshot', scene_id='camera')['revision']
+    desired = {'eye': [3, -4, 5], 'target': [0, 0, 0], 'up': [0, 0, 1],
+               'projection': {'type': 'perspective', 'fov': 60}}
+    h.cmd('set_camera_view', view_id=view, camera_view=desired)
+    ws.send(json.dumps({'type': 'event', 'protocol_version': '0.5.0', 'name': 'camera_view_changed',
+                        'data': {**desired, 'eye': [9, 8, 7], 'revision': before}}))
+    assert h.request(ws, 'get_camera_view', {})['result'] == desired
+
+
+def test_automatic_scene_ids_and_rejected_view_creation_preserve_existing_scenes(h):
+    first = h.cmd('create_view', view_id='v_1', scene_id='s_1')
+    with pytest.raises(RuntimeError, match='ERR_ALREADY_EXISTS'):
+        h.cmd('create_view', view_id=first['view_id'], scene_id='must-not-exist')
+    assert [item['scene_id'] for item in h.cmd('list_scenes')['scenes']] == ['s_1']
+    named = h.request(h.viewer(), 'register_viewer', {'viewer_name': 'new'})
+    assert named['ok'] and named['result']['view_id'] != first['view_id']
+    assert named['result']['scene_id'] != first['scene_id']
+
+
+def test_named_viewer_can_reuse_an_unbound_view_after_scene_destroy(h):
+    view = h.view('old')
+    socket = h.viewer(view)
+    assert h.request(socket, 'register_viewer', {'viewer_name': 'embedded'})['ok']
+    h.cmd('destroy_scene', scene_id='old')
+    response = h.request(socket, 'register_viewer', {'viewer_name': 'embedded', 'scene_id': 'new'})
+    assert response['ok']
+    assert response['result']['view_id'] == view and response['result']['scene_id'] == 'new'
+
+
+def test_failed_embedded_registration_does_not_leave_an_empty_scene(h):
+    invalid = h.viewer('')
+    before = h.cmd('list_scenes')
+    reply = h.request(invalid, 'register_viewer', {'viewer_name': 'invalid', 'scene_id': 'would-leak'})
+    assert reply['error']['code'] == 'ERR_INVALID_ARGS'
+    assert h.cmd('list_scenes') == before

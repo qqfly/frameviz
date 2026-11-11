@@ -19,6 +19,7 @@ import frameviz as fv
 import frameviz.viz as implementation
 from frameviz.discovery import read_discovery_file
 from frameviz.host import find_host_executable
+from frameviz import host
 home=pathlib.Path.home()
 assert pathlib.Path(fv.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve())
 for key in ['FRAMEVIZ_TAURI_APP','FRAMEVIZ_HOST_PATH','FRAMEVIZ_WS_SERVER_CMD']:
@@ -37,7 +38,9 @@ try:
     second=fv.open(title='Same installed Host')
     second.add_sphere()
     assert read_discovery_file()['pid']==pid
-    owned=[p for p in implementation._AUTO_TAURI_PROCS if p.poll() is None]
+    candidates=[host._started_host_proc,*implementation._AUTO_TAURI_PROCS]
+    owned={p.pid for p in candidates if p is not None and p.poll() is None}
+    assert not owned or owned == {pid}, owned
     expected=int(sys.argv[2])
     assert len(owned)==expected,(len(owned),expected)
     assert not (home/'state/preferences.json').exists(),'SDK start consumed manual welcome'

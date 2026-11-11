@@ -24,6 +24,17 @@ def bundle(path, *, identity='dev.qqfly.frameviz.viewer', executable='frameviz')
     return binary
 
 
+@pytest.fixture(autouse=True)
+def ignore_real_installed_runtimes(monkeypatch):
+    resolve = internal._get_macos_app_executable
+    def isolated_resolve(path):
+        if path == pathlib.Path("/Applications/FrameViz.app"):
+            return None
+        return resolve(path)
+    monkeypatch.setattr(internal, "_get_macos_app_executable", isolated_resolve)
+    monkeypatch.setattr(host, "_standalone_candidates", lambda _: [])
+
+
 @pytest.fixture
 def installed(tmp_path, monkeypatch):
     monkeypatch.setattr(internal.sys, 'platform', 'darwin')
@@ -106,3 +117,24 @@ def test_control_socket_startup_does_not_launch_a_second_owned_app(installed, mo
     monkeypatch.setattr(viz, '_AUTO_TAURI_PROCS', [Running()])
     monkeypatch.setattr(viz, '_run_process', lambda command: pytest.fail('Second App launched'))
     assert viz._try_open_tauri()
+
+
+def test_incompatible_installed_app_does_not_hide_compatible_host(installed, tmp_path, monkeypatch):
+    old = bundle(installed)
+    plist = installed / "Contents/Info.plist"
+    info = plistlib.loads(plist.read_bytes())
+    info["CFBundleShortVersionString"] = "0.4.9"
+    plist.write_bytes(plistlib.dumps(info))
+    compatible = bundle(tmp_path / "new" / "FrameViz.app")
+    monkeypatch.setattr(host, "_get_tauri_app_candidates", lambda _: [installed, compatible.parents[2]])
+    assert host.find_host_executable() == compatible
+    launched = []
+    monkeypatch.setattr(viz, "_run_process", lambda args: launched.append(args) or True)
+    assert viz._try_open_tauri()
+    assert launched == [[str(compatible), "--headless"]]
+    monkeypatch.setenv("FRAMEVIZ_TAURI_APP", str(installed))
+    with pytest.raises(host.ProtocolError, match="0.4.9.*older"):
+        host.find_host_executable()
+    with pytest.raises(host.ProtocolError, match="0.4.9.*older"):
+        viz._try_open_tauri()
+    assert all(command[0] != str(old) for command in launched)

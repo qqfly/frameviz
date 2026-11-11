@@ -44,6 +44,15 @@ def test_vue_panel_can_opt_in_without_changing_default_read_write(tree_viz):
                 page = browser.new_page()
                 page.goto(f"{endpoint}?view_id={viz.view_id}&ws_port={info['port']}#token={info['token']}")
                 expect(page.get_by_text("Registered", exact=True)).to_be_visible(timeout=10000)
+                visibility = """() => {
+                    const env = window.fixtureCore.getSceneManager().getEnvironment();
+                    return [env.showGrid, env.showAxes];
+                }"""
+                page.wait_for_function(f"() => ({visibility})().every(value => value === false)", timeout=2000)
+                page.get_by_role("button", name="Toggle scene helpers").click()
+                page.wait_for_function(f"() => ({visibility})().every(value => value === true)", timeout=2000)
+                page.get_by_role("button", name="Toggle scene helpers").click()
+                page.wait_for_function(f"() => ({visibility})().every(value => value === false)", timeout=2000)
                 offset = page.get_by_role("spinbutton", name="Offset")
                 expect(offset).to_be_hidden()
                 viz.set_widget_value(widget, -.321)

@@ -111,3 +111,33 @@ def test_screenshot_waits_for_delayed_mesh_and_reports_missing_model(tree_viz):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_capture_preserves_wireframe_without_changing_live_view(widget_pages, monkeypatch):
+    from frameviz import _capture
+
+    viz, _, (live, _) = widget_pages
+    handle = viz.add_box(size=[1.3, .6, .9], color="red")
+    viz.set_camera_view(camera([4, -5, 3], 50))
+    wait_drawable(live, handle)
+    solid = viz.screenshot(width=480, height=300)
+    viz.set_render_mode("wireframe")
+    material = "h => window.__FRAMEVIZ_CORE__.objects.get(h)?.material.wireframe === true"
+    live.wait_for_function(material, arg=handle)
+    before = live.evaluate("() => { const c = window.__FRAMEVIZ_CORE__; const canvas = c.getSceneManager().renderer.domElement; return [c.getCameraView(), canvas.width, canvas.height]; }")
+    original = _capture._with_page
+
+    def inspect(url, token, width, height, operation):
+        def checked(page):
+            assert page.evaluate(material, handle)
+            return operation(page)
+        return original(url, token, width, height, checked)
+
+    monkeypatch.setattr(_capture, "_with_page", inspect)
+    assert viz.screenshot(camera_view=camera([-4, 2, 2], 60), width=480, height=300) != solid
+    assert live.evaluate(material, handle)
+    after = live.evaluate("() => { const c = window.__FRAMEVIZ_CORE__; const canvas = c.getSceneManager().renderer.domElement; return [c.getCameraView(), canvas.width, canvas.height]; }")
+    assert after[1:] == before[1:]
+    assert after[0]["projection"] == before[0]["projection"]
+    for key in ("eye", "target", "up"):
+        assert after[0][key] == pytest.approx(before[0][key], abs=1e-9)

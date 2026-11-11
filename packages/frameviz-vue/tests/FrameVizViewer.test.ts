@@ -33,6 +33,7 @@ vi.mock('@frameviz/core', () => {
       resize: resizeMock,
       render: renderMock,
       setKeyboardShortcutsEnabled: vi.fn(),
+      setEnvironmentVisibilityOverride: vi.fn(),
       setViewId: setViewIdMock,
       handleCommand: vi.fn(),
       getCameraPose: vi.fn(),

@@ -51,6 +51,8 @@ export class FrameVizCore {
   private widgetPanel?: WidgetPanel;
   private widgetPanelEnabled = false;
   private widgetPanelViewEnabled = true;
+  private environmentVisibility: { showGrid?: boolean; showAxes?: boolean } = {};
+  private environmentOverride: { showGrid?: boolean; showAxes?: boolean } = {};
   private keyboardShortcutsEnabled = true;
   private keydownHandler?: (event: KeyboardEvent) => void;
 
@@ -82,6 +84,8 @@ export class FrameVizCore {
         performanceMode: options.performanceMode,
         background: options.background,
       });
+      const { showGrid, showAxes } = this.sceneManager.getEnvironment();
+      this.environmentVisibility = { showGrid, showAxes };
       this.geometryFactory = new GeometryFactory();
       this.labelManager = new LabelManager();
       this.renderModeManager = new RenderModeManager();
@@ -111,6 +115,18 @@ export class FrameVizCore {
     if (this.keyboardShortcutsEnabled) {
       this.enableKeyboardShortcuts();
     }
+  }
+
+  setEnvironmentVisibilityOverride(override: { showGrid?: boolean; showAxes?: boolean }): void {
+    this.environmentOverride = override;
+    this.applyEnvironmentVisibility();
+  }
+
+  private applyEnvironmentVisibility(): void {
+    this.sceneManager?.setEnvironment({
+      showGrid: this.environmentOverride.showGrid ?? this.environmentVisibility.showGrid,
+      showAxes: this.environmentOverride.showAxes ?? this.environmentVisibility.showAxes,
+    });
   }
 
   acceptRevision(revision: unknown): boolean {
@@ -250,7 +266,11 @@ export class FrameVizCore {
           event.preventDefault();
           this.cameraController.resetView(this.objects);
         } else if (key === "w") {
-          this.renderModeManager?.cycleRenderMode(this.objects);
+          const mode = this.renderModeManager?.getNextMode();
+          if (mode) {
+            this.handleCommand("set_render_mode", { mode });
+            this.options.onCommand?.("set_render_mode", { mode });
+          }
         }
         return;
       }
@@ -772,7 +792,12 @@ export class FrameVizCore {
       }
       case "set_render_mode": {
         const mode = (args.mode as string) || "solid";
-        this.renderModeManager?.setRenderMode(mode as any, this.objects);
+        const resumeHighlight = this.pickingManager?.suspendObjectHighlight();
+        try {
+          this.renderModeManager?.setRenderMode(mode as any, this.objects);
+        } finally {
+          resumeHighlight?.();
+        }
         return;
       }
       case "set_performance_mode": {
@@ -854,13 +879,10 @@ export class FrameVizCore {
         const target = args.target as number[] | undefined;
         const up = args.up as number[] | undefined;
         if (this.cameraController && eye && target) {
-          const camera = this.cameraController.controls.object;
-          camera.position.set(eye[0], eye[1], eye[2]);
-          if (up && up.length >= 3) {
-            camera.up.set(up[0], up[1], up[2]);
+          if (this.cameraController.setPose(eye, target, up)) {
+            this.watchCameraView();
+            this.gizmoManager?.setOrbitControls(this.cameraController.controls);
           }
-          this.cameraController.controls.target.set(target[0], target[1], target[2]);
-          this.cameraController.controls.update();
           this.cameraViewDirty = false;
         }
         return;
@@ -1022,10 +1044,11 @@ export class FrameVizCore {
           }
           const axesLength = (config.axes_length ?? config.axes_size) as number | undefined;
           const axesRadius = config.axes_radius as number | undefined;
+          const showGrid = config.show_grid ?? config.show_ground;
+          if (typeof showGrid === "boolean") this.environmentVisibility.showGrid = showGrid;
+          if (typeof config.show_axes === "boolean") this.environmentVisibility.showAxes = config.show_axes;
+          this.applyEnvironmentVisibility();
           this.sceneManager.setEnvironment({
-            showGrid: config.show_grid as boolean | undefined,
-            showGround: config.show_ground as boolean | undefined,
-            showAxes: config.show_axes as boolean | undefined,
             gridColor: config.grid_color as number[] | undefined,
             gridSubColor: config.grid_sub_color as number[] | undefined,
             axesLength,
@@ -1083,13 +1106,20 @@ export class FrameVizCore {
           if (result.object) restoreSceneObject(this, result.object);
           return;
         }
-        const cloned = source.clone(true);
+        const resumeHighlight = this.pickingManager?.suspendObjectHighlight(sourceHandle);
+        let cloned: THREE.Object3D;
+        try {
+          cloned = source.clone(true);
+        } finally {
+          resumeHighlight?.();
+        }
         cloned.traverse((child) => {
           const mesh = child as THREE.Mesh;
           if (mesh.geometry) mesh.geometry = mesh.geometry.clone();
           if (mesh.material) {
             const cloneMaterial = (material: THREE.Material) => {
               const copy = material.clone();
+              this.renderModeManager?.restoreBaseWireframe(material, copy);
               for (const key in copy) {
                 const value = (copy as any)[key];
                 if (value?.isTexture) (copy as any)[key] = value.clone();
@@ -1311,7 +1341,7 @@ export class FrameVizCore {
     return {
       scene_id: snapshot.scene_id, objects, buffers, view_config: snapshot.view_config,
       camera_pose: snapshot.camera_pose, camera_controls: snapshot.camera_controls,
-      overlays: snapshot.overlays,
+      render_mode: snapshot.render_mode, overlays: snapshot.overlays,
     };
   }
 
@@ -1331,7 +1361,7 @@ export class FrameVizCore {
     if (this.cameraViewDirty) {
       this.cameraViewDirty = false;
       const camera = this.getCameraView();
-      if (camera && this.viewId) this.emitEvent("camera_view_changed", camera);
+      if (camera && this.viewId) this.emitEvent("camera_view_changed", { ...camera, revision: this.sceneRevision });
     }
   }
 
@@ -1634,6 +1664,7 @@ export class FrameVizCore {
     if (frame.userData.geometryScale) drawable.scale.fromArray(frame.userData.geometryScale);
     drawable.visible = frame.visible;
     drawable.userData.userVisible = frame.visible;
+    this.renderModeManager?.applyToObject(drawable);
   }
 
   private onGizmoTransform(handle: string, value: { pos: number[]; quat: number[]; scale: number[] }): void {
@@ -1678,6 +1709,7 @@ export class FrameVizCore {
     this.frames.get(handle)?.removeFromParent();
     this.frames.delete(handle);
     this.deferredMutations.delete(handle);
+    if (this.pickingManager?.getLastPickInfo().handle === handle) this.pickingManager.clearHighlight();
     const obj = this.objects.get(handle);
     if (obj && this.sceneManager) {
       const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
@@ -1695,12 +1727,6 @@ export class FrameVizCore {
     if (this.gizmoManager?.getAttachedHandle() === handle) {
       this.gizmoManager.detach();
     }
-    if (this.pickingManager) {
-      const info = this.pickingManager.getLastPickInfo();
-      if (info.handle === handle) {
-        this.pickingManager.clearHighlight();
-      }
-    }
     const overlay = this.overlays2d.get(handle);
     if (overlay) {
       overlay.remove();
@@ -1711,6 +1737,7 @@ export class FrameVizCore {
 
   private clearSceneContents(clearOverlays = true): void {
     if (!this.sceneManager) return;
+    this.pickingManager?.clearHighlight();
     for (const [handle, obj] of this.objects) {
       this.disposeObject(obj);
       this.sceneManager.removeObject(handle);
@@ -1719,7 +1746,6 @@ export class FrameVizCore {
     for (const frame of this.frames.values()) frame.removeFromParent();
     this.frames.clear();
     this.gizmoManager?.detach();
-    this.pickingManager?.clearHighlight();
     if (clearOverlays) {
       for (const overlay of this.overlays2d.values()) overlay.remove();
       this.overlays2d.clear();

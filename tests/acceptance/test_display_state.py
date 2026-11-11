@@ -87,3 +87,30 @@ def test_summary_lists_world_bounds_and_explicitly_labels_unavailable_geometry(t
     assert f'  {box} primitive "Beam"' in summary
     assert '"role": "link"' in summary
     assert f'{model} loaded_mesh "External"' in summary and 'bounds=unavailable' in summary
+
+
+def test_camera_fov_validation_is_shared_with_legacy_controls(tree_viz):
+    viz, _ = tree_viz
+    before = viz.get_camera_view()
+    for fov in (5, 121):
+        with pytest.raises(RuntimeError, match="ERR_INVALID_ARGS"):
+            viz.set_camera_view(camera([3, -4, 5], fov))
+        with pytest.raises(RuntimeError, match="ERR_INVALID_ARGS"):
+            viz._client.send_command("set_camera_controls", {"view_id": viz.view_id, "fov": fov})
+        assert viz.get_camera_view() == before
+
+
+def test_explicit_camera_replaces_view_animation_and_keeps_nondefault_up(widget_pages):
+    viz, _, (page, _) = widget_pages
+    viz.set_view("front")
+    # The old preset animation must not continue after this explicit pose.
+    desired = {**camera([0, 0, 6], 120), "up": [0, 1, 0]}
+    viz.set_camera_view(desired)
+    page.wait_for_function("""() => window.__FRAMEVIZ_CORE__?.getCameraView().projection.fov === 120""")
+    page.wait_for_timeout(350)
+    rendered = page.evaluate("window.__FRAMEVIZ_CORE__.getCameraView()")
+    assert rendered["eye"] == pytest.approx(desired["eye"], abs=1e-9)
+    assert rendered["target"] == desired["target"]
+    assert rendered["up"] == desired["up"]
+    assert rendered["projection"] == desired["projection"]
+    assert viz.get_camera_view() == desired

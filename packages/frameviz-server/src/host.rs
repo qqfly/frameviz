@@ -5,6 +5,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedSender;
@@ -154,13 +155,14 @@ pub struct ViewInfo {
     pub view_config: serde_json::Map<String, Value>,
     pub camera_controls: serde_json::Map<String, Value>,
     pub camera_pose: Option<Value>,
+    pub render_mode: String,
     #[allow(dead_code)]
     pub decorations: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct BufferEntry {
-    pub data: Vec<u8>,
+    pub data: Arc<Vec<u8>>,
     received: Vec<(usize, usize)>,
     pub size_bytes: usize,
     pub dtype: String,
@@ -329,11 +331,15 @@ impl Host {
         }
         if merged.len() > 4096 { return Err(HostError::new("ERR_RESOURCE_LIMIT", "Too many disjoint upload ranges")); }
         entry.received = merged;
-        entry.data[offset_bytes..offset_bytes + data.len()].copy_from_slice(data);
+        Arc::make_mut(&mut entry.data)[offset_bytes..offset_bytes + data.len()].copy_from_slice(data);
         Ok(())
     }
 
     pub fn get_buffer_data(&self, buffer_id: &str) -> Option<Vec<u8>> {
+        self.shared_buffer_data(buffer_id).map(|data| data.as_ref().clone())
+    }
+
+    pub(crate) fn shared_buffer_data(&self, buffer_id: &str) -> Option<Arc<Vec<u8>>> {
         self.buffers.get(buffer_id).map(|entry| entry.data.clone())
     }
 
@@ -351,7 +357,7 @@ impl Host {
         for buffer_id in buffer_ids.into_iter() {
             if let Some(entry) = self.buffers.get(&buffer_id) {
                 let data_base64 = if entry.data.len() <= SNAPSHOT_BASE64_LIMIT {
-                    Some(BASE64.encode(&entry.data))
+                    Some(BASE64.encode(entry.data.as_slice()))
                 } else {
                     None
                 };
@@ -375,7 +381,7 @@ impl Host {
         })
     }
 
-    pub fn command_buffers(&self, args: &Value) -> Vec<(String, BufferSnapshot, Vec<u8>)> {
+    pub(crate) fn command_buffers(&self, args: &Value) -> Vec<(String, BufferSnapshot, Arc<Vec<u8>>)> {
         let mut ids: Vec<_> = args.as_object().into_iter().flatten()
             .filter(|(key, _)| key.as_str() != "tags")
             .flat_map(|(_, value)| self.collect_buffer_ids(value)).collect();
@@ -389,12 +395,17 @@ impl Host {
         json!({"objects":self.objects.len(),"buffers":self.buffers.len(),"buffer_bytes":self.buffers.values().map(|b| b.size_bytes).sum::<usize>(),"views":self.views.len(),"scenes":self.scenes.len()})
     }
 
+    pub(crate) fn has_view(&self, view_id: &str) -> bool {
+        self.views.contains_key(view_id)
+    }
+
     pub fn view_snapshot(&self, view_id: &str) -> Value {
         let view = self.views.get(view_id);
         json!({
             "view_config": view.map(|v| &v.view_config),
             "camera_controls": view.map(|v| &v.camera_controls),
             "camera_pose": view.and_then(|v| v.camera_pose.as_ref()),
+            "render_mode": view.map(|v| v.render_mode.as_str()),
             "overlays": self.overlays.values().filter(|o| o.view_id == view_id).collect::<Vec<_>>()
         })
     }
@@ -410,6 +421,11 @@ impl Host {
         Ok(pose)
     }
 
+    fn validate_fov(value: &Value) -> Result<f64, HostError> {
+        value.as_f64().filter(|fov| (10.0..=120.0).contains(fov))
+            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "Camera fov must be between 10 and 120 degrees"))
+    }
+
     fn set_camera_view(&mut self, view_id: &str, camera: &Value) -> Result<(), HostError> {
         let eye = self.require_vec3(&camera["eye"], "eye")?;
         let target = self.require_vec3(&camera["target"], "target")?;
@@ -421,8 +437,7 @@ impl Host {
         if projection["type"].as_str() != Some("perspective") {
             return Err(HostError::new("ERR_INVALID_ARGS", "Camera projection must be perspective"));
         }
-        let fov = projection["fov"].as_f64().filter(|v| *v > 0.0 && *v < 180.0)
-            .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "Camera fov must be between 0 and 180 degrees"))?;
+        let fov = Self::validate_fov(&projection["fov"])?;
         let view = self.views.get_mut(view_id)
             .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
         view.camera_pose = Some(json!({"eye": eye, "target": target, "up": up}));
@@ -464,6 +479,7 @@ impl Host {
         Ok(json!({
             "scene_id": scene_id, "view_id": view_id, "width": view.width, "height": view.height,
             "camera_view": self.camera_view(view_id)?, "view_config": view.view_config,
+            "render_mode": view.render_mode,
             "objects": objects, "widgets": self.widgets.list(scene_id),
             "overlays": self.overlays.values().filter(|overlay| overlay.view_id == view_id).collect::<Vec<_>>(),
         }))
@@ -558,10 +574,13 @@ impl Host {
                 let scene_id = self
                     .get_optional_string(args, "scene_id")
                     .unwrap_or_else(|| self.next_scene_id());
-                self.ensure_scene(&scene_id);
                 let view_id = self
                     .get_optional_string(args, "view_id")
                     .unwrap_or_else(|| self.next_view_id());
+                if self.views.contains_key(&view_id) {
+                    return Err(HostError::new("ERR_ALREADY_EXISTS", "View ID already exists"));
+                }
+                self.ensure_scene(&scene_id);
                 let title = self
                     .get_optional_string(args, "title")
                     .unwrap_or_else(|| "FrameViz".to_string());
@@ -580,6 +599,7 @@ impl Host {
                         view_config: Host::default_view_config(),
                         camera_controls: Host::default_camera_controls(),
                         camera_pose: None,
+                        render_mode: "solid".into(),
                         decorations,
                     },
                 );
@@ -687,9 +707,13 @@ impl Host {
                     view_config: Host::default_view_config(),
                     camera_controls: Host::default_camera_controls(),
                     camera_pose: None,
+                    render_mode: "solid".into(),
                     decorations: true,  // Default: true
                 });
-                view.scene_id = Some(scene_id.clone());
+                if view.scene_id.as_ref() != Some(&scene_id) {
+                    self.gizmos.remove(&view_id);
+                    view.scene_id = Some(scene_id.clone());
+                }
                 Ok(json!({ "view_id": view_id, "scene_id": scene_id }))
             }
             "list_scenes" => {
@@ -820,7 +844,7 @@ impl Host {
                 self.buffers.insert(
                     buffer_id.clone(),
                     BufferEntry {
-                        data,
+                        data: Arc::new(data),
                         received: Vec::new(),
                         size_bytes,
                         dtype,
@@ -1058,9 +1082,9 @@ impl Host {
             }
             "remove_text_3d" => {
                 let handle = self.require_string(args, "handle")?;
-                if let Some(obj) = self.objects.get(&handle) {
-                    args["scene_id"] = json!(obj.scene_id);
-                }
+                let obj = self.objects.get(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+                args["scene_id"] = json!(obj.scene_id);
                 let removed = self.remove_subtrees([handle]);
                 Ok(json!({"removed": removed}))
             }
@@ -1119,7 +1143,9 @@ impl Host {
             }
             "remove_text_2d" => {
                 let handle = self.require_string(args, "handle")?;
-                self.overlays.remove(&handle);
+                let overlay = self.overlays.remove(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Overlay not found"))?;
+                args["view_id"] = json!(overlay.view_id);
                 Ok(json!({}))
             }
             "remove_object" => {
@@ -1253,15 +1279,17 @@ impl Host {
                     }).unwrap_or_default();
                 let mut counts = if old_refs.is_empty() { HashMap::new() } else { self.build_buffer_ref_counts() };
                 if target == "overlay" {
-                    if let Some(overlay) = self.overlays.get_mut(&handle) {
-                        if let Some(color) = &color {
-                            overlay.data["color"] = json!(color);
-                        }
+                    let overlay = self.overlays.get_mut(&handle)
+                        .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Overlay not found"))?;
+                    if let Some(color) = &color {
+                        overlay.data["color"] = json!(color);
                     }
                     if let Some(map) = args.as_object_mut() {
                         map.insert("target".to_string(), Value::String("overlay".to_string()));
                     }
-                } else if let Some(obj) = self.objects.get_mut(&handle) {
+                } else {
+                    let obj = self.objects.get_mut(&handle)
+                        .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
                     obj.color = color;
                     // Clear vertex colors flag when converting to uniform color
                     if let Some(data) = &mut obj.data {
@@ -1290,17 +1318,12 @@ impl Host {
                     return Err(HostError::new("ERR_INVALID_ARGS", "alpha must be in [0.0, 1.0]".to_string()));
                 }
 
-                // Get existing color and update alpha
-                if let Some(obj) = self.objects.get_mut(&handle) {
-                    let base = obj.color.clone().unwrap_or_else(|| vec![1.0, 1.0, 1.0, 1.0]);
-                    let mut rgba = if base.len() >= 3 { base } else { vec![1.0, 1.0, 1.0, 1.0] };
-                    if rgba.len() < 4 {
-                        rgba.push(alpha);
-                    } else {
-                        rgba[3] = alpha;
-                    }
-                    obj.color = Some(rgba);
-                }
+                let obj = self.objects.get_mut(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+                let mut rgba = obj.color.take().unwrap_or_else(|| vec![1.0; 4]);
+                rgba.resize(4, 1.0);
+                rgba[3] = alpha;
+                obj.color = Some(rgba);
                 Ok(json!({}))
             }
             "set_visible" => {
@@ -1318,13 +1341,15 @@ impl Host {
                 });
 
                 if target == "overlay" {
-                    if let Some(overlay) = self.overlays.get_mut(&handle) {
-                        overlay.data["visible"] = json!(visible);
-                    }
+                    let overlay = self.overlays.get_mut(&handle)
+                        .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Overlay not found"))?;
+                    overlay.data["visible"] = json!(visible);
                     if let Some(map) = args.as_object_mut() {
                         map.insert("target".to_string(), Value::String("overlay".to_string()));
                     }
-                } else if let Some(obj) = self.objects.get_mut(&handle) {
+                } else {
+                    let obj = self.objects.get_mut(&handle)
+                        .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
                     obj.visible = visible;
                 }
                 Ok(json!({}))
@@ -1477,13 +1502,12 @@ impl Host {
             }
             "set_camera_controls" => {
                 let view_id = self.require_string(args, "view_id")?;
-                if let Some(view) = self.views.get_mut(&view_id) {
-                    if let Some(obj) = args.as_object() {
-                        for (key, value) in obj {
-                            if key != "view_id" {
-                                view.camera_controls.insert(key.clone(), value.clone());
-                            }
-                        }
+                if let Some(fov) = args.get("fov") { Self::validate_fov(fov)?; }
+                let view = self.views.get_mut(&view_id)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+                for (key, value) in args.as_object().unwrap() {
+                    if key != "view_id" && key != "scene_id" {
+                        view.camera_controls.insert(key.clone(), value.clone());
                     }
                 }
                 self.add_log(
@@ -1499,6 +1523,13 @@ impl Host {
             "attach_gizmo" => {
                 let view_id = self.require_string(args, "view_id")?;
                 let handle = self.require_string(args, "handle")?;
+                let view = self.views.get(&view_id)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+                let object = self.objects.get(&handle)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "Object not found"))?;
+                if view.scene_id.as_deref() != Some(object.scene_id.as_str()) {
+                    return Err(HostError::new("ERR_INVALID_SCOPE", "Gizmo object belongs to another scene"));
+                }
                 let mode = self.get_optional_string(args, "mode");
                 self.gizmos.insert(
                     view_id.clone(),
@@ -1582,6 +1613,14 @@ impl Host {
                 Ok(json!({}))
             }
             "set_render_mode" => {
+                let view_id = self.require_string(args, "view_id")?;
+                let mode = self.require_string(args, "mode")?;
+                if !matches!(mode.as_str(), "solid" | "wireframe" | "points") {
+                    return Err(HostError::new("ERR_INVALID_ARGS", "Render mode must be solid, wireframe or points"));
+                }
+                let view = self.views.get_mut(&view_id)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+                view.render_mode = mode;
                 self.add_log(
                     "debug",
                     "core",
@@ -1697,13 +1736,19 @@ impl Host {
     }
 
     fn next_scene_id(&mut self) -> String {
-        self.scene_counter += 1;
-        format!("s_{}", self.scene_counter)
+        loop {
+            self.scene_counter += 1;
+            let id = format!("s_{}", self.scene_counter);
+            if !self.scenes.contains_key(&id) { return id; }
+        }
     }
 
     fn next_view_id(&mut self) -> String {
-        self.view_counter += 1;
-        format!("v_{}", self.view_counter)
+        loop {
+            self.view_counter += 1;
+            let id = format!("v_{}", self.view_counter);
+            if !self.views.contains_key(&id) { return id; }
+        }
     }
 
     fn next_buffer_id(&mut self) -> u64 {

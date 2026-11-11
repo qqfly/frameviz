@@ -4,8 +4,8 @@
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use crate::host::{Host, HostError, LogEntry, SceneSnapshot};
-use futures_util::{SinkExt, StreamExt};
+use crate::host::{BufferSnapshot, Host, HostError, LogEntry, SceneSnapshot};
+use futures_util::{Sink, SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration as StdDuration;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, OwnedSemaphorePermit, Semaphore};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
@@ -131,20 +131,87 @@ struct PendingUpload {
     command_id: String,
 }
 
-// Overflow closes the connection: a client must reconnect and restore a snapshot.
-// Silently losing a command would leave its scene permanently divergent.
+const CLIENT_QUEUE_MESSAGES: usize = 32;
+// Allow a full Host scene (512 MiB of raw buffers) plus its metadata.
+const CLIENT_QUEUE_BYTES: usize = 640 * 1024 * 1024;
+
+struct BufferTransfer {
+    id: String,
+    descriptor: Option<BufferSnapshot>,
+    data: Arc<Vec<u8>>,
+}
+
+struct Outbound {
+    before: Vec<Message>,
+    buffers: Vec<BufferTransfer>,
+    after: Option<Message>,
+    bytes: usize,
+}
+
+impl Outbound {
+    fn new(before: Vec<Message>, buffers: Vec<BufferTransfer>, after: Option<Message>) -> Arc<Self> {
+        let bytes = before.iter().chain(after.iter()).map(Message::len).sum::<usize>()
+            + buffers.iter().map(|buffer| buffer.data.len()).sum::<usize>();
+        Arc::new(Self { before, buffers, after, bytes })
+    }
+
+    async fn write(&self, sink: &mut (impl Sink<Message> + Unpin)) -> Result<(), ()> {
+        for message in &self.before {
+            Self::write_message(sink, message.clone()).await?;
+        }
+        for buffer in &self.buffers {
+            if let Some(info) = &buffer.descriptor {
+                let message = json!({"type":"sync", "command":"create_buffer",
+                    "args":info, "result":{"buffer_id":buffer.id}});
+                Self::write_message(sink, Message::Text(message.to_string())).await?;
+            }
+            const CHUNK_BYTES: usize = 1024 * 1024;
+            for (index, bytes) in buffer.data.chunks(CHUNK_BYTES).enumerate() {
+                let message = json!({"type":"cmd", "name":"upload_buffer_chunk", "args":{
+                    "buffer_id":buffer.id, "offset_bytes":index * CHUNK_BYTES,
+                    "chunk_bytes":bytes.len(), "data_base64":BASE64.encode(bytes)
+                }});
+                Self::write_message(sink, Message::Text(message.to_string())).await?;
+            }
+        }
+        if let Some(message) = &self.after {
+            Self::write_message(sink, message.clone()).await?;
+        }
+        Ok(())
+    }
+
+    async fn write_message(sink: &mut (impl Sink<Message> + Unpin), message: Message) -> Result<(), ()> {
+        match time::timeout(Duration::from_secs(5), sink.send(message)).await {
+            Ok(Ok(())) => Ok(()),
+            _ => Err(()),
+        }
+    }
+}
+
+type QueuedOutbound = (Arc<Outbound>, OwnedSemaphorePermit);
+
+// The dispatcher only enqueues complete packets. Slow peers disconnect on
+// overflow, preserving FIFO for healthy peers and requiring a fresh snapshot.
 #[derive(Clone)]
 struct ClientSender {
-    queue: mpsc::Sender<Message>,
+    queue: mpsc::Sender<QueuedOutbound>,
+    budget: Arc<Semaphore>,
     cancel: tokio::sync::watch::Sender<bool>,
 }
+
 impl ClientSender {
-    async fn send(&self, message: Message) -> Result<(), ()> {
+    fn send(&self, message: Message) -> Result<(), ()> {
+        self.enqueue(Outbound::new(vec![message], Vec::new(), None))
+    }
+
+    fn enqueue(&self, packet: Arc<Outbound>) -> Result<(), ()> {
         if *self.cancel.borrow() { return Err(()); }
-        match time::timeout(Duration::from_secs(2), self.queue.send(message)).await {
-            Ok(Ok(())) => Ok(()),
-            _ => { let _ = self.cancel.send(true); Err(()) }
-        }
+        let queued = u32::try_from(packet.bytes).ok()
+            .and_then(|bytes| self.budget.clone().try_acquire_many_owned(bytes).ok())
+            .is_some_and(|permit| self.queue.try_send((packet, permit)).is_ok());
+        if queued { return Ok(()); }
+        let _ = self.cancel.send(true);
+        Err(())
     }
 }
 
@@ -179,6 +246,7 @@ struct ServerState {
     next_client_id: usize,
     revision: u64,
     view_to_scene: HashMap<String, String>,
+    view_camera_commands: HashMap<String, u64>,
     log_writer: Option<LogWriter>,
     log_path: Option<PathBuf>,
     discovery_path: Option<PathBuf>,
@@ -197,6 +265,7 @@ impl ServerState {
             next_client_id: 1,
             revision: 0,
             view_to_scene: HashMap::new(),
+            view_camera_commands: HashMap::new(),
             log_writer: diagnostics.log_writer,
             log_path: diagnostics.log_path,
             discovery_path: diagnostics.discovery_path,
@@ -205,6 +274,14 @@ impl ServerState {
             lan_endpoint: None,
             lan_grants: HashMap::new(),
             viewer_registry: HashMap::new(),
+        }
+    }
+
+    fn note_camera_command(&mut self, command: &CommandEnvelope) {
+        if !matches!(command.name.as_str(), "set_camera_pose" | "set_camera_view" |
+            "set_camera_controls" | "set_view" | "reset_camera") { return; }
+        if let Some(view) = command.args["view_id"].as_str() {
+            self.view_camera_commands.insert(view.to_owned(), self.revision);
         }
     }
 
@@ -415,11 +492,9 @@ async fn handle_connection(stream: TcpStream, state: SharedState, remote_origin:
         .into_inner()
         .map_err(|_| "hello lock failed".to_string())?;
 
-    // Use bounded channel to prevent unbounded queue growth (P1-2)
-    const CLIENT_MSG_BUFFER_SIZE: usize = 32;
-    let (queue, receiver) = mpsc::channel(CLIENT_MSG_BUFFER_SIZE);
+    let (queue, receiver) = mpsc::channel(CLIENT_QUEUE_MESSAGES);
     let (cancel, mut cancelled) = tokio::sync::watch::channel(false);
-    let sender = ClientSender { queue, cancel };
+    let sender = ClientSender { queue, cancel, budget: Arc::new(Semaphore::new(CLIENT_QUEUE_BYTES)) };
     let client_id = {
         let mut state_guard = state.lock().await;
         let limit = if read_only { 16 } else { 64 };
@@ -468,12 +543,22 @@ async fn handle_connection(stream: TcpStream, state: SharedState, remote_origin:
     let auth_deadline = time::Instant::now() + Duration::from_secs(5);
     let write_task = tokio::spawn(async move {
         loop {
-            tokio::select! {
-                _ = cancelled.changed() => { let _ = time::timeout(Duration::from_secs(1), ws_sender.close()).await; break; }
-                message = outgoing.recv() => {
-                    let Some(message) = message else { break; };
-                    if !matches!(time::timeout(Duration::from_secs(5), ws_sender.send(message)).await, Ok(Ok(()))) { let _ = writer_cancel.send(true); break; }
+            let (packet, _permit) = tokio::select! {
+                biased;
+                _ = cancelled.changed() => break,
+                message = outgoing.recv() => match message {
+                    Some(packet) => packet,
+                    None => break,
                 }
+            };
+            let result = tokio::select! {
+                biased;
+                _ = cancelled.changed() => break,
+                result = packet.write(&mut ws_sender) => result,
+            };
+            if result.is_err() {
+                let _ = writer_cancel.send(true);
+                break;
             }
         }
     });
@@ -523,8 +608,8 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
     let (client_type, authenticated, read_only) = {
         let state_guard = state.lock().await;
         match state_guard.clients.get(&client_id) {
-            Some(c) => (Some(c.client_type.clone()), c.authenticated, c.read_only),
-            None => (None, false, false),
+            Some(c) if !*c.sender.cancel.borrow() => (Some(c.client_type.clone()), c.authenticated, c.read_only),
+            _ => (None, false, false),
         }
     };
     let Some(client_type) = client_type else {
@@ -583,8 +668,9 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
                         client.scene_id = Some(scene_id.clone());
                     }
                 }
-                let _ = send_init_and_snapshot(state, client_id, &view_id, &scene_id).await;
-                broadcast_event_to_protocol(state, "viewer_ready", json!({ "view_id": view_id, "scene_id": scene_id })).await;
+                if send_init_and_snapshot(state, client_id, &view_id, &scene_id).await.is_ok() {
+                    broadcast_event_to_protocol(state, "viewer_ready", json!({ "view_id": view_id, "scene_id": scene_id })).await;
+                }
             }
         }
     }
@@ -633,7 +719,10 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
                         let mut guard = state.lock().await;
                         let view = guard.clients.get(&client_id).and_then(|c| c.view_id.clone());
                         if let Some(view) = view {
-                            if guard.host.update_view_camera_from_renderer(&view, &data) {
+                            let command_revision = guard.view_camera_commands.get(&view).copied().unwrap_or(0);
+                            let current = data["revision"].as_u64().is_none_or(|rev|
+                                (command_revision..=guard.revision).contains(&rev));
+                            if current && guard.host.update_view_camera_from_renderer(&view, &data) {
                                 guard.revision += 1;
                             }
                         }
@@ -809,6 +898,23 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
         return;
     }
 
+    if name == "get_viewer_status" {
+        let ready = {
+            let guard = state.lock().await;
+            command.args["view_id"].as_str().is_some_and(|view| {
+                let Some(scene) = guard.view_to_scene.get(view) else { return false; };
+                guard.clients.values().any(|client| {
+                    client.client_type == ClientType::Viewer && client.authenticated
+                        && !*client.sender.cancel.borrow()
+                        && client.view_id.as_deref() == Some(view)
+                        && client.scene_id.as_ref() == Some(scene)
+                })
+            })
+        };
+        send_ok_response(state, client_id, &command.id, json!({"ready": ready})).await;
+        return;
+    }
+
     if name == "get_resource_counts" {
         let counts = {
             let guard = state.lock().await;
@@ -909,6 +1015,7 @@ async fn handle_protocol_command(state: &SharedState, client_id: usize, mut comm
             {
                 let mut guard = state.lock().await;
                 if !name.starts_with("get_") && !name.starts_with("list_") && !name.starts_with("is_") { guard.revision += 1; }
+                guard.note_camera_command(&command);
                 if name == "get_scene_snapshot" { result["revision"] = json!(guard.revision); }
             }
             let widget_event = if name == "set_widget_value" { result.as_object_mut().and_then(|r| r.remove("event")) } else { None };
@@ -991,7 +1098,9 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
 
     for (key, bound) in [("view_id", &view_id), ("scene_id", &scene_id)] {
         if let Some(requested) = command.args.get(key) {
-            if requested.as_str().is_none() || bound.as_ref().map_or(false, |b| requested.as_str() != Some(b.as_str())) {
+            if requested.as_str().is_none_or(str::is_empty)
+                || (command.name != "register_viewer" || key != "scene_id")
+                    && bound.as_ref().is_some_and(|b| requested.as_str() != Some(b.as_str())) {
                 send_error_response(state, client_id, &command.id, "ERR_INVALID_SCOPE", "Viewer cannot change its scope").await;
                 return;
             }
@@ -1009,118 +1118,24 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
     // ================== Viewer Registration (Embedded UI) ==================
     // Viewer clients can register themselves with a name
     if command.name == "register_viewer" {
-        let viewer_name = command.args.get("viewer_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        
-        if viewer_name.is_empty() {
-            send_error_response(state, client_id, &command.id, 
-                "ERR_INVALID_ARGS", "viewer_name is required").await;
+        let Some(name) = command.args["viewer_name"].as_str().filter(|name| !name.is_empty()) else {
+            send_error_response(state, client_id, &command.id, "ERR_INVALID_ARGS", "viewer_name is required").await;
             return;
-        }
-        
-        let existing_viewer = {
-            let state_guard = state.lock().await;
-            state_guard.viewer_registry.get(&viewer_name).cloned()
         };
-
-        // Get or create scene_id (prefer existing scene for same viewer name)
-        let final_scene_id = if let Some(sid) = command.args.get("scene_id").and_then(|v| v.as_str()) {
-            sid.to_string()
-        } else if let Some(existing) = &existing_viewer {
-            existing.scene_id.clone()
-        } else if let Some(ref sid) = scene_id {
-            sid.clone()
-        } else {
-            // Create new scene for this viewer
-            let result = {
-                let mut state_guard = state.lock().await;
-                state_guard.host.handle_command("create_scene", &mut json!({}))
-            };
-            match result {
-                Ok(res) => res.get("scene_id").and_then(|v| v.as_str()).unwrap_or("s_1").to_string(),
-                Err(_) => "s_1".to_string(),
-            }
+        let requested_scene = command.args["scene_id"].as_str();
+        let registration = {
+            let mut guard = state.lock().await;
+            register_viewer(&mut guard, client_id, name, view_id.as_deref(), requested_scene)
         };
-        
-        let final_view_id = view_id.clone().or_else(|| existing_viewer.as_ref().map(|v| v.view_id.clone())).unwrap_or_else(|| format!("v_{}", client_id));
-        
-        // Register the viewer and ensure Host has a concrete view entry.
-        let registration_error = {
-            let mut state_guard = state.lock().await;
-
-            // Ensure scene exists before binding.
-            if let Err(err) = state_guard.host.handle_command(
-                "create_scene",
-                &mut json!({ "scene_id": final_scene_id.clone() }),
-            ) {
-                Some(format!(
-                    "failed to create scene '{}': {}",
-                    final_scene_id, err.message
-                ))
-            } else if let Err(err) = state_guard.host.handle_command(
-                "attach_scene",
-                &mut json!({ "view_id": final_view_id.clone(), "scene_id": final_scene_id.clone() }),
-            ) {
-                Some(format!(
-                    "failed to bind view '{}' to scene '{}': {}",
-                    final_view_id, final_scene_id, err.message
-                ))
-            } else {
-                if let Some(existing) = &existing_viewer {
-                    if existing.view_id != final_view_id {
-                        state_guard.view_to_scene.remove(&existing.view_id);
-                    }
+        match registration {
+            Ok((view, scene, changed)) => {
+                send_ok_response(state, client_id, &command.id,
+                    json!({"view_id": view, "scene_id": scene, "viewer_name": name})).await;
+                if send_init_and_snapshot(state, client_id, &view, &scene).await.is_ok() && changed {
+                    broadcast_event_to_protocol(state, "viewer_ready", json!({"view_id": view, "scene_id": scene})).await;
                 }
-                state_guard.viewer_registry.insert(viewer_name.clone(), RegisteredViewer {
-                    viewer_name: viewer_name.clone(),
-                    view_id: final_view_id.clone(),
-                    scene_id: final_scene_id.clone(),
-                    client_id: client_id as u64,
-                });
-
-                // Also update view_to_scene mapping
-                map_view_to_scene(&mut state_guard, &final_view_id, &final_scene_id);
-
-                // Update client's view_id if not set
-                if let Some(client) = state_guard.clients.get_mut(&client_id) {
-                    if client.view_id.is_none() {
-                        client.view_id = Some(final_view_id.clone());
-                    }
-                    if client.scene_id.is_none() {
-                        client.scene_id = Some(final_scene_id.clone());
-                    }
-                }
-
-                None
             }
-        };
-        if let Some(message) = registration_error {
-            send_error_response(state, client_id, &command.id, "ERR_INTERNAL", &message).await;
-            return;
-        }
-        
-        log_event(state, "info", "viewer_registered", json!({
-            "viewer_name": viewer_name,
-            "view_id": final_view_id,
-            "scene_id": final_scene_id,
-            "client_id": client_id,
-        })).await;
-        
-        send_ok_response(state, client_id, &command.id, json!({
-            "view_id": final_view_id,
-            "scene_id": final_scene_id,
-            "viewer_name": viewer_name,
-        })).await;
-
-        // Send current scene snapshot so refreshed viewers see existing objects.
-        let sender = {
-            let state_guard = state.lock().await;
-            state_guard.clients.get(&client_id).map(|client| client.sender.clone())
-        };
-        if sender.is_some() {
-            let _ = send_init_and_snapshot(state, client_id, &final_view_id, &final_scene_id).await;
+            Err(error) => send_error_response(state, client_id, &command.id, &error.code, &error.message).await,
         }
         return;
     }
@@ -1157,6 +1172,7 @@ async fn handle_viewer_command(state: &SharedState, client_id: usize, mut comman
             {
                 let mut guard = state.lock().await;
                 if !command.name.starts_with("get_") && !command.name.starts_with("list_") { guard.revision += 1; }
+                guard.note_camera_command(&command);
                 if command.name == "get_scene_snapshot" { result["revision"] = json!(guard.revision); }
             }
             let widget_event = if command.name == "set_widget_value" { result.as_object_mut().and_then(|r| r.remove("event")) } else { None };
@@ -1263,16 +1279,6 @@ async fn handle_load_buffer_shm(state: &SharedState, client_id: usize, command: 
     send_error_response(state, client_id, &command.id, "ERR_UNSUPPORTED", "Shared memory upload disabled; use chunked WebSocket upload").await;
 }
 
-async fn forward_upload(state: &SharedState, buffer_id: &str, offset: usize, data: &[u8], scene: Option<&str>) {
-    // Self-contained packets cannot be paired with another client's binary frame.
-    for (i, chunk) in data.chunks(1024 * 1024).enumerate() {
-        forward_text_to_viewers(state, json!({"type":"cmd", "name":"upload_buffer_chunk", "args":{
-            "buffer_id":buffer_id,"offset_bytes":offset + i * 1024 * 1024,
-            "chunk_bytes":chunk.len(),"data_base64":BASE64.encode(chunk)
-        }}), scene, None).await;
-    }
-}
-
 async fn handle_mapping_updates(state: &SharedState, client_id: usize, command: &CommandEnvelope, result: &Value) {
     if command.name == "create_scene" {
         if let Some(scene_id) = result.get("scene_id").and_then(|v| v.as_str()) {
@@ -1315,8 +1321,9 @@ async fn handle_mapping_updates(state: &SharedState, client_id: usize, command: 
                 ids
             };
             for recipient in recipients {
-                let _ = send_init_and_snapshot(state, recipient, view_id, scene_id).await;
-                broadcast_event_to_protocol(state, "viewer_ready", json!({ "view_id": view_id, "scene_id": scene_id })).await;
+                if send_init_and_snapshot(state, recipient, view_id, scene_id).await.is_ok() {
+                    broadcast_event_to_protocol(state, "viewer_ready", json!({ "view_id": view_id, "scene_id": scene_id })).await;
+                }
             }
         }
     }
@@ -1331,6 +1338,7 @@ async fn handle_mapping_updates(state: &SharedState, client_id: usize, command: 
                 .map(|(view_id, _)| view_id.clone())
                 .collect();
             for view in &removed_views { revoke_lan_view(&mut state_guard, view); }
+            state_guard.viewer_registry.retain(|_, registered| !removed_views.contains(&registered.view_id));
             state_guard
                 .view_to_scene
                 .retain(|_, value| value != scene_id);
@@ -1350,6 +1358,8 @@ async fn handle_mapping_updates(state: &SharedState, client_id: usize, command: 
             let mut state_guard = state.lock().await;
             revoke_lan_view(&mut state_guard, view_id);
             state_guard.view_to_scene.remove(view_id);
+            state_guard.view_camera_commands.remove(view_id);
+            state_guard.viewer_registry.retain(|_, registered| registered.view_id != view_id);
             for client in state_guard.clients.values_mut() {
                 if client.view_id.as_deref() == Some(view_id) {
                     client.scene_id = None;
@@ -1359,8 +1369,58 @@ async fn handle_mapping_updates(state: &SharedState, client_id: usize, command: 
     }
 }
 
+fn register_viewer(
+    state: &mut ServerState,
+    client_id: usize,
+    name: &str,
+    requested_view: Option<&str>,
+    requested_scene: Option<&str>,
+) -> Result<(String, String, bool), HostError> {
+    let registered = state.viewer_registry.get(name);
+    if let (Some(existing), Some(requested)) = (registered, requested_view) {
+        if existing.view_id != requested {
+            return Err(HostError::new("ERR_INVALID_SCOPE", "Viewer name belongs to another view"));
+        }
+    }
+    let existing_view = registered.map(|viewer| viewer.view_id.as_str()).or(requested_view);
+    let binding = existing_view.and_then(|view| state.view_to_scene.get(view).map(|scene| (view, scene)));
+    let (view, scene) = if let Some((view, scene)) = binding {
+        // Re-registration can carry stale application props after an explicit attach_scene.
+        if registered.is_none() && requested_scene.is_some_and(|requested| requested != scene) {
+            return Err(HostError::new("ERR_INVALID_SCOPE", "View is already bound to another scene"));
+        }
+        (view.to_owned(), scene.clone())
+    } else if let Some(view) = existing_view.filter(|view| state.host.has_view(view)) {
+        let scene = match requested_scene {
+            Some(scene) => scene.to_owned(),
+            None => state.host.handle_command("create_scene", &mut json!({}))?["scene_id"]
+                .as_str().unwrap().to_owned(),
+        };
+        state.host.handle_command("attach_scene", &mut json!({"view_id":view,"scene_id":scene}))?;
+        (view.to_owned(), scene)
+    } else {
+        let mut args = json!({});
+        if let Some(view) = existing_view { args["view_id"] = json!(view); }
+        if let Some(scene) = requested_scene { args["scene_id"] = json!(scene); }
+        let result = state.host.handle_command("create_view", &mut args)?;
+        (result["view_id"].as_str().unwrap().to_owned(), result["scene_id"].as_str().unwrap().to_owned())
+    };
+    state.viewer_registry.insert(name.to_owned(), RegisteredViewer {
+        viewer_name: name.to_owned(), view_id: view.clone(), scene_id: scene.clone(), client_id: client_id as u64,
+    });
+    map_view_to_scene(state, &view, &scene);
+    let client = state.clients.get_mut(&client_id).expect("registered socket exists");
+    let changed = client.view_id.as_ref() != Some(&view) || client.scene_id.as_ref() != Some(&scene);
+    client.view_id = Some(view.clone());
+    client.scene_id = Some(scene.clone());
+    Ok((view, scene, changed))
+}
+
 fn map_view_to_scene(state: &mut ServerState, view: &str, scene: &str) {
     let previous = state.view_to_scene.insert(view.to_owned(), scene.to_owned());
+    for registered in state.viewer_registry.values_mut().filter(|entry| entry.view_id == view) {
+        registered.scene_id = scene.to_owned();
+    }
     if previous.as_deref().is_some_and(|old| old != scene) {
         revoke_lan_view(state, view);
     }
@@ -1404,29 +1464,31 @@ async fn forward_sync_to_viewers(
         && !matches!(command.name.as_str(), "get_camera_pose" | "get_pick_config" | "get_picked_info") { return; }
     // Uploads stay on Host until attached to geometry. Never broadcast unrelated producer buffers.
     if matches!(command.name.as_str(), "create_buffer" | "free_buffer") { return; }
-    if matches!(command.name.as_str(), "add_points" | "add_lines" | "add_mesh" | "add_instances" | "update_instances") {
-        let buffers = { state.lock().await.host.command_buffers(&command.args) };
-        for (id, info, bytes) in buffers {
-            forward_text_to_viewers(state, json!({"type":"sync","command":"create_buffer","args":info,"result":{"buffer_id":id}}), target_scene_id, target_view_id).await;
-            forward_upload(state, &id, 0, &bytes, target_scene_id).await;
-        }
-    }
-    let revision = { state.lock().await.revision };
+    let (revision, buffers) = {
+        let guard = state.lock().await;
+        let buffers = if matches!(command.name.as_str(), "add_points" | "add_lines" | "add_mesh" | "add_instances" | "update_instances") {
+            guard.host.command_buffers(&command.args).into_iter()
+                .map(|(id, descriptor, data)| BufferTransfer { id, descriptor: Some(descriptor), data })
+                .collect()
+        } else { Vec::new() };
+        (guard.revision, buffers)
+    };
     let message = json!({
         "revision": revision,
         "type": "sync",
         "command": command.name,
-        "args": command.args.clone(),
-        "result": result.clone()
+        "args": command.args,
+        "result": result
     });
-    forward_text_to_viewers(state, message, target_scene_id, target_view_id).await;
+    let lan_visible = lan_display_message(&message);
+    let packet = Outbound::new(Vec::new(), buffers, Some(Message::Text(message.to_string())));
+    forward_to_viewers(state, packet, lan_visible, target_scene_id, target_view_id).await;
 }
 
-
-
-async fn forward_text_to_viewers(
+async fn forward_to_viewers(
     state: &SharedState,
-    message: Value,
+    packet: Arc<Outbound>,
+    lan_visible: bool,
     target_scene_id: Option<&str>,
     target_view_id: Option<&str>,
 ) {
@@ -1443,7 +1505,7 @@ async fn forward_text_to_viewers(
                     let view = client.view_id.as_deref()?;
                     let grant = state_guard.lan_grants.get(view)?;
                     if state_guard.view_to_scene.get(view) != Some(&grant.scene)
-                        || !lan_display_message(&message)
+                        || !lan_visible
                         || (target_scene_id.is_none() && target_view_id.is_none())
                         || target_scene_id.is_some_and(|scene| scene != grant.scene) {
                         return None;
@@ -1464,9 +1526,8 @@ async fn forward_text_to_viewers(
             })
             .collect::<Vec<_>>()
     };
-    let text = message.to_string();
     for sender in senders {
-        let _ = sender.send(Message::Text(text.clone())).await;
+        let _ = sender.enqueue(packet.clone());
     }
 }
 
@@ -1493,9 +1554,9 @@ async fn broadcast_event_to_protocol(state: &SharedState, name: &str, data: Valu
             .map(|client| client.sender.clone())
             .collect::<Vec<_>>()
     };
-    let text = payload.to_string();
+    let packet = Outbound::new(vec![Message::Text(payload.to_string())], Vec::new(), None);
     for sender in senders {
-        let _ = sender.send(Message::Text(text.clone())).await;
+        let _ = sender.enqueue(packet.clone());
     }
 }
 
@@ -1522,8 +1583,6 @@ async fn send_init_and_snapshot(
         "scene_id": scene_id,
         "read_only": read_only
     });
-    let _ = sender.send(Message::Text(init_msg.to_string())).await;
-
     let (snapshot, binaries) = {
         let state_guard = state.lock().await;
         let snapshot = state_guard.host.build_scene_snapshot(scene_id)?;
@@ -1542,33 +1601,22 @@ async fn send_init_and_snapshot(
         "view_config": view_state.get("view_config"),
         "camera_controls": view_state.get("camera_controls"),
         "overlays": view_state.get("overlays"),
-        "camera_pose": view_state.get("camera_pose")
+        "camera_pose": view_state.get("camera_pose"),
+        "render_mode": view_state.get("render_mode")
     });
-    let _ = sender.send(Message::Text(snapshot_msg.to_string())).await;
-
-    for (buffer_id, data) in binaries {
-        for (i, chunk) in data.chunks(1024 * 1024).enumerate() {
-            let message = json!({"type":"cmd","name":"upload_buffer_chunk","args":{
-                "buffer_id":buffer_id,"offset_bytes":i * 1024 * 1024,"chunk_bytes":chunk.len(),"data_base64":BASE64.encode(chunk)
-            }});
-            let _ = sender.send(Message::Text(message.to_string())).await;
-        }
-    }
-
-    Ok(())
+    let packet = Outbound::new(
+        vec![Message::Text(init_msg.to_string()), Message::Text(snapshot_msg.to_string())],
+        binaries, None,
+    );
+    sender.enqueue(packet).map_err(|_| HostError::new("ERR_VIEWER_DISCONNECTED", "Viewer cannot keep up with its scene"))
 }
 
-fn collect_snapshot_binaries(state: &ServerState, snapshot: &SceneSnapshot) -> Vec<(String, Vec<u8>)> {
-    let mut result = Vec::new();
-    for (buffer_id, info) in &snapshot.buffers {
-        if info.data_base64.is_some() {
-            continue;
-        }
-        if let Some(data) = state.host.get_buffer_data(buffer_id) {
-            result.push((buffer_id.clone(), data));
-        }
-    }
-    result
+fn collect_snapshot_binaries(state: &ServerState, snapshot: &SceneSnapshot) -> Vec<BufferTransfer> {
+    snapshot.buffers.iter().filter_map(|(id, info)| {
+        if info.data_base64.is_some() { return None; }
+        state.host.shared_buffer_data(id)
+            .map(|data| BufferTransfer { id: id.clone(), descriptor: None, data })
+    }).collect()
 }
 
 async fn send_ok_response(state: &SharedState, client_id: usize, id: &str, result: Value) {
@@ -1629,7 +1677,7 @@ async fn send_to_client(state: &SharedState, client_id: usize, message: Message)
             .map(|client| client.sender.clone())
     };
     if let Some(sender) = sender {
-        if sender.send(message).await.is_err() {
+        if sender.send(message).is_err() {
             log_event(state, "warn", "client_backpressure_disconnect", json!({ "client_id": client_id })).await;
         }
     }
@@ -2082,4 +2130,52 @@ pub fn local_auth_token(port: u16) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod backpressure_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn slow_lan_viewer_does_not_block_ordered_delivery() {
+        let diagnostics = ServerDiagnostics {
+            log_writer: None, log_path: None, discovery_path: None, http_port: None,
+        };
+        let mut state = ServerState::new(Host::new(None), diagnostics, 0);
+        state.view_to_scene.insert("view".into(), "scene".into());
+        state.lan_grants.insert("view".into(), LanGrant { scene: "scene".into(), token: "test".into() });
+        let mut receivers = Vec::new();
+        for read_only in [true, false] {
+            let (queue, receiver) = mpsc::channel(if read_only { 1 } else { 3 });
+            let (cancel, cancelled) = tokio::sync::watch::channel(false);
+            let id = state.next_id();
+            state.clients.insert(id, ClientState {
+                client_type: ClientType::Viewer, view_id: Some("view".into()), browser_session: None,
+                scene_id: Some("scene".into()), scene_refs: HashSet::new(),
+                sender: ClientSender { queue, cancel, budget: Arc::new(Semaphore::new(CLIENT_QUEUE_BYTES)) },
+                pending_upload: None,
+                authenticated: true, read_only,
+            });
+            receivers.push((receiver, cancelled));
+        }
+        let shared = Arc::new(Mutex::new(state));
+        time::timeout(Duration::from_millis(250), async {
+            for revision in 1..=3 {
+                shared.lock().await.revision = revision;
+                let command = CommandEnvelope {
+                    id: "test".into(), name: "set_transform".into(), args: json!({}),
+                };
+                forward_sync_to_viewers(&shared, &command, &json!({}), Some("scene"), None).await;
+            }
+        }).await.expect("Full remote queue delayed dispatch");
+        let (_, slow) = receivers.remove(0);
+        assert!(*slow.borrow(), "A saturated client must resynchronize");
+        let (mut healthy, cancelled) = receivers.remove(0);
+        assert!(!*cancelled.borrow());
+        for revision in 1..=3 {
+            let (packet, _permit) = healthy.try_recv().unwrap();
+            let payload: Value = serde_json::from_str(packet.after.as_ref().unwrap().to_text().unwrap()).unwrap();
+            assert_eq!(payload["revision"], revision);
+        }
+    }
 }

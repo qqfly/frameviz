@@ -16,6 +16,7 @@ export function applySceneSnapshot(core: FrameVizCore, snapshot: any): void {
   if (snapshot.view_config) core.handleCommand('set_view_config', { config: snapshot.view_config });
   if (snapshot.camera_controls) core.handleCommand('set_camera_controls', snapshot.camera_controls);
   if (snapshot.camera_pose) core.handleCommand('set_camera_pose', snapshot.camera_pose);
+  core.handleCommand('set_render_mode', { mode: snapshot.render_mode ?? 'solid' });
   for (const overlay of snapshot.overlays ?? []) {
     core.handleCommand('add_text_2d', overlay.data, { handle: overlay.handle });
   }

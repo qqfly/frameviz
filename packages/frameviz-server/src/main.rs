@@ -73,7 +73,12 @@ async fn termination_signal() -> std::io::Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let Some(options) = options(env::args().skip(1))? else {
+    let args: Vec<_> = env::args().skip(1).collect();
+    if matches!(args.as_slice(), [argument] if matches!(argument.as_str(), "--version" | "-V")) {
+        println!("FrameViz Host v{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    let Some(options) = options(args.into_iter())? else {
         println!("Usage: frameviz-server [WS_PORT] [--ws-port PORT] [--http-port PORT] [--headless]");
         println!("Loopback by default. HTTP port 0 selects a free port.");
         println!("Opt in to read-only viewing with --lan-address IP [--lan-ws-port PORT] [--lan-http-port PORT].");

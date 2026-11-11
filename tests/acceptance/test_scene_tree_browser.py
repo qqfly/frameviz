@@ -97,7 +97,12 @@ def test_rigid_frames_drag_pick_reload_and_independent_cameras(standalone):
                 ]
 
                 first.attach_gizmo(child, mask=1)
+                foreign = command("add_primitive", scene_id="foreign-gizmo", type="box")["handle"]
+                for handle, error in (("missing", "ERR_NOT_FOUND"), (foreign, "ERR_INVALID_SCOPE")):
+                    with pytest.raises(RuntimeError, match=error):
+                        first.attach_gizmo(handle, mask=1)
                 frames(p)
+                assert p.evaluate("window.__FRAMEVIZ_CORE__.gizmoManager.getAttachedHandle()") == child
                 x, y = p.evaluate("""() => {
                   const c=window.__FRAMEVIZ_CORE__,m=c.getSceneManager();
                   const rect=m.renderer.domElement.getBoundingClientRect();
@@ -190,6 +195,17 @@ def test_point_pick_reports_global_index_for_second_render_chunk(standalone):
                 assert picked and picked["hit_type"] == "point"
                 assert picked["point_index"] == 3
                 assert picked["point_world"] == pytest.approx([2, 0, 0])
+                sizes = "h => window.__FRAMEVIZ_CORE__.objects.get(h).children.map(c => c.material.size)"
+                base = page.evaluate(sizes, handle)
+                viz.set_pick_config(enabled=True, mode="object", button=0, ctrl_modifier=False, point_threshold=.08)
+                frames(page)
+                page.mouse.click(*screen(page, [2, 0, 0]))
+                selected = client.wait_for_event("picked", timeout=3, filter_fn=lambda d: d.get("handle") == handle)
+                assert selected["point_index"] == 3
+                assert page.evaluate(sizes, handle) == [size * 1.5 for size in base]
+                viz.clear_pick_highlight()
+                frames(page)
+                assert page.evaluate(sizes, handle) == base
             finally:
                 browser.close()
     finally:

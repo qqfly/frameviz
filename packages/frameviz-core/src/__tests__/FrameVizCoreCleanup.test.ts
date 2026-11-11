@@ -185,6 +185,26 @@ describe('FrameVizCore cleanup', () => {
     expect(object.material.opacity).toBe(0.4);
   });
 
+  it('preserves wireframe when removing an object selection', () => {
+    core.handleCommand('add_primitive', { type: 'box' }, { handle: 'source' });
+    const source = (core as any).objects.get('source');
+    (core as any).pickingManager.highlightObject('source');
+    core.handleCommand('set_render_mode', { mode: 'wireframe' });
+    core.handleCommand('clear_pick_highlight', {});
+    expect(source.material.wireframe).toBe(true);
+  });
+
+  it('does not clone temporary selection materials', () => {
+    core.handleCommand('add_primitive', { type: 'box' }, { handle: 'source' });
+    const source = (core as any).objects.get('source');
+    const original = source.material.emissive.getHex();
+    (core as any).pickingManager.highlightObject('source');
+    expect(source.material.emissive.getHex()).not.toBe(original);
+    core.handleCommand('clone_object', { handle: 'source' }, { handle: 'clone' });
+    expect((core as any).objects.get('clone').material.emissive.getHex()).toBe(original);
+    expect(source.material.emissive.getHex()).not.toBe(original);
+  });
+
   it('replays mutations made while a model is loading', async () => {
     core.handleCommand('load_mesh', { url: '/model.stl' }, { handle: 'm' });
     core.handleCommand('set_transform', { handle: 'm', pose: { pos: [2, 3, 4], quat: [0, 0, 0, 1] } });

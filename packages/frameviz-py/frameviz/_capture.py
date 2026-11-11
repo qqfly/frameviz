@@ -129,6 +129,8 @@ def _capture_view(viz, camera_view=None, width=None, height=None):
         config = {key: value for key, value in state["view_config"].items()
                   if key not in {"width", "height"}}
         client.send_command("set_view_config", {"view_id": capture, "config": config})
+        if mode := state.get("render_mode"):
+            client.send_command("set_render_mode", {"view_id": capture, "mode": mode})
         for overlay in state.get("overlays", []):
             client.send_command("add_text_2d", {**overlay["data"], "view_id": capture})
         token = client._auth_token

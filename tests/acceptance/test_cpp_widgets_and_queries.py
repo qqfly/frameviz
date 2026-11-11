@@ -29,3 +29,33 @@ def test_installed_cpp_auto_and_manual_widget_callbacks_and_state(h, tmp_path):
     assert box["world_transform"]["position"] == [2.5, 0, 0]
     assert box["world_bounds"]["min"] == [2, -.5, -.5]
     assert python.list_widgets() == []
+
+
+@pytest.mark.parametrize("online", [True, False], ids=["repeat-online", "history-after-disconnect"])
+def test_installed_cpp_wait_for_viewer_reports_live_state(h, tmp_path, online):
+    import time
+
+    binary = os.environ.get("FRAMEVIZ_CPP_WIDGETS")
+    if not binary:
+        pytest.skip("Installed SDK widgets_and_queries executable required")
+    view = h.view("readiness")
+    env = dict(os.environ, FRAMEVIZ_AUTH_TOKEN=h.token,
+               FRAMEVIZ_DISCOVERY_PATH=str(tmp_path / "unused.json"))
+    with subprocess.Popen([binary, h.url, view, "online" if online else "closed"], env=env,
+                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True) as process:
+        try:
+            assert process.stdout.readline().strip() == "connected"
+            count = h.cmd("get_resource_counts")["connections"]
+            viewer = h.viewer(view)
+            if not online:
+                viewer.close()
+                deadline = time.monotonic() + 3
+                while h.cmd("get_resource_counts")["connections"] > count:
+                    assert time.monotonic() < deadline, "Host did not observe Viewer disconnect"
+                    time.sleep(.02)
+            _, error = process.communicate(input="check\n", timeout=5)
+            assert process.returncode == 0, error
+        finally:
+            if process.poll() is None:
+                process.kill()

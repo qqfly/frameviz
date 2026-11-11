@@ -22,3 +22,6 @@ The optional C++ model HTTP harness is built from `tests/acceptance/cpp`. Set `F
 Set `FRAMEVIZ_CPP_FIND_HOST` to the installed SDK `find_host` executable when running `test_cpp_root.py`. This regression checks that missing, unrelated, and legacy project identities cannot be selected for automatic startup; the matching standalone tree remains discoverable. The source scanner allows a newly initialized Git repository; the source exporter always excludes Git metadata and history.
 
 For explicit packaged-App startup/native/embedded-viewer checks on macOS, see [MACOS.md](MACOS.md). A visible startup window and headless behavior are checked separately, and actual native interaction is not inferred from a successful build.
+
+
+Develop and test on a task branch, then open a pull request targeting `main`. Ubuntu contracts run when that PR opens, receives new commits or reopens. At the candidate stage, dispatch the full **CI** matrix and **Ubuntu runtime preview** for the candidate ref. **Candidate source archive** also calls the full matrix before producing its archive. Compare the run's SHA with the candidate before reviewing the results. Keep the original test failure and any later rerun together.

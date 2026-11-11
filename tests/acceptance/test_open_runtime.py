@@ -34,6 +34,10 @@ def local_user(tmp_path,monkeypatch):
     monkeypatch.setattr(implementation,'_get_repo_root',lambda:None)
     binary=tmp_path/'.local/bin/frameviz-server';binary.parent.mkdir(parents=True)
     shutil.copy2(BINARY,binary)
+    monkeypatch.setattr(host, '_get_tauri_app_candidates', lambda _: [])
+    monkeypatch.setattr(host, '_get_tauri_exec_candidates', lambda _: [])
+    monkeypatch.setattr(host, '_get_appimage_candidates', lambda _: [])
+    monkeypatch.setattr(host, '_standalone_candidates', lambda _: [binary])
     # Do not invoke an OS browser or a native UI during this backend test.
     monkeypatch.setattr(implementation,'_try_open_tauri',lambda *a,**k:pytest.fail('Native UI launched in a backend test'))
     try:yield tmp_path,binary

@@ -42,10 +42,6 @@ from ._internal import (
     _AUTO_WS_LOG_PATH,
     _AUTO_WS_PROCESS,
     _get_repo_root,
-    _get_macos_app_executable,
-    _get_tauri_app_candidates,
-    _get_tauri_exec_candidates,
-    _get_appimage_candidates,
     _get_ws_port_from_url,
     _get_ws_startup_timeout,
     _is_port_open,
@@ -286,7 +282,7 @@ class Viz:
         return self._view_id
 
     def wait_for_viewer(self, timeout: float = 10.0) -> bool:
-        """Wait for viewer_ready event for this view."""
+        """Wait until this view has a connected Viewer."""
         return _wait_for_viewer(self._client, self._view_id, timeout=timeout)
 
     @classmethod
@@ -2611,7 +2607,9 @@ def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool, a
     parsed=urlparse(resolved)
     local=parsed.hostname in ('127.0.0.1','localhost')
     unconfigured=url is None and not os.environ.get('FRAMEVIZ_HOST')
-    info=read_discovery_file() if local and (unconfigured or parsed.port in (None,9527)) else None
+    info=read_discovery_file() if local else None
+    if info and info.get("port") != (parsed.port or 9527):
+        info = None
     live=False
     if info and isinstance(info.get('pid'),int) and isinstance(info.get('port'),int):
         live=host._pid_is_running(info['pid']) and host._is_port_open('127.0.0.1',info['port'])
@@ -2633,7 +2631,8 @@ def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool, a
         client.close()
         if not local or host._is_port_open(parsed.hostname,parsed.port or 9527):raise
         if not _should_auto_start_ws():raise RuntimeError('FrameViz automatic startup is disabled (FRAMEVIZ_AUTO_START_WS=0)')
-        resolved=host.start_host(ws_url=resolved,timeout=timeout,headless=True,prefer_browser=prefer_browser)
+        resolved=host.start_host(ws_url=resolved, ws_port=None if unconfigured else parsed.port or 9527,
+                                 timeout=timeout, headless=True, prefer_browser=prefer_browser)
         client=FrameVizClient(url=resolved,timeout=timeout,**({} if auto_events else {'auto_events':False}))
         client.connect()
         return client,resolved
@@ -2743,7 +2742,7 @@ def _resolve_connection_url(url: Optional[str]) -> str:
         return url
     configured = os.environ.get("FRAMEVIZ_HOST")
     if configured:
-        return _resolve_ws_url(configured, allow_discovery=True)
+        return configured
     discovered = _resolve_ws_url(DEFAULT_WS_URL, allow_discovery=True)
     if discovered != DEFAULT_WS_URL:
         return discovered
@@ -2887,23 +2886,16 @@ def _viewer_link(viewer_url: str, view_id: str, ws_port=None, performance_mode=N
 def _wait_for_viewer(
     client: FrameVizClient, view_id: str, timeout: float = 10.0
 ) -> bool:
-    """
-    Wait for the viewer with the specified view_id to connect.
+    """Poll the live binding without consuming notifications from the event queue."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if client.send_command("get_viewer_status", {"view_id": view_id})["ready"]:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(.05, remaining))
 
-    Args:
-        client: The FrameViz client instance
-        view_id: The view ID to wait for
-        timeout: Maximum time to wait in seconds
-
-    Returns:
-        True if viewer connected, False if timeout
-    """
-    event = client.wait_for_event(
-        "viewer_ready",
-        timeout=timeout,
-        filter_fn=lambda data: data.get("view_id") == view_id,
-    )
-    return event is not None
 
 
 def _try_open_tauri(view_id: Optional[str] = None) -> bool:
@@ -2927,34 +2919,8 @@ def _try_open_tauri(view_id: Optional[str] = None) -> bool:
     if view_id:
         args = ["--view-id", view_id]
 
-    env_app = os.environ.get("FRAMEVIZ_TAURI_APP")
-    if env_app:
-        if _launch_tauri_path(Path(env_app).expanduser(), args):
-            return True
-
-    repo_root = _get_repo_root()
-
-    if sys.platform == "darwin":
-        for app_path in _get_tauri_app_candidates(repo_root):
-            if _launch_tauri_path(app_path, args):
-                return True
-
-        for bin_path in _get_tauri_exec_candidates(repo_root):
-            if _launch_exec(bin_path, args):
-                return True
-
-        return False
-
-    if sys.platform.startswith("win"):
-        for path in _get_tauri_exec_candidates(repo_root):
-            if _launch_exec(path, args):
-                return True
-        return False
-
-    for path in _get_tauri_exec_candidates(repo_root) + _get_appimage_candidates(repo_root):
-        if _launch_exec(path, args):
-            return True
-    return False
+    binary = host.find_host_executable(native_only=True)
+    return binary is not None and _launch_exec(binary, args)
 
 
 def _try_open_tauri_window(
@@ -3136,15 +3102,6 @@ def _get_tauri_control_port() -> int:
     if 1 <= port <= 65535:
         return port
     return DEFAULT_TAURI_CONTROL_PORT
-
-
-def _launch_tauri_path(path: Path, args: List[str]) -> bool:
-    if not path.exists():
-        return False
-    if sys.platform == "darwin" and path.suffix == ".app":
-        inner_bin = _get_macos_app_executable(path)
-        return inner_bin is not None and _launch_exec(inner_bin, args)
-    return _launch_exec(path, args)
 
 
 def _launch_macos_app(app: str, args: List[str]) -> bool:

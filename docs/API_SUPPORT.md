@@ -40,6 +40,7 @@ This table records command-name literals in the implementation. Presence does no
 | `get_transform` | present | not directly referenced | present | present |
 | `get_view_config` | present | present | present | present |
 | `get_viewer_by_name` | present | not directly referenced | not directly referenced | not directly referenced |
+| `get_viewer_status` | present | not directly referenced | present | present |
 | `get_visible` | present | not directly referenced | present | not directly referenced |
 | `get_widget` | present | not directly referenced | present | present |
 | `is_object_alive` | present | not directly referenced | present | present |

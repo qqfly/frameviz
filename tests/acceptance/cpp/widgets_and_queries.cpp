@@ -14,9 +14,22 @@ void require(bool condition, const char *message) {
 }
 
 int main(int argc, char **argv) {
-  if (argc != 3) return 2;
+  if (argc != 3 && argc != 4) return 2;
   try {
     auto viz = Viz::connect(argv[1], argv[2]);
+    if (argc == 4) {
+      const bool expectedOnline = std::string(argv[3]) == "online";
+      std::cout << "connected" << std::endl;
+      std::string ready;
+      std::getline(std::cin, ready);
+      require(viz->waitForViewer(0s) == expectedOnline, "Readiness does not match current Viewer connection");
+      if (expectedOnline) {
+        require(viz->waitForViewer(0s), "Readiness was consumed by the first wait");
+      }
+      require(viz->waitForEvent("viewer_ready", 1s).has_value(), "Ordinary wait lost unread history");
+      require(!viz->waitForEvent("viewer_ready", 0s).has_value(), "Ordinary wait did not consume the event");
+      return 0;
+    }
     auto box = viz->addBox();
     auto slider = viz->addWidget("number", "Box X", 0, {{"minimum", -3}, {"maximum", 3}});
     std::atomic<int> obsolete{0};

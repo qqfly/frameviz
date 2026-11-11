@@ -1,4 +1,5 @@
 """The shipped standalone binary serves its own Viewer, without a desktop."""
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -24,8 +25,8 @@ def free_port():
         return sock.getsockname()[1]
 
 
-@pytest.fixture
-def standalone(tmp_path):
+@contextmanager
+def standalone_runtime(tmp_path):
     port = free_port()
     env = {k: v for k, v in os.environ.items() if not k.startswith('FRAMEVIZ_')}
     env.pop('DISPLAY', None)
@@ -60,6 +61,12 @@ def standalone(tmp_path):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+
+
+@pytest.fixture
+def standalone(tmp_path):
+    with standalone_runtime(tmp_path) as runtime:
+        yield runtime
 
 
 def test_embedded_viewer_and_authenticated_url_without_source_or_display(standalone):

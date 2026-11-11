@@ -31,8 +31,8 @@ import type { FrameVizViewerProps, ViewerInfo } from '../types'
 
 const props = withDefaults(defineProps<FrameVizViewerProps>(), {
   background: 0x1a1a2e,
-  showGrid: true,
-  showAxes: true,
+  showGrid: undefined,
+  showAxes: undefined,
   enableKeyboardShortcuts: true,
   autoStartHost: true,
 })
@@ -67,6 +67,14 @@ watch(() => props.showWidgetPanel, enabled => {
   coreRef.value?.setWidgetPanelEnabled(enabled === true)
 })
 
+function applyEnvironmentVisibility() {
+  coreRef.value?.setEnvironmentVisibilityOverride({
+    showGrid: props.showGrid,
+    showAxes: props.showAxes,
+  })
+}
+watch(() => [props.showGrid, props.showAxes], applyEnvironmentVisibility)
+
 onMounted(async () => {
   if (!containerRef.value) return
   
@@ -83,6 +91,7 @@ onMounted(async () => {
     })
     
     coreRef.value = core
+    applyEnvironmentVisibility()
     // Explicitly set initial size after a tick to ensure DOM is ready
     await nextTick()
     if (unmounted) { core.dispose(); return }
@@ -133,7 +142,6 @@ async function tryRegister() {
     coreRef.value.setViewId(info.viewId)
     isRegistered.value = true
     emit('registered', info)
-    restoreCameraPose(coreRef.value)
     coreRef.value.resize()
   } catch (err) {
     console.warn('[FrameViz] Viewer registration failed:', err)

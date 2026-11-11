@@ -31,7 +31,7 @@ One Host owns each state directory. To run multiple Hosts, give every process an
 
 ## Linux runtime discovery
 
-`fv.open()` first authenticates a compatible running runtime. Only a missing local service may trigger startup; an incompatible version or a rejected token is reported without launching a replacement. Automatic search uses an explicit `FRAMEVIZ_HOST_PATH`/`FRAMEVIZ_TAURI_APP`, then known installed locations, then compatible source builds. An incompatible live discovery record is preserved.
+`fv.open()` first authenticates a compatible running runtime. Only a missing local service may trigger startup; an incompatible version or a rejected token is reported without launching a replacement. Automatic startup checks known installations and source builds for compatible versions. An older installed App is skipped when a compatible candidate is available. An explicit `FRAMEVIZ_HOST_PATH` or `FRAMEVIZ_TAURI_APP` reports incompatibility for that runtime. Explicit WebSocket targets retain the requested endpoint.
 
 On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, the standalone executable is preferred. Its installed locations are `/usr/bin/frameviz-server`, `/usr/local/bin/frameviz-server`, and `~/.local/bin/frameviz-server`; arbitrary `PATH` entries remain excluded. With no display, `fv.open()` prints a private browser link and returns the scene context. With a desktop it prefers Tauri and uses a browser if a window cannot be opened. The Viewer address is read after startup, including automatically assigned ports.
 
@@ -86,7 +86,7 @@ The executable is `packages/frameviz-server/target/release/frameviz-server`. Cop
 
 ## Ubuntu preview builds
 
-The **Ubuntu runtime preview** workflow builds on Ubuntu 22.04 and 24.04 x86_64 separately. Its private Actions artifacts pair the `.deb`, standalone archive, Python wheel, source commit and SHA-256 checksums. The `.deb` installs both `/usr/bin/frameviz` (desktop) and `/usr/bin/frameviz-server` (headless); the standalone archive includes dependency notices and the relevant MPL source. Build locally on the desired Ubuntu baseline with `scripts/release/build-linux-preview.sh /absolute/new/output` after installing the Tauri build dependencies and workspace packages.
+Run **Ubuntu runtime preview** manually for a release candidate. It builds on Ubuntu 22.04 and 24.04 x86_64 separately. Its private Actions artifacts pair the `.deb`, standalone archive, Python wheel, source commit and SHA-256 checksums. The `.deb` installs both `/usr/bin/frameviz` (desktop) and `/usr/bin/frameviz-server` (headless); the standalone archive includes dependency notices and the relevant MPL source. Build locally on the desired Ubuntu baseline with `scripts/release/build-linux-preview.sh /absolute/new/output` after installing the Tauri build dependencies and workspace packages.
 
 For a preview download, install the `.deb` with `sudo apt install ./FrameViz_*.deb`, then install the paired wheel in a virtual environment. For a headless machine, extract the standalone archive and copy `frameviz-server/frameviz-server` to `~/.local/bin/frameviz-server` instead. Keep its notices with the binary when redistributing it. Run the three-line Python example above with no runtime-path configuration.
 

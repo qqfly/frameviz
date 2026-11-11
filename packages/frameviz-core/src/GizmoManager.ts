@@ -55,6 +55,10 @@ export class GizmoManager {
     scene.add(this.controls);
   }
 
+  setOrbitControls(controls: OrbitControls): void {
+    this.orbitControls = controls;
+  }
+
   public attach(object: THREE.Object3D, handle: string, config: GizmoConfig = {}): void {
     this.attachedHandle = handle;
     this.controls.attach(object);

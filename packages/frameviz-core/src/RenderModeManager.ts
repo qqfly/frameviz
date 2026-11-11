@@ -10,6 +10,7 @@ export const RENDER_MODES: RenderMode[] = ['solid', 'wireframe', 'points'];
  */
 export class RenderModeManager {
   private currentMode: RenderMode = 'solid';
+  private baseWireframe = new WeakMap<THREE.Material, boolean>();
   private pointsHelpers = new Map<string, THREE.Points>();
 
   /**
@@ -22,74 +23,93 @@ export class RenderModeManager {
 
     this.currentMode = mode;
 
-    objects.forEach((obj) => {
-      const userVisible = (obj as THREE.Object3D & { userData?: { userVisible?: boolean } }).userData
-        ?.userVisible;
-      const baseVisible = userVisible !== undefined ? userVisible : true;
-      // Traverse all objects including Groups (like Collada models)
-      obj.traverse((child) => {
-        if (child.type === 'Mesh') {
-          const mesh = child as THREE.Mesh;
+    objects.forEach(obj => this.applyToObject(obj));
+  }
 
-          // Handle materials (could be array or single)
-          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          materials.forEach((mat) => {
-            if (mat instanceof THREE.Material) {
-              (mat as any).wireframe = (mode === 'wireframe');
+  applyToObject(obj: THREE.Object3D): void {
+    const mode = this.currentMode;
+    const userVisible = (obj as THREE.Object3D & { userData?: { userVisible?: boolean } }).userData
+      ?.userVisible;
+    const baseVisible = userVisible !== undefined ? userVisible : true;
+    // Traverse all objects including Groups (like Collada models)
+    obj.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const mesh = child as THREE.Mesh;
+
+        // Handle materials (could be array or single)
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const material of materials) {
+          const mat = material as THREE.Material & { wireframe?: boolean };
+          if (mat.wireframe === undefined) continue;
+          if (mode === 'wireframe') {
+            if (!this.baseWireframe.has(mat)) this.baseWireframe.set(mat, mat.wireframe);
+            mat.wireframe = true;
+          } else {
+            const previous = this.baseWireframe.get(mat);
+            if (previous !== undefined) mat.wireframe = previous;
+            this.baseWireframe.delete(mat);
+          }
+        }
+
+        mesh.visible = baseVisible && (mode !== 'points' || mesh instanceof THREE.InstancedMesh);
+
+        // Create/show/hide points helper for this mesh
+        if (mode === 'points' && !(mesh instanceof THREE.InstancedMesh)) {
+          if (baseVisible) {
+            if (!this.pointsHelpers.has(mesh.uuid)) {
+              // Create points from mesh geometry
+              const pointsMat = new THREE.PointsMaterial({
+                size: 3,
+                sizeAttenuation: false,
+                color: 0x4cc9f0,
+                vertexColors: mesh.geometry.attributes.color ? true : false,
+              });
+              const points = new THREE.Points(mesh.geometry, pointsMat);
+              points.matrixAutoUpdate = false;
+              this.pointsHelpers.set(mesh.uuid, points);
+
+              if (mesh.parent) {
+                mesh.parent.add(points);
+              }
             }
-          });
 
-          mesh.visible = baseVisible && (mode !== 'points');
-
-          // Create/show/hide points helper for this mesh
-          if (mode === 'points') {
-            if (baseVisible) {
-              if (!this.pointsHelpers.has(mesh.uuid)) {
-                // Create points from mesh geometry
-                const pointsMat = new THREE.PointsMaterial({
-                  size: 3,
-                  sizeAttenuation: false,
-                  color: 0x4cc9f0,
-                  vertexColors: mesh.geometry.attributes.color ? true : false,
-                });
-                const points = new THREE.Points(mesh.geometry, pointsMat);
-                points.matrixAutoUpdate = false;
-                this.pointsHelpers.set(mesh.uuid, points);
-
-                if (mesh.parent) {
-                  mesh.parent.add(points);
-                }
-              }
-
-              const pts = this.pointsHelpers.get(mesh.uuid);
-              if (pts) {
-                pts.matrix.copy(mesh.matrix);
-                pts.matrixWorld.copy(mesh.matrixWorld);
-                pts.visible = true;
-              }
-            } else {
-              const pts = this.pointsHelpers.get(mesh.uuid);
-              if (pts) {
-                pts.visible = false;
-              }
+            const pts = this.pointsHelpers.get(mesh.uuid);
+            if (pts) {
+              pts.matrix.copy(mesh.matrix);
+              pts.matrixWorld.copy(mesh.matrixWorld);
+              pts.visible = true;
             }
           } else {
-            // Hide points helper if exists
-            if (this.pointsHelpers.has(mesh.uuid)) {
-              const pts = this.pointsHelpers.get(mesh.uuid);
-              if (pts) {
-                pts.visible = false;
-              }
+            const pts = this.pointsHelpers.get(mesh.uuid);
+            if (pts) {
+              pts.visible = false;
+            }
+          }
+        } else {
+          // Hide points helper if exists
+          if (this.pointsHelpers.has(mesh.uuid)) {
+            const pts = this.pointsHelpers.get(mesh.uuid);
+            if (pts) {
+              pts.visible = false;
             }
           }
         }
-      });
-
-      // Handle Points objects visibility
-      if (obj.type === 'Points') {
-        obj.visible = baseVisible;
       }
     });
+
+    // Handle Points objects visibility
+    if (obj.type === 'Points') {
+      obj.visible = baseVisible;
+    }
+  }
+
+  restoreBaseWireframe(source: THREE.Material, clone: THREE.Material): void {
+    const wireframe = this.baseWireframe.get(source);
+    if (wireframe !== undefined) (clone as THREE.Material & { wireframe: boolean }).wireframe = wireframe;
+  }
+
+  getNextMode(): RenderMode {
+    return RENDER_MODES[(RENDER_MODES.indexOf(this.currentMode) + 1) % RENDER_MODES.length];
   }
 
   /**
@@ -98,9 +118,7 @@ export class RenderModeManager {
    * @returns The new render mode
    */
   cycleRenderMode(objects: Map<string, THREE.Object3D>): RenderMode {
-    const currentIndex = RENDER_MODES.indexOf(this.currentMode);
-    const nextIndex = (currentIndex + 1) % RENDER_MODES.length;
-    const nextMode = RENDER_MODES[nextIndex];
+    const nextMode = this.getNextMode();
 
     this.setRenderMode(nextMode, objects);
 
@@ -123,7 +141,7 @@ export class RenderModeManager {
 
     objects.forEach((obj) => {
       obj.traverse((child) => {
-        if (child.type === 'Mesh') {
+        if (child instanceof THREE.Mesh) {
           existingUuids.add(child.uuid);
         }
       });

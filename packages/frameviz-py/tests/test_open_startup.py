@@ -139,3 +139,13 @@ def test_public_open_exposes_manual_callback_mode(context,monkeypatch):
     monkeypatch.setattr(implementation,'FrameVizClient',factory)
     implementation.open(window_mode=0,auto_events=False)
     assert options[0]['auto_events'] is False
+
+
+def test_explicit_environment_endpoint_is_not_replaced_by_discovery(context, monkeypatch):
+    _, discovery = context
+    discovery.write_text(json.dumps({
+        "ws_url": "ws://127.0.0.1:18355", "port": 18355, "pid": os.getpid(), "version": "0.5.0",
+    }))
+    monkeypatch.setattr(internal, "_resolve_discovery_port", lambda _: 18355)
+    monkeypatch.setenv("FRAMEVIZ_HOST", "ws://127.0.0.1:9527")
+    assert implementation._resolve_connection_url(None) == "ws://127.0.0.1:9527"

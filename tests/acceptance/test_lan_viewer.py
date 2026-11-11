@@ -56,7 +56,7 @@ def remote_auth(link, view=None, token=None, *, protocol=False):
     if not protocol:
         url += f"?type=viewer&view_id={view}"
     secret = parse_qs(uri.fragment)["token"][0] if token is None else token
-    socket = connect(url, origin=f"http://{uri.netloc}")
+    socket = connect(url, origin=f"http://{uri.netloc}", max_size=2 * 1024 * 1024)
     socket.send(json.dumps({"type": "auth", "token": secret}))
     response = json.loads(socket.recv(timeout=2))
     return socket, response
@@ -186,3 +186,86 @@ def test_read_only_browser_orbits_locally_and_renders_updates(tmp_path):
                 assert world(page, obj) == pytest.approx([.6, -.1, .2])
             finally:
                 browser.close()
+
+
+def test_saturated_lan_connection_recovers_latest_scene_without_blocking_other_scene(tmp_path):
+    import base64
+    import hashlib
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    with lan_host(tmp_path) as (viz, info, _):
+        box = viz.add_box()
+        other = viz._client.send_command("create_view", {})
+        link = viz.get_lan_view_link()
+        uri = urlsplit(link)
+        port = parse_qs(uri.query)["ws_port"][0]
+        target = f"ws://{uri.hostname}:{port}/?type=viewer&view_id={viz.view_id}"
+        token = parse_qs(uri.fragment)["token"][0]
+        transport = socket.socket()
+        transport.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        transport.connect((uri.hostname, int(port)))
+        with connect(target, sock=transport, origin=f"http://{uri.netloc}", max_queue=1,
+                     max_size=2 * 1024 * 1024, close_timeout=.1) as slow:
+            slow.send(json.dumps({"type": "auth", "token": token}))
+            assert json.loads(slow.recv(timeout=2))["ok"]
+            assert json.loads(slow.recv(timeout=2))["type"] == "init"
+            assert json.loads(slow.recv(timeout=2))["type"] == "scene_snapshot"
+
+            fast_client = FrameVizClient(info["ws_url"], token=info["token"], timeout=2)
+            fast_client.connect()
+            try:
+                fast = Viz(fast_client, other["scene_id"], other["view_id"], owns_view=False)
+                fresh = fast.add_box()
+                baseline = viz._client.send_command("get_resource_counts", {})["connections"]
+
+                # The stopped socket's receive window is smaller than a single
+                # transfer. Only that socket's writer can wait for it.
+                size = 12 * 1024 * 1024
+                shape = [size // 12, 3]
+                buffer = viz._client.send_command("create_buffer", {
+                    "size_bytes": size, "dtype": "f32", "shape": shape,
+                })["buffer_id"]
+                viz._client.send_command_with_binary("upload_buffer_chunk", {
+                    "buffer_id": buffer, "offset_bytes": 0, "chunk_bytes": size,
+                }, bytes(size))
+                cloud = viz._client.send_command("add_points", {"scene_id": viz.scene_id,
+                    "positions": {"buffer_id": buffer, "dtype": "f32", "shape": shape},
+                })["handle"]
+
+                def unrelated_updates():
+                    for n in range(1, 21):
+                        fast.set_transform(fresh, position=[n, 0, 0])
+                    return fast.get_transform(fresh)["position"]
+
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    independent = executor.submit(unrelated_updates)
+                    for n in range(1, 51):
+                        viz.set_transform(box, position=[n, 0, 0])
+                    assert independent.result(timeout=3) == [20, 0, 0]
+
+                deadline = time.monotonic() + 6
+                while viz._client.send_command("get_resource_counts", {})["connections"] == baseline:
+                    assert time.monotonic() < deadline, "Saturated remote connection was not removed"
+                    time.sleep(.03)
+            finally:
+                fast_client.close()
+
+        restored, auth = remote_auth(link)
+        with restored:
+            assert auth["ok"]
+            assert json.loads(restored.recv(timeout=3))["type"] == "init"
+            snapshot = json.loads(restored.recv(timeout=3))
+            objects = {item["handle"]: item for item in snapshot["objects"]}
+            assert set(objects) == {box, cloud}
+            assert objects[box]["pose"]["pos"] == [50, 0, 0]
+            received = hashlib.sha256()
+            for expected in range(0, size, 1024 * 1024):
+                chunk = json.loads(restored.recv(timeout=3))["args"]
+                assert chunk["buffer_id"] == buffer and chunk["offset_bytes"] == expected
+                received.update(base64.b64decode(chunk["data_base64"], validate=True))
+            assert received.digest() == hashlib.sha256(bytes(size)).digest()
+            viz.set_transform(box, position=[51, 0, 0])
+            update = json.loads(restored.recv(timeout=3))
+            assert update["command"] == "set_transform" and update["args"]["handle"] == box
+            assert update["revision"] > snapshot["revision"]

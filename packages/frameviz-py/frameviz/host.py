@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import plistlib
 import shutil
 import socket
 import subprocess
@@ -13,7 +14,7 @@ from urllib.parse import urlparse
 
 from .client import DEFAULT_WS_URL, PROTOCOL_VERSION
 from .discovery import read_discovery_file, get_discovery_path
-from .version import host_version_error
+from .version import host_version_error, parse_version
 from .exceptions import ProtocolError
 from ._internal import (
     _get_repo_root,
@@ -64,32 +65,73 @@ def _executable(path: Path) -> Optional[Path]:
     return path if path.is_file() and os.access(path,os.X_OK) else None
 
 
-def find_host_executable(prefer_browser: bool = False) -> Optional[Path]:
-    for key in ['FRAMEVIZ_HOST_PATH','FRAMEVIZ_TAURI_APP']:
-        env_path=os.environ.get(key)
-        if env_path:
-            path=Path(env_path).expanduser()
-            binary=_executable(path)
-            if binary:return binary
-            raise RuntimeError(f'{key} is not an executable FrameViz runtime: {path}. {_installation_hint()}')
-    repo_root = _get_repo_root()
-    gui=[]
-    if sys.platform == "darwin":
-        gui.extend(_get_tauri_app_candidates(repo_root))
-    gui.extend(_get_tauri_exec_candidates(repo_root)+_get_appimage_candidates(repo_root))
-    server=[Path('/usr/bin/frameviz-server'),Path('/usr/local/bin/frameviz-server'),Path.home()/'.local/bin/frameviz-server']
+def _runtime_version(path: Path, binary: Path) -> Optional[str]:
+    """Read bundle metadata or use the side-effect-free executable version probe."""
+    if path.suffix == ".app":
+        try:
+            with (path / "Contents/Info.plist").open("rb") as source:
+                version = plistlib.load(source).get("CFBundleShortVersionString")
+            return version if parse_version(version) else None
+        except (OSError, ValueError, AttributeError):
+            return None
+    try:
+        result = subprocess.run([str(binary), "--version"], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=2, check=False)
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        return None
+    prefix = "FrameViz Host v"
+    output = result.stdout.strip()
+    version = output[len(prefix):] if output.startswith(prefix) else None
+    return version if result.returncode == 0 and parse_version(version) else None
+
+
+def _standalone_candidates(repo_root: Optional[Path]) -> list[Path]:
+    paths = [Path("/usr/bin/frameviz-server"), Path("/usr/local/bin/frameviz-server"),
+             Path.home() / ".local/bin/frameviz-server"]
     if repo_root:
-        server.extend(repo_root/f'packages/frameviz-server/target/{profile}/frameviz-server' for profile in ['release','debug'])
-    if prefer_browser and not _desktop_available():gui=[]
-    # Every known installation precedes source fallback, regardless of backend.
-    for source in [False,True]:
-        candidates=(server+gui) if prefer_browser else (gui+server)
+        paths.extend(repo_root / f"packages/frameviz-server/target/{profile}/frameviz-server"
+                     for profile in ("release", "debug"))
+    return paths
+
+
+def find_host_executable(prefer_browser: bool = False, *, native_only: bool = False) -> Optional[Path]:
+    for key in ("FRAMEVIZ_HOST_PATH", "FRAMEVIZ_TAURI_APP"):
+        if not (configured := os.environ.get(key)):
+            continue
+        path = Path(configured).expanduser()
+        binary = _executable(path)
+        if binary is None:
+            raise RuntimeError(f"{key} is not an executable FrameViz runtime: {path}. {_installation_hint()}")
+        version = _runtime_version(path, binary)
+        if version and (error := host_version_error(version, PROTOCOL_VERSION)):
+            raise ProtocolError(f"{key} ({path}): {error}", code="ERR_PROTOCOL_VERSION")
+        return None if native_only and binary.name == "frameviz-server" else binary
+
+    repo_root = _get_repo_root()
+    gui = _get_tauri_app_candidates(repo_root) + _get_tauri_exec_candidates(repo_root) + _get_appimage_candidates(repo_root)
+    server = [] if native_only else _standalone_candidates(repo_root)
+    if prefer_browser and not _desktop_available():
+        gui = []
+    candidates = server + gui if prefer_browser else gui + server
+    unknown = None
+    first_error = None
+    # Prefer a verified installation over a verified source build. Older
+    # standalone executables may lack --version and are checked at startup.
+    for source in (False, True):
         for path in candidates:
-            is_source=repo_root is not None and path.is_relative_to(repo_root)
-            if is_source != source:continue
-            binary=_executable(path)
-            if binary:return binary
-    return None
+            is_source = repo_root is not None and path.is_relative_to(repo_root)
+            if is_source != source or (binary := _executable(path)) is None:
+                continue
+            version = _runtime_version(path, binary)
+            if version is None:
+                unknown = unknown or binary
+            elif error := host_version_error(version, PROTOCOL_VERSION):
+                first_error = first_error or f"{path}: {error}"
+            else:
+                return binary
+    if unknown is None and first_error and not native_only:
+        raise ProtocolError(first_error, code="ERR_PROTOCOL_VERSION")
+    return unknown
 
 
 def _launch_executable(path: Path, args: list[str]) -> subprocess.Popen:
