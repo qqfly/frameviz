@@ -19,7 +19,8 @@ namespace frameviz {
 
 BufferRef Viz::uploadBuffer(const void *data, size_t size_bytes,
                             const std::string &dtype,
-                            const std::vector<int> &shape) {
+                            const std::vector<int> &shape,
+                            std::vector<std::string> *pending) {
   // Create buffer
   json create_args = {
       {"size_bytes", size_bytes}, {"dtype", dtype}, {"shape", shape}};
@@ -31,18 +32,27 @@ BufferRef Viz::uploadBuffer(const void *data, size_t size_bytes,
   const size_t CHUNK_SIZE = 16 * 1024 * 1024;
   const uint8_t *data_ptr = static_cast<const uint8_t *>(data);
 
-  for (size_t offset = 0; offset < size_bytes; offset += CHUNK_SIZE) {
-    size_t chunk_bytes = std::min(CHUNK_SIZE, size_bytes - offset);
+  try {
+    if (pending) pending->push_back(buffer_id);
+    for (size_t offset = 0; offset < size_bytes; offset += CHUNK_SIZE) {
+      size_t chunk_bytes = std::min(CHUNK_SIZE, size_bytes - offset);
 
-    std::vector<uint8_t> chunk_data(data_ptr + offset,
-                                    data_ptr + offset + chunk_bytes);
+      std::vector<uint8_t> chunk_data(data_ptr + offset,
+                                      data_ptr + offset + chunk_bytes);
 
-    json upload_args = {{"buffer_id", buffer_id},
-                        {"offset_bytes", offset},
-                        {"chunk_bytes", chunk_bytes}};
+      json upload_args = {{"buffer_id", buffer_id},
+                          {"offset_bytes", offset},
+                          {"chunk_bytes", chunk_bytes}};
 
-    m_client->sendCommandWithBinary("upload_buffer_chunk", upload_args,
-                                    chunk_data);
+      m_client->sendCommandWithBinary("upload_buffer_chunk", upload_args,
+                                      chunk_data);
+    }
+  } catch (...) {
+    try {
+      m_client->sendCommand("free_buffer", {{"buffer_id", buffer_id}});
+    } catch (const std::exception &) {
+    }
+    throw;
   }
 
   return BufferRef{buffer_id, dtype, shape};

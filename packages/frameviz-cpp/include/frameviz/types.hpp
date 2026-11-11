@@ -37,7 +37,20 @@ using Quat = std::array<float, 4>;
 // Color type [r, g, b] or [r, g, b, a], values in 0..1
 using Color = std::vector<float>;
 
-// Pose: position + orientation
+// Rigid scene-tree pose. Quaternion components are always xyzw.
+struct RigidPose {
+    Vec3 position{0, 0, 0};
+    Quat quaternion{0, 0, 0, 1};
+
+    static RigidPose fromArray(const std::array<float, 7> &values) {
+        return {{values[0], values[1], values[2]},
+                {values[3], values[4], values[5], values[6]}};
+    }
+};
+
+enum class TransformSpace { Local, World };
+
+// Legacy pose. Scale refers to the object's own geometry.
 struct Pose {
     Vec3 pos{0.0f, 0.0f, 0.0f};
     Quat quat{0.0f, 0.0f, 0.0f, 1.0f};

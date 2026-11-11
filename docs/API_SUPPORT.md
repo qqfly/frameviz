@@ -7,7 +7,7 @@ This table records command-name literals in the implementation. Presence does no
 | `add_instances` | present | present | present | present |
 | `add_lines` | present | present | present | present |
 | `add_mesh` | present | present | present | present |
-| `add_node` | present | present | present | not directly referenced |
+| `add_node` | present | present | present | present |
 | `add_points` | present | present | present | present |
 | `add_primitive` | present | present | present | present |
 | `add_text_2d` | present | present | present | present |
@@ -23,7 +23,7 @@ This table records command-name literals in the implementation. Presence does no
 | `destroy_scene` | present | present | present | present |
 | `destroy_view` | present | present | present | present |
 | `detach_gizmo` | present | present | present | present |
-| `free_buffer` | present | present | present | not directly referenced |
+| `free_buffer` | present | present | present | present |
 | `get_alpha` | present | present | present | present |
 | `get_camera_controls` | present | present | present | present |
 | `get_camera_pose` | present | present | present | present |
@@ -54,16 +54,16 @@ This table records command-name literals in the implementation. Presence does no
 | `set_camera_controls` | present | present | present | present |
 | `set_camera_pose` | present | present | present | present |
 | `set_color` | present | present | present | present |
-| `set_geometry_scale` | present | present | present | not directly referenced |
+| `set_geometry_scale` | present | present | present | present |
 | `set_gizmo_mode` | present | present | present | present |
 | `set_interaction_mode` | present | present | not directly referenced | not directly referenced |
 | `set_log_config` | present | not directly referenced | present | not directly referenced |
 | `set_object_alphas` | present | present | present | not directly referenced |
 | `set_object_colors` | present | present | present | not directly referenced |
-| `set_object_metadata` | present | present | present | not directly referenced |
+| `set_object_metadata` | present | present | present | present |
 | `set_object_transforms` | present | present | present | present |
 | `set_object_visibilities` | present | present | present | not directly referenced |
-| `set_parent` | present | present | present | not directly referenced |
+| `set_parent` | present | present | present | present |
 | `set_performance_mode` | present | present | present | not directly referenced |
 | `set_pick_config` | present | present | present | present |
 | `set_render_mode` | present | present | present | present |

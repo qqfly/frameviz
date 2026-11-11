@@ -29,3 +29,23 @@
 - 截图在此前已接受的场景更新、缓冲和引用资源就绪后输出；失败时报告具体资源或渲染错误。验证普通与临时视角确实产生不同画面，并测试未打开窗口、迟到资源、连续截图、原窗口视角和尺寸。
 - `viz.export_html(path, *, animation=None)` 导出自包含页面。独立打开和教程嵌入均可用，浏览器可旋转、缩放。可选动画为上层给定的时间和对象刚体位姿，提供播放、暂停、进度调整；观看相机独立于动画。验证断网、几何与资源完整、真实交互和文本安全转义。
 - 应用或 robotics runtime 管理业务状态和项目重建。通用场景文件格式及公开文件保存、加载、导入暂缓。教程 HTML 直接使用显示数据。交互式规划和求解由教程的上层程序提供。
+
+### C++ 场景节点
+
+```cpp
+frameviz::SceneNodeOptions joint;
+joint.pose = frameviz::RigidPose::fromArray({0, 0, 0.1f, 0, 0, 0, 1});
+joint.name = "shoulder";
+auto parent = viz->addNode(joint);
+
+frameviz::SceneNodeOptions link;
+link.parent = parent;
+link.pose = frameviz::RigidPose{{0.4f, 0, 0}};
+auto box = viz->addBox({0.8f, 0.1f, 0.1f}, {}, {0, 0, 0, 1}, {1, 0, 0}, link);
+auto world = viz->getTransform(box, frameviz::TransformSpace::World);
+viz->setParent(box, std::nullopt);
+```
+
+旧绘图参数仍可直接使用。提供 `SceneNodeOptions::pose` 时，以它为准。
+`loadMesh` 的 `scale` 和 `SceneNodeOptions::geometryScale` 都作用于对象自身。
+`getTransformMatrix` 返回列主序的刚体矩阵。

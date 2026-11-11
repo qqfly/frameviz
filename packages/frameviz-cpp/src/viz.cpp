@@ -7,7 +7,6 @@
 #include <sys/wait.h>
 extern char **environ;
 #endif
-#include <random>
 /**
  * @file viz.cpp
  * @brief High-level FrameViz visualization API implementation
@@ -131,6 +130,44 @@ json normalizeQuat(const Quat &q) {
     return json::array({0.0f, 0.0f, 0.0f, 1.0f});
   }
   return json::array({q[0] / norm, q[1] / norm, q[2] / norm, q[3] / norm});
+}
+
+json rigidPoseArgs(const RigidPose &pose) {
+  return {{"position", pose.position}, {"quaternion", pose.quaternion}};
+}
+
+const char *transformSpace(TransformSpace space) {
+  return space == TransformSpace::World ? "world" : "local";
+}
+
+void applyNodeOptions(json &args, const SceneNodeOptions &node) {
+  if (node.parent) args["parent"] = *node.parent;
+  if (node.name) args["name"] = *node.name;
+  if (node.tags != json::object()) args["tags"] = node.tags;
+  if (node.pose) args["pose"] = rigidPoseArgs(*node.pose);
+  if (node.geometryScale) args["geometry_scale"] = *node.geometryScale;
+}
+
+// A failed create leaves its uploaded buffers unreferenced on the Host.
+struct PendingUploads {
+  FrameVizClient &client;
+  std::vector<std::string> ids;
+
+  ~PendingUploads() {
+    for (const auto &id : ids) {
+      try {
+        client.sendCommand("free_buffer", {{"buffer_id", id}});
+      } catch (const std::exception &) {
+      }
+    }
+  }
+
+  void commit() { ids.clear(); }
+};
+
+json bufferArgs(const BufferRef &buffer) {
+  return {{"buffer_id", buffer.buffer_id}, {"dtype", buffer.dtype},
+          {"shape", buffer.shape}};
 }
 
 Vec3 requireVec3(const json &value, const std::string &label) {
@@ -490,12 +527,13 @@ void Viz::close() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 Handle Viz::addPrimitive(const std::string &ptype, const json &params, Vec3 pos,
-                         Quat quat, Color color) {
+                         Quat quat, Color color, const SceneNodeOptions &node) {
   json args = {{"scene_id", m_sceneId},
                {"type", ptype},
                {"pose", {{"pos", toList(pos)}, {"quat", normalizeQuat(quat)}}},
                {"color", colorToJson(color)},
                {"params", params}};
+  applyNodeOptions(args, node);
   json result = m_client->sendCommand("add_primitive", args);
   return result.value("handle", "");
 }
@@ -504,44 +542,44 @@ Handle Viz::addPrimitive(const std::string &ptype, const json &params, Vec3 pos,
 // Primitives: Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
-Handle Viz::addBox(Vec3 size, Vec3 pos, Quat quat, Color color) {
+Handle Viz::addBox(Vec3 size, Vec3 pos, Quat quat, Color color, const SceneNodeOptions &node) {
   json params = {{"size", toList(size)}};
-  return addPrimitive("box", params, pos, quat, color);
+  return addPrimitive("box", params, pos, quat, color, node);
 }
 
-Handle Viz::addSphere(float radius, Vec3 pos, Quat quat, Color color) {
+Handle Viz::addSphere(float radius, Vec3 pos, Quat quat, Color color, const SceneNodeOptions &node) {
   json params = {{"radius", radius}};
-  return addPrimitive("sphere", params, pos, quat, color);
+  return addPrimitive("sphere", params, pos, quat, color, node);
 }
 
 Handle Viz::addCylinder(float radius, float height, Vec3 pos, Quat quat,
-                        Color color) {
+                        Color color, const SceneNodeOptions &node) {
   json params = {{"radius", radius}, {"height", height}};
-  return addPrimitive("cylinder", params, pos, quat, color);
+  return addPrimitive("cylinder", params, pos, quat, color, node);
 }
 
 Handle Viz::addCone(float radius, float height, Vec3 pos, Quat quat,
-                    Color color) {
+                    Color color, const SceneNodeOptions &node) {
   json params = {{"radius", radius}, {"height", height}};
-  return addPrimitive("cone", params, pos, quat, color);
+  return addPrimitive("cone", params, pos, quat, color, node);
 }
 
-Handle Viz::addAxes(float length, float radius, Vec3 pos, Quat quat) {
+Handle Viz::addAxes(float length, float radius, Vec3 pos, Quat quat, const SceneNodeOptions &node) {
   json params = {{"length", length}, {"radius", radius}};
-  return addPrimitive("axes", params, pos, quat, {1.0f, 1.0f, 1.0f});
+  return addPrimitive("axes", params, pos, quat, {1.0f, 1.0f, 1.0f}, node);
 }
 
-Handle Viz::addArrow(Vec3 start, Vec3 end, float radius, Color color) {
+Handle Viz::addArrow(Vec3 start, Vec3 end, float radius, Color color, const SceneNodeOptions &node) {
   json params = {
       {"radius", radius}, {"start", toList(start)}, {"end", toList(end)}};
   return addPrimitive("arrow", params, {0.0f, 0.0f, 0.0f},
-                      {0.0f, 0.0f, 0.0f, 1.0f}, color);
+                      {0.0f, 0.0f, 0.0f, 1.0f}, color, node);
 }
 
 Handle Viz::addPlane(float width, float height, Vec3 pos, Quat quat,
-                     Color color) {
+                     Color color, const SceneNodeOptions &node) {
   json params = {{"width", width}, {"height", height}};
-  return addPrimitive("plane", params, pos, quat, color);
+  return addPrimitive("plane", params, pos, quat, color, node);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,229 +587,59 @@ Handle Viz::addPlane(float width, float height, Vec3 pos, Quat quat,
 // ─────────────────────────────────────────────────────────────────────────────
 
 Handle Viz::addPoints(const std::vector<float> &positions, Color color,
-                      float size) {
-  validateColorComponents(color, "addPoints.color");
-  size_t n_points = positions.size() / 3;
-  if (n_points > kPointsChunkSize) {
-    return addPointsChunked(positions, {}, size, kPointsChunkSize, color);
-  }
-  return addPointsDirect(positions, {}, size, color);
+                      float size, const SceneNodeOptions &node) {
+  return addPointCloud(positions, {}, size, color, node);
 }
 
 Handle Viz::addPoints(const std::vector<float> &positions,
-                      const std::vector<Color> &colors, float size) {
-  const size_t n_points = positions.size() / 3;
-  if (!colors.empty() && colors.size() != n_points) {
-    throw std::runtime_error("addPoints.colors size must match point count");
-  }
-  if (n_points > kPointsChunkSize) {
-    return addPointsChunked(positions, colors, size, kPointsChunkSize, std::nullopt);
-  }
-  return addPointsDirect(positions, colors, size, std::nullopt);
+                      const std::vector<Color> &colors, float size,
+                      const SceneNodeOptions &node) {
+  return addPointCloud(positions, colors, size, std::nullopt, node);
 }
 
-Handle Viz::addPointsChunked(const std::vector<float> &positions,
-                             const std::vector<Color> &colors, float size,
-                             size_t chunk_size,
-                             std::optional<Color> uniform_color) {
-  if (positions.empty()) {
-    return "";
+Handle Viz::addPointCloud(const std::vector<float> &positions,
+                          const std::vector<Color> &colors, float size,
+                          std::optional<Color> uniformColor, const SceneNodeOptions &node) {
+  if (positions.size() % 3 != 0) {
+    throw std::invalid_argument("addPoints.positions must contain three values per point");
   }
+  const size_t count = positions.size() / 3;
+  const auto packed = colors.empty() ? std::vector<uint8_t>{}
+                                     : packColorsToU8(colors, "addPoints.colors", count);
+  json args = {{"scene_id", m_sceneId}, {"size", size}};
+  applyNodeOptions(args, node);
+  if (uniformColor) args["color"] = colorToJson(*uniformColor);
 
-  size_t n_points = positions.size() / 3;
-  if (n_points == 0 || chunk_size == 0) {
-    return "";
-  }
-
-  m_chunkGroupCounter += 1;
-  Handle group_handle =
-      "chunk_group_" + std::to_string(std::random_device{}()) + "_" + std::to_string(std::random_device{}()) + "_" + std::to_string(m_chunkGroupCounter);
-  std::vector<Handle> chunk_handles;
-  size_t chunk_count = (n_points + chunk_size - 1) / chunk_size;
-  chunk_handles.reserve(chunk_count);
-
-  for (size_t start = 0; start < n_points; start += chunk_size) {
-    size_t end = std::min(start + chunk_size, n_points);
-    auto pos_begin = positions.begin() + static_cast<long>(start * 3);
-    auto pos_end = positions.begin() + static_cast<long>(end * 3);
-    std::vector<float> chunk_positions(pos_begin, pos_end);
-
-    std::vector<Color> chunk_colors;
-    if (!colors.empty()) {
-      auto col_begin = colors.begin() + static_cast<long>(start);
-      auto col_end = colors.begin() + static_cast<long>(end);
-      chunk_colors.assign(col_begin, col_end);
+  PendingUploads uploads{*m_client, {}};
+  auto upload = [&](const void *data, size_t bytes, const char *dtype, int length) {
+    return bufferArgs(uploadBuffer(data, bytes, dtype, {length, 3}, &uploads.ids));
+  };
+  json chunks = json::array();
+  for (size_t start = 0; start < count || start == 0; start += kPointsChunkSize) {
+    const auto length = std::min(kPointsChunkSize, count - start);
+    const auto *position = start == 0 ? positions.data() : positions.data() + start * 3;
+    json chunk = {{"positions", upload(position, length * 3 * sizeof(float),
+                                       "f32", static_cast<int>(length))}};
+    if (!packed.empty()) {
+      chunk["colors"] = upload(packed.data() + start * 3, length * 3,
+                               "u8", static_cast<int>(length));
     }
-
-    Handle handle = addPointsDirect(chunk_positions,
-                                    chunk_colors,
-                                    size,
-                                    uniform_color,
-                                    group_handle);
-    chunk_handles.push_back(handle);
-    m_chunkOffsets[handle] = start;
+    chunks.push_back(std::move(chunk));
   }
-
-  registerChunkGroup(group_handle, chunk_handles);
-  return group_handle;
-}
-
-Handle Viz::addPointsDirect(const std::vector<float> &positions,
-                            const std::vector<Color> &colors, float size,
-                            std::optional<Color> uniform_color,
-                            std::optional<std::string> group_id) {
-  int n_points = static_cast<int>(positions.size() / 3);
-  BufferRef pos_buf = uploadBuffer(
-      positions.data(), positions.size() * sizeof(float), "f32", {n_points, 3});
-
-  json args = {{"scene_id", m_sceneId},
-               {"positions",
-                {{"buffer_id", pos_buf.buffer_id},
-                 {"dtype", pos_buf.dtype},
-                 {"shape", pos_buf.shape}}},
-               {"size", size}};
-  if (group_id.has_value()) {
-    args["group_id"] = group_id.value();
-  }
-
-  if (!colors.empty()) {
-    auto packed = packColorsToU8(colors, "addPoints.colors", static_cast<size_t>(n_points));
-    BufferRef col_buf = uploadBuffer(
-        packed.data(), packed.size() * sizeof(uint8_t), "u8", {n_points, 3});
-    args["colors"] = {{"buffer_id", col_buf.buffer_id},
-                      {"dtype", col_buf.dtype},
-                      {"shape", col_buf.shape}};
-  } else if (uniform_color.has_value()) {
-    args["color"] = colorToJson(uniform_color.value());
-  }
-
-  json result = m_client->sendCommand("add_points", args);
-  return result.value("handle", "");
-}
-
-void Viz::registerChunkGroup(const Handle &group_handle,
-                             const std::vector<Handle> &chunk_handles) {
-  m_chunkGroups[group_handle] = chunk_handles;
-  for (const auto &chunk_handle : chunk_handles) {
-    m_chunkParents[chunk_handle] = group_handle;
-  }
-}
-
-void Viz::unregisterChunkHandle(const Handle &chunk_handle) {
-  auto parent_it = m_chunkParents.find(chunk_handle);
-  if (parent_it == m_chunkParents.end()) {
-    return;
-  }
-  Handle group_handle = parent_it->second;
-  m_chunkParents.erase(parent_it);
-  m_chunkOffsets.erase(chunk_handle);
-  auto group_it = m_chunkGroups.find(group_handle);
-  if (group_it == m_chunkGroups.end()) {
-    return;
-  }
-  auto &handles = group_it->second;
-  handles.erase(std::remove(handles.begin(), handles.end(), chunk_handle), handles.end());
-  if (handles.empty()) {
-    m_chunkGroups.erase(group_it);
-  }
-}
-
-Handle Viz::resolveGroupTarget(const Handle &handle) const {
-  auto it = m_chunkGroups.find(handle);
-  if (it != m_chunkGroups.end()) {
-    if (it->second.empty()) {
-      return "";
-    }
-    return it->second.front();
-  }
-  return handle;
-}
-
-Handle Viz::mapToGroupHandle(const Handle &handle) const {
-  auto it = m_chunkParents.find(handle);
-  if (it != m_chunkParents.end()) {
-    return it->second;
-  }
-  return handle;
-}
-
-bool Viz::shouldMapEvent(const std::string &event_name) const {
-  return event_name == "picked" || event_name == "pick" ||
-         event_name == "pick_info_response" || event_name == "transformed";
-}
-
-bool Viz::hasChunkMapping() const {
-  return !m_chunkParents.empty() || !m_chunkOffsets.empty();
-}
-
-std::optional<json> Viz::mapEventData(const json &data) const {
-  if (!data.is_object()) {
-    return std::nullopt;
-  }
-  if (!hasChunkMapping()) {
-    return std::nullopt;
-  }
-  bool needs_update = false;
-  bool has_handle = false;
-  bool has_object_handle = false;
-  Handle handle;
-  Handle object_handle;
-
-  auto handle_it = data.find("handle");
-  if (handle_it != data.end() && handle_it->is_string()) {
-    handle = handle_it->get<std::string>();
-    has_handle = true;
-    if (m_chunkParents.find(handle) != m_chunkParents.end()) {
-      needs_update = true;
-    }
-    if (m_chunkOffsets.find(handle) != m_chunkOffsets.end() &&
-        data.contains("point_index")) {
-      needs_update = true;
-    }
-  }
-
-  auto object_it = data.find("object_handle");
-  if (object_it != data.end() && object_it->is_string()) {
-    object_handle = object_it->get<std::string>();
-    has_object_handle = true;
-    if (m_chunkParents.find(object_handle) != m_chunkParents.end()) {
-      needs_update = true;
-    }
-  }
-
-  if (!needs_update) {
-    return std::nullopt;
-  }
-
-  json mapped = data;
-  if (has_handle) {
-    auto offset_it = m_chunkOffsets.find(handle);
-    if (offset_it != m_chunkOffsets.end() && mapped.contains("point_index")) {
-      if (mapped["point_index"].is_number_integer()) {
-        mapped["point_index"] = mapped["point_index"].get<int>() +
-                                static_cast<int>(offset_it->second);
-      }
-    }
-    Handle mapped_handle = mapToGroupHandle(handle);
-    if (mapped_handle != handle) {
-      mapped["handle"] = mapped_handle;
-    }
-  }
-  if (has_object_handle) {
-    Handle mapped_handle = mapToGroupHandle(object_handle);
-    if (mapped_handle != object_handle) {
-      mapped["object_handle"] = mapped_handle;
-    }
-  }
-  return mapped;
+  if (chunks.size() == 1) args.update(chunks.front());
+  else args["chunks"] = std::move(chunks);
+  auto result = m_client->sendCommand("add_points", args);
+  uploads.commit();
+  return result.at("handle").get<Handle>();
 }
 
 Handle Viz::addLines(const std::vector<float> &positions,
                      const std::vector<uint32_t> &indices, float width,
-                     Color color) {
+                     Color color, const SceneNodeOptions &node) {
+  PendingUploads uploads{*m_client, {}};
   int n_verts = static_cast<int>(positions.size() / 3);
   BufferRef pos_buf = uploadBuffer(
-      positions.data(), positions.size() * sizeof(float), "f32", {n_verts, 3});
+      positions.data(), positions.size() * sizeof(float), "f32", {n_verts, 3}, &uploads.ids);
 
   json args = {{"scene_id", m_sceneId},
                {"positions",
@@ -784,13 +652,15 @@ Handle Viz::addLines(const std::vector<float> &positions,
   if (!indices.empty()) {
     int n_edges = static_cast<int>(indices.size() / 2);
     BufferRef idx_buf = uploadBuffer(
-        indices.data(), indices.size() * sizeof(uint32_t), "u32", {n_edges, 2});
+        indices.data(), indices.size() * sizeof(uint32_t), "u32", {n_edges, 2}, &uploads.ids);
     args["indices"] = {{"buffer_id", idx_buf.buffer_id},
                        {"dtype", idx_buf.dtype},
                        {"shape", idx_buf.shape}};
   }
 
+  applyNodeOptions(args, node);
   json result = m_client->sendCommand("add_lines", args);
+  uploads.commit();
   return result.value("handle", "");
 }
 
@@ -798,7 +668,8 @@ Handle Viz::addMesh(const std::vector<float> &vertices,
                     const std::vector<uint32_t> &faces, FacesFormat format,
                     Color color, const std::vector<Color> &face_colors,
                     std::optional<float> alpha, bool wireframe,
-                    bool smooth_shading) {
+                    bool smooth_shading, const SceneNodeOptions &node) {
+  PendingUploads uploads{*m_client, {}};
   validateColorComponents(color, "addMesh.color");
   const bool has_face_colors = !face_colors.empty();
   const bool is_default_color =
@@ -809,7 +680,7 @@ Handle Viz::addMesh(const std::vector<float> &vertices,
 
   int v_count = static_cast<int>(vertices.size() / 3);
   BufferRef vert_buf = uploadBuffer(
-      vertices.data(), vertices.size() * sizeof(float), "f32", {v_count, 3});
+      vertices.data(), vertices.size() * sizeof(float), "f32", {v_count, 3}, &uploads.ids);
 
   json args = {{"scene_id", m_sceneId},
                {"vertices",
@@ -850,12 +721,12 @@ Handle Viz::addMesh(const std::vector<float> &vertices,
     int count_size = static_cast<int>(poly_counts.size());
     BufferRef count_buf =
         uploadBuffer(poly_counts.data(), poly_counts.size() * sizeof(uint32_t),
-                     "u32", {count_size});
+                     "u32", {count_size}, &uploads.ids);
 
     int indices_size = static_cast<int>(poly_indices.size());
     BufferRef indices_buf =
         uploadBuffer(poly_indices.data(), poly_indices.size() * sizeof(uint32_t),
-                     "u32", {indices_size});
+                     "u32", {indices_size}, &uploads.ids);
 
     args["faces"] = {
         {"counts", {{"buffer_id", count_buf.buffer_id},
@@ -874,7 +745,7 @@ Handle Viz::addMesh(const std::vector<float> &vertices,
     int f_count = static_cast<int>(faces.size() / 3);
     face_count = static_cast<size_t>(f_count);
     BufferRef face_buf = uploadBuffer(
-        faces.data(), faces.size() * sizeof(uint32_t), "u32", {f_count, 3});
+        faces.data(), faces.size() * sizeof(uint32_t), "u32", {f_count, 3}, &uploads.ids);
     args["faces"] = {{"buffer_id", face_buf.buffer_id},
                      {"dtype", face_buf.dtype},
                      {"shape", face_buf.shape}};
@@ -890,7 +761,7 @@ Handle Viz::addMesh(const std::vector<float> &vertices,
     auto packed = packColorsToU8(face_colors, "face_colors", face_count);
     BufferRef col_buf = uploadBuffer(
         packed.data(), packed.size() * sizeof(uint8_t), "u8",
-        {static_cast<int>(face_count), 3});
+        {static_cast<int>(face_count), 3}, &uploads.ids);
     args["colors"] = {{"buffer_id", col_buf.buffer_id},
                       {"dtype", col_buf.dtype},
                       {"shape", col_buf.shape}};
@@ -920,12 +791,14 @@ Handle Viz::addMesh(const std::vector<float> &vertices,
     args["smooth_shading"] = smooth_shading;
   }
 
+  applyNodeOptions(args, node);
   json result = m_client->sendCommand("add_mesh", args);
+  uploads.commit();
   return result.value("handle", "");
 }
 
 Handle Viz::loadMesh(const std::string &url, Vec3 pos, Quat quat, Vec3 scale,
-                     std::optional<Color> color) {
+                     std::optional<Color> color, const SceneNodeOptions &node) {
   json args = {{"scene_id", m_sceneId},
                {"url", url},
                {"pose", {{"pos", toList(pos)}, {"quat", normalizeQuat(quat)}}},
@@ -933,6 +806,8 @@ Handle Viz::loadMesh(const std::string &url, Vec3 pos, Quat quat, Vec3 scale,
   if (color.has_value()) {
     args["color"] = colorToJson(color.value());
   }
+  if (node.geometryScale) args.erase("scale");
+  applyNodeOptions(args, node);
   json result = m_client->sendCommand("load_mesh", args);
   return result.value("handle", "");
 }
@@ -947,10 +822,11 @@ Handle Viz::addInstances(InstanceType type, const std::vector<float> &positions,
                          const std::vector<Color> &colors,
                          std::optional<Color> uniform_color,
                          std::optional<float> alpha,
-                         const std::optional<Vec3> &size) {
+                         const std::optional<Vec3> &size, const SceneNodeOptions &node) {
+  PendingUploads uploads{*m_client, {}};
   int n = static_cast<int>(positions.size() / 3);
   BufferRef pos_buf = uploadBuffer(
-      positions.data(), positions.size() * sizeof(float), "f32", {n, 3});
+      positions.data(), positions.size() * sizeof(float), "f32", {n, 3}, &uploads.ids);
 
   json args = {{"scene_id", m_sceneId},
                {"type", instanceTypeToString(type)},
@@ -983,7 +859,7 @@ Handle Viz::addInstances(InstanceType type, const std::vector<float> &positions,
 
   if (!quats.empty()) {
     BufferRef q_buf =
-        uploadBuffer(quats.data(), quats.size() * sizeof(float), "f32", {n, 4});
+        uploadBuffer(quats.data(), quats.size() * sizeof(float), "f32", {n, 4}, &uploads.ids);
     args["quats"] = {{"buffer_id", q_buf.buffer_id},
                      {"dtype", q_buf.dtype},
                      {"shape", q_buf.shape}};
@@ -991,7 +867,7 @@ Handle Viz::addInstances(InstanceType type, const std::vector<float> &positions,
 
   if (!scales.empty()) {
     BufferRef s_buf = uploadBuffer(scales.data(), scales.size() * sizeof(float),
-                                   "f32", {n, 3});
+                                   "f32", {n, 3}, &uploads.ids);
     args["scales"] = {{"buffer_id", s_buf.buffer_id},
                       {"dtype", s_buf.dtype},
                       {"shape", s_buf.shape}};
@@ -1003,7 +879,7 @@ Handle Viz::addInstances(InstanceType type, const std::vector<float> &positions,
     }
     auto packed = packColorsToU8(colors, "addInstances.colors", static_cast<size_t>(n));
     BufferRef c_buf = uploadBuffer(
-        packed.data(), packed.size() * sizeof(uint8_t), "u8", {n, 3});
+        packed.data(), packed.size() * sizeof(uint8_t), "u8", {n, 3}, &uploads.ids);
     args["colors"] = {{"buffer_id", c_buf.buffer_id},
                       {"dtype", c_buf.dtype},
                       {"shape", c_buf.shape}};
@@ -1018,7 +894,9 @@ Handle Viz::addInstances(InstanceType type, const std::vector<float> &positions,
     args["alpha"] = alpha.value();
   }
 
+  applyNodeOptions(args, node);
   json result = m_client->sendCommand("add_instances", args);
+  uploads.commit();
   return result.value("handle", "");
 }
 
@@ -1101,20 +979,39 @@ void Viz::updateInstances(Handle handle, const std::vector<float> &positions,
 // Transforms
 // ─────────────────────────────────────────────────────────────────────────────
 
+Handle Viz::addNode(const SceneNodeOptions &node) {
+  json args = {{"scene_id", m_sceneId}};
+  applyNodeOptions(args, node);
+  return m_client->sendCommand("add_node", args).at("handle").get<Handle>();
+}
+
+void Viz::setParent(Handle handle, const std::optional<Handle> &parent,
+                    const std::optional<RigidPose> &localTransform) {
+  json args = {{"scene_id", m_sceneId}, {"handle", handle},
+               {"parent", parent ? json(*parent) : json(nullptr)}};
+  if (localTransform) args["local_transform"] = rigidPoseArgs(*localTransform);
+  m_client->sendCommand("set_parent", args);
+}
+
+void Viz::setObjectMetadata(Handle handle, const std::optional<std::string> &name,
+                            const json &tags) {
+  json args = {{"scene_id", m_sceneId}, {"handle", handle}, {"tags", tags}};
+  if (name) args["name"] = *name;
+  m_client->sendCommand("set_object_metadata", args);
+}
+
+void Viz::setGeometryScale(Handle handle, Vec3 scale) {
+  m_client->sendCommand("set_geometry_scale", {{"scene_id", m_sceneId},
+                        {"handle", handle}, {"geometry_scale", scale}});
+}
+
+void Viz::setTransform(Handle handle, const RigidPose &pose) {
+  m_client->sendCommand("set_transform", {{"scene_id", m_sceneId},
+                        {"handle", handle}, {"pose", rigidPoseArgs(pose)}});
+}
+
 void Viz::setTransform(Handle handle, Vec3 pos, Quat quat) {
   json pose = {{"pos", toList(pos)}, {"quat", normalizeQuat(quat)}};
-  auto it = m_chunkGroups.find(handle);
-  if (it != m_chunkGroups.end()) {
-    for (const auto &chunk_handle : it->second) {
-      try {
-        m_client->sendCommand(
-            "set_transform",
-            {{"handle", chunk_handle}, {"pose", pose}, {"scene_id", m_sceneId}});
-      } catch (const std::runtime_error &) {
-      }
-    }
-    return;
-  }
   m_client->sendCommand(
       "set_transform",
       {{"handle", handle}, {"pose", pose}, {"scene_id", m_sceneId}});
@@ -1130,26 +1027,16 @@ void Viz::setObjectTransforms(const std::vector<TransformItem> &items) {
         item.pose.scale[2] != 1.0f) {
       pose["scale"] = toList(item.pose.scale);
     }
-    auto group_it = m_chunkGroups.find(item.handle);
-    if (group_it != m_chunkGroups.end()) {
-      for (const auto &chunk_handle : group_it->second) {
-        payload.push_back({{"handle", chunk_handle}, {"pose", pose}});
-      }
-    } else {
-      payload.push_back({{"handle", item.handle}, {"pose", pose}});
-    }
+    payload.push_back({{"handle", item.handle}, {"pose", pose}});
   }
   if (payload.empty())
     return;
-  m_client->sendCommand("set_object_transforms", {{"items", payload}});
+  m_client->sendCommand("set_object_transforms", {{"scene_id", m_sceneId}, {"items", payload}});
 }
 
-Pose Viz::getTransform(Handle handle) {
-  Handle target = resolveGroupTarget(handle);
-  if (target.empty()) {
-    throw std::runtime_error("Object not found: " + handle);
-  }
-  json result = m_client->sendCommand("get_transform", {{"handle", target}});
+Pose Viz::getTransform(Handle handle, TransformSpace space) {
+  json result = m_client->sendCommand("get_transform", {{"handle", handle},
+                        {"scene_id", m_sceneId}, {"space", transformSpace(space)}});
   Pose pose;
   if (result.contains("pose")) {
     auto p = result["pose"];
@@ -1169,12 +1056,14 @@ Pose Viz::getTransform(Handle handle) {
   return pose;
 }
 
+std::array<double, 16> Viz::getTransformMatrix(Handle handle, TransformSpace space) {
+  auto result = m_client->sendCommand("get_transform", {{"handle", handle},
+      {"scene_id", m_sceneId}, {"space", transformSpace(space)}, {"matrix", true}});
+  return result.at("matrix").get<std::array<double, 16>>();
+}
+
 std::optional<Color> Viz::getColor(Handle handle) {
-  Handle target = resolveGroupTarget(handle);
-  if (target.empty()) {
-    throw std::runtime_error("Object not found: " + handle);
-  }
-  json result = m_client->sendCommand("get_color", {{"handle", target}});
+  json result = m_client->sendCommand("get_color", {{"handle", handle}});
   if (result.contains("has_vertex_colors") && result["has_vertex_colors"].get<bool>()) {
     return std::nullopt;
   }
@@ -1190,11 +1079,7 @@ std::optional<Color> Viz::getColor(Handle handle) {
 }
 
 float Viz::getAlpha(Handle handle) {
-  Handle target = resolveGroupTarget(handle);
-  if (target.empty()) {
-    throw std::runtime_error("Object not found: " + handle);
-  }
-  json result = m_client->sendCommand("get_alpha", {{"handle", target}});
+  json result = m_client->sendCommand("get_alpha", {{"handle", handle}});
   if (result.contains("alpha")) {
     return result["alpha"].get<float>();
   }
@@ -1207,26 +1092,6 @@ float Viz::getAlpha(Handle handle) {
 
 void Viz::removeObject(Handle handle) {
   m_overlayHandles.erase(handle);
-  auto group_it = m_chunkGroups.find(handle);
-  if (group_it != m_chunkGroups.end()) {
-    for (const auto &chunk_handle : group_it->second) {
-      try {
-        m_client->sendCommand(
-            "remove_object",
-            {{"handle", chunk_handle}, {"scene_id", m_sceneId}});
-      } catch (const std::runtime_error &) {
-      }
-    }
-    for (const auto &chunk_handle : group_it->second) {
-      m_chunkParents.erase(chunk_handle);
-      m_chunkOffsets.erase(chunk_handle);
-    }
-    m_chunkGroups.erase(group_it);
-    return;
-  }
-  if (m_chunkParents.find(handle) != m_chunkParents.end()) {
-    unregisterChunkHandle(handle);
-  }
   // Try scene-scoped removal first (for 3D objects)
   try {
     m_client->sendCommand("remove_object",
@@ -1261,21 +1126,9 @@ void Viz::removeObjects(const std::vector<Handle> &handles) {
   std::vector<Handle> overlay_handles;
   overlay_handles.reserve(handles.size());
   for (const auto &handle : handles) {
-    auto group_it = m_chunkGroups.find(handle);
-    if (group_it != m_chunkGroups.end()) {
-      expanded_scene.insert(expanded_scene.end(), group_it->second.begin(),
-                            group_it->second.end());
-      for (const auto &chunk_handle : group_it->second) {
-        m_chunkParents.erase(chunk_handle);
-        m_chunkOffsets.erase(chunk_handle);
-      }
-      m_chunkGroups.erase(group_it);
-    } else if (m_overlayHandles.find(handle) != m_overlayHandles.end()) {
+    if (m_overlayHandles.find(handle) != m_overlayHandles.end()) {
       overlay_handles.push_back(handle);
       m_overlayHandles.erase(handle);
-    } else if (m_chunkParents.find(handle) != m_chunkParents.end()) {
-      unregisterChunkHandle(handle);
-      expanded_scene.push_back(handle);
     } else {
       expanded_scene.push_back(handle);
     }
@@ -1299,50 +1152,14 @@ void Viz::clear() {
   m_client->sendCommand("clear_scene",
                         {{"scene_id", m_sceneId}, {"view_id", m_viewId}});
   m_overlayHandles.clear();
-  m_chunkGroups.clear();
-  m_chunkParents.clear();
-  m_chunkOffsets.clear();
-  m_chunkGroupCounter = 0;
 }
 
 Handle Viz::cloneObject(Handle handle) {
-  auto group_it = m_chunkGroups.find(handle);
-  if (group_it != m_chunkGroups.end()) {
-    m_chunkGroupCounter += 1;
-    Handle group_handle =
-        "chunk_group_" + std::to_string(std::random_device{}()) + "_" + std::to_string(std::random_device{}()) + "_" + std::to_string(m_chunkGroupCounter);
-    std::vector<Handle> new_handles;
-    for (const auto &chunk_handle : group_it->second) {
-      json result =
-          m_client->sendCommand("clone_object",
-                                {{"handle", chunk_handle}, {"group_id", group_handle}});
-      Handle new_handle = result.value("handle", "");
-      if (!new_handle.empty()) {
-        new_handles.push_back(new_handle);
-      }
-    }
-    if (new_handles.empty()) {
-      return "";
-    }
-    registerChunkGroup(group_handle, new_handles);
-    return group_handle;
-  }
   json result = m_client->sendCommand("clone_object", {{"handle", handle}});
   return result.value("handle", "");
 }
 
 bool Viz::isObjectAlive(Handle handle) {
-  auto group_it = m_chunkGroups.find(handle);
-  if (group_it != m_chunkGroups.end()) {
-    for (const auto &chunk_handle : group_it->second) {
-      json result =
-          m_client->sendCommand("is_object_alive", {{"handle", chunk_handle}});
-      if (!result.value("alive", false)) {
-        return false;
-      }
-    }
-    return true;
-  }
   json result = m_client->sendCommand("is_object_alive", {{"handle", handle}});
   return result.value("alive", false);
 }
@@ -1352,20 +1169,6 @@ void Viz::setColor(Handle handle, Color rgba) {
   // Ensure RGBA format
   if (color_arr.size() == 3) {
     color_arr.push_back(1.0f);
-  }
-  auto it = m_chunkGroups.find(handle);
-  if (it != m_chunkGroups.end()) {
-    for (const auto &chunk_handle : it->second) {
-      try {
-        m_client->sendCommand(
-            "set_color",
-            {{"handle", chunk_handle},
-             {"rgba", color_arr},
-             {"scene_id", m_sceneId}});
-      } catch (const std::runtime_error &) {
-      }
-    }
-    return;
   }
   m_client->sendCommand(
       "set_color",
@@ -1377,40 +1180,12 @@ void Viz::setAlpha(Handle handle, float alpha) {
     throw std::runtime_error("alpha must be in [0.0, 1.0]");
   }
 
-  auto it = m_chunkGroups.find(handle);
-  if (it != m_chunkGroups.end()) {
-    for (const auto &chunk_handle : it->second) {
-      try {
-        m_client->sendCommand(
-            "set_alpha",
-            {{"handle", chunk_handle},
-             {"alpha", alpha},
-             {"scene_id", m_sceneId}});
-      } catch (const std::runtime_error &) {
-      }
-    }
-    return;
-  }
   m_client->sendCommand(
       "set_alpha",
       {{"handle", handle}, {"alpha", alpha}, {"scene_id", m_sceneId}});
 }
 
 void Viz::setVisible(Handle handle, bool visible) {
-  auto it = m_chunkGroups.find(handle);
-  if (it != m_chunkGroups.end()) {
-    for (const auto &chunk_handle : it->second) {
-      try {
-        m_client->sendCommand(
-            "set_visible",
-            {{"handle", chunk_handle},
-             {"visible", visible},
-             {"scene_id", m_sceneId}});
-      } catch (const std::runtime_error &) {
-      }
-    }
-    return;
-  }
   m_client->sendCommand(
       "set_visible",
       {{"handle", handle}, {"visible", visible}, {"scene_id", m_sceneId}});
@@ -1579,13 +1354,9 @@ json Viz::getPickConfig() {
 
 void Viz::attachGizmo(Handle handle, std::optional<int> mask, float size,
                       std::optional<std::string> scale_mode) {
-  Handle target = resolveGroupTarget(handle);
-  if (target.empty()) {
-    throw std::runtime_error("Object not found: " + handle);
-  }
   json args = {
       {"view_id", m_viewId},
-      {"handle", target},
+      {"handle", handle},
       {"size", size},
   };
   if (mask.has_value()) {
@@ -1621,51 +1392,20 @@ void Viz::detachGizmo() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void Viz::onEvent(const std::string &name, EventHandler handler) {
-  if (shouldMapEvent(name)) {
-    m_client->onEvent(name, [this, handler](const json &data) {
-      auto mapped = mapEventData(data);
-      handler(mapped ? mapped.value() : data);
-    });
-    return;
-  }
-  m_client->onEvent(name, handler);
+  m_client->onEvent(name, std::move(handler));
 }
 
 void Viz::pollEvents() { m_client->pollEvents(); }
 
 std::optional<json> Viz::waitForEvent(const std::string &event_name,
-                                        std::chrono::seconds timeout) {
-  if (shouldMapEvent(event_name)) {
-    auto event = m_client->waitForEvent(event_name, timeout);
-    if (event.has_value()) {
-      auto mapped = mapEventData(event.value());
-      if (mapped.has_value()) {
-        return mapped;
-      }
-    }
-    return event;
-  }
+                                    std::chrono::seconds timeout) {
   return m_client->waitForEvent(event_name, timeout);
 }
 
 std::optional<json> Viz::waitForEvent(const std::string &event_name,
-                                        std::function<bool(const json &)> filter,
-                                        std::chrono::seconds timeout) {
-  if (shouldMapEvent(event_name)) {
-    auto wrapped_filter = [this, filter](const json &data) {
-      auto mapped = mapEventData(data);
-      return filter(mapped ? mapped.value() : data);
-    };
-    auto event = m_client->waitForEvent(event_name, wrapped_filter, timeout);
-    if (event.has_value()) {
-      auto mapped = mapEventData(event.value());
-      if (mapped.has_value()) {
-        return mapped;
-      }
-    }
-    return event;
-  }
-  return m_client->waitForEvent(event_name, filter, timeout);
+                                    std::function<bool(const json &)> filter,
+                                    std::chrono::seconds timeout) {
+  return m_client->waitForEvent(event_name, std::move(filter), timeout);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1674,7 +1414,7 @@ std::optional<json> Viz::waitForEvent(const std::string &event_name,
 
 Handle Viz::addText3D(const std::string &text, Vec3 pos, int font_size,
                        Color color,
-                       const std::optional<std::string> &background_color) {
+                       const std::optional<std::string> &background_color, const SceneNodeOptions &node) {
   json args = {{"scene_id", m_sceneId},
                {"text", text},
                {"pos", toList(pos)},
@@ -1685,6 +1425,8 @@ Handle Viz::addText3D(const std::string &text, Vec3 pos, int font_size,
     args["background_color"] = *background_color;
   }
 
+  if (node.pose) args.erase("pos");
+  applyNodeOptions(args, node);
   json result = m_client->sendCommand("add_text_3d", args);
   return result.value("handle", "");
 }

@@ -24,6 +24,14 @@
 
 namespace frameviz {
 
+struct SceneNodeOptions {
+  std::optional<Handle> parent;
+  std::optional<std::string> name;
+  json tags = json::object();
+  std::optional<RigidPose> pose;
+  std::optional<Vec3> geometryScale;
+};
+
 /**
  * @brief High-level FrameViz visualization context.
  *
@@ -112,35 +120,42 @@ public:
   Handle addBox(Vec3 size = {1.0f, 1.0f, 1.0f},
                 Vec3 pos = {0.0f, 0.0f, 0.0f},
                 Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
-                Color color = {1.0f, 1.0f, 1.0f});
+                Color color = {1.0f, 1.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   Handle addSphere(float radius = 0.5f, Vec3 pos = {0.0f, 0.0f, 0.0f},
                    Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
-                   Color color = {1.0f, 1.0f, 1.0f});
+                   Color color = {1.0f, 1.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   Handle addCylinder(float radius = 0.5f, float height = 1.0f,
                      Vec3 pos = {0.0f, 0.0f, 0.0f},
                      Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
-                     Color color = {1.0f, 1.0f, 1.0f});
+                     Color color = {1.0f, 1.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   Handle addCone(float radius = 0.5f, float height = 1.0f,
                  Vec3 pos = {0.0f, 0.0f, 0.0f},
                  Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
-                 Color color = {1.0f, 1.0f, 1.0f});
+                 Color color = {1.0f, 1.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   Handle addAxes(float length = 1.0f, float radius = 0.02f,
                  Vec3 pos = {0.0f, 0.0f, 0.0f},
-                 Quat quat = {0.0f, 0.0f, 0.0f, 1.0f});
+                 Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   Handle addArrow(Vec3 start = {0.0f, 0.0f, 0.0f},
                   Vec3 end = {0.0f, 0.0f, 1.0f},
                   float radius = 0.05f,
-                  Color color = {1.0f, 1.0f, 1.0f});
+                  Color color = {1.0f, 1.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   Handle addPlane(float width = 1.0f, float height = 1.0f,
                   Vec3 pos = {0.0f, 0.0f, 0.0f},
                   Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
-                  Color color = {0.5f, 0.5f, 0.5f});
+                  Color color = {0.5f, 0.5f, 0.5f},
+                  const SceneNodeOptions &node = {});
 
   // ─────────────────────────────────────────────────────────────────────────
   // Points / Lines / Mesh
@@ -154,7 +169,8 @@ public:
    * @param size Point size (pixels)
    */
   Handle addPoints(const std::vector<float> &positions,
-                   Color color = {1.0f, 1.0f, 1.0f}, float size = 1.0f);
+                   Color color = {1.0f, 1.0f, 1.0f}, float size = 1.0f,
+                  const SceneNodeOptions &node = {});
 
   /**
    * @brief Add a point cloud with per-point colors.
@@ -164,11 +180,13 @@ public:
    * @param size Point size (pixels)
    */
   Handle addPoints(const std::vector<float> &positions,
-                   const std::vector<Color> &colors, float size = 1.0f);
+                   const std::vector<Color> &colors, float size = 1.0f,
+                  const SceneNodeOptions &node = {});
 
   Handle addLines(const std::vector<float> &positions,
                   const std::vector<uint32_t> &indices = {}, float width = 1.0f,
-                  Color color = {1.0f, 1.0f, 1.0f});
+                  Color color = {1.0f, 1.0f, 1.0f},
+                  const SceneNodeOptions &node = {});
 
   /**
    * @brief Add a triangular or polygon mesh to the scene.
@@ -199,12 +217,14 @@ public:
                  const std::vector<Color> &face_colors = {},
                  std::optional<float> alpha = std::nullopt,
                  bool wireframe = false,
-                 bool smooth_shading = true);
+                 bool smooth_shading = true,
+                  const SceneNodeOptions &node = {});
 
   Handle loadMesh(const std::string &url, Vec3 pos = {0.0f, 0.0f, 0.0f},
                   Quat quat = {0.0f, 0.0f, 0.0f, 1.0f},
                   Vec3 scale = {1.0f, 1.0f, 1.0f},
-                  std::optional<Color> color = std::nullopt);
+                  std::optional<Color> color = std::nullopt,
+                  const SceneNodeOptions &node = {});
 
   // ─────────────────────────────────────────────────────────────────────────
   // Instancing
@@ -216,7 +236,8 @@ public:
                       const std::vector<Color> &colors = {},
                       std::optional<Color> uniform_color = std::nullopt,
                       std::optional<float> alpha = std::nullopt,
-                      const std::optional<Vec3> &size = std::nullopt);
+                      const std::optional<Vec3> &size = std::nullopt,
+                  const SceneNodeOptions &node = {});
 
   void updateInstances(Handle handle, const std::vector<float> &positions = {},
                        const std::vector<float> &quats = {},
@@ -229,11 +250,21 @@ public:
   // Transforms
   // ─────────────────────────────────────────────────────────────────────────
 
+  Handle addNode(const SceneNodeOptions &node = {});
+  void setParent(Handle handle, const std::optional<Handle> &parent,
+                 const std::optional<RigidPose> &localTransform = std::nullopt);
+  void setObjectMetadata(Handle handle, const std::optional<std::string> &name,
+                         const json &tags);
+  void setGeometryScale(Handle handle, Vec3 scale);
   void setTransform(Handle handle, Vec3 pos, Quat quat);
+  void setTransform(Handle handle, const RigidPose &pose);
 
   void setObjectTransforms(const std::vector<TransformItem> &items);
 
-  Pose getTransform(Handle handle);
+  Pose getTransform(Handle handle, TransformSpace space = TransformSpace::Local);
+  // Flat column-major rigid transform.
+  std::array<double, 16> getTransformMatrix(
+      Handle handle, TransformSpace space = TransformSpace::Local);
   /**
    * @brief Get the uniform RGBA color of an object.
    *
@@ -337,7 +368,8 @@ public:
 
   Handle addText3D(const std::string &text, Vec3 pos, int font_size = 14,
                    Color color = {1.0f, 1.0f, 1.0f},
-                   const std::optional<std::string> &background_color = std::nullopt);
+                   const std::optional<std::string> &background_color = std::nullopt,
+                  const SceneNodeOptions &node = {});
 
   Handle addText2D(const std::string &text, int x = 10, int y = 10,
                    int font_size = 14, Color color = {1.0f, 1.0f, 1.0f});
@@ -379,26 +411,14 @@ private:
 
   BufferRef uploadBuffer(const void *data, size_t size_bytes,
                          const std::string &dtype,
-                         const std::vector<int> &shape);
+                         const std::vector<int> &shape,
+                         std::vector<std::string> *pending = nullptr);
 
   Handle addPrimitive(const std::string &ptype, const json &params, Vec3 pos,
-                      Quat quat, Color color);
-  Handle addPointsDirect(const std::vector<float> &positions,
-                         const std::vector<Color> &colors, float size,
-                         std::optional<Color> uniform_color,
-                         std::optional<std::string> group_id = std::nullopt);
-  Handle addPointsChunked(const std::vector<float> &positions,
-                          const std::vector<Color> &colors, float size,
-                          size_t chunk_size, std::optional<Color> uniform_color);
-
-  void registerChunkGroup(const Handle &group_handle,
-                          const std::vector<Handle> &chunk_handles);
-  void unregisterChunkHandle(const Handle &chunk_handle);
-  Handle resolveGroupTarget(const Handle &handle) const;
-  Handle mapToGroupHandle(const Handle &handle) const;
-  bool shouldMapEvent(const std::string &event_name) const;
-  std::optional<json> mapEventData(const json &data) const;
-  bool hasChunkMapping() const;
+                      Quat quat, Color color, const SceneNodeOptions &node);
+  Handle addPointCloud(const std::vector<float> &positions,
+                       const std::vector<Color> &colors, float size,
+                       std::optional<Color> uniformColor, const SceneNodeOptions &node);
 
 private:
   std::unique_ptr<FrameVizClient> m_client;
@@ -408,10 +428,6 @@ private:
   bool m_openedViaTauri;
   bool m_ownsView = true;
   bool m_ownsScene = false;
-  int m_chunkGroupCounter = 0;
-  std::unordered_map<Handle, std::vector<Handle>> m_chunkGroups;
-  std::unordered_map<Handle, Handle> m_chunkParents;
-  std::unordered_map<Handle, size_t> m_chunkOffsets;
   std::unordered_set<Handle> m_overlayHandles;
   bool m_warnedCameraPoseFallback = false;
   bool m_warnedPickConfigFallback = false;
