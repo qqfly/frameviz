@@ -510,6 +510,7 @@
     "tests/acceptance/test_python_scene_tree.py": "1742e9f5ab8384081839f1abb21fecd350a21ca3e469695eafe6a15519097438",
     "tests/acceptance/test_readme_media.py": "36578d9b9e81e7db6447a34a9c2be800d2840d43247bb7fe63df8712f48991fa",
     "tests/acceptance/test_scene_tree_browser.py": "2a004518f1bf3e04a6607533598f4f620d90967eab041a2d4a2cf993825efbb6",
+    "tests/acceptance/test_scene_tree_performance.py": "a71eb83e26770d2450e2537f8141d08a7a982bbc51eb35875c7fd5c4e9a936fb",
     "tests/acceptance/test_signed_build.py": "b38c67109200b65fe91629747e5cc21c7395d2dbf5c467eb394b71f6f8ec34f6",
     "tests/acceptance/test_standalone.py": "febaafc24502d6eaa85f57bf903d59f4bf994f3a06b475f4b3d5e9b4cd35482f",
     "tests/acceptance/test_standalone_viewer.py": "114746b0e65b7e5f1ecbe2873e381a08168194bd352c9fc5cfcbaa9e3e78d5ed",
