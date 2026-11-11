@@ -117,6 +117,11 @@ export class WidgetPanel {
 
     if (widget.minimum !== undefined) number.min = String(widget.minimum);
     if (widget.maximum !== undefined) number.max = String(widget.maximum);
+    let frame: number | undefined;
+    const cancelInput = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+    };
     let committedValue = Number(widget.value);
     let dragging = false;
     if (widget.minimum !== undefined && widget.maximum !== undefined) {
@@ -128,14 +133,22 @@ export class WidgetPanel {
       range.addEventListener('pointerdown', () => { dragging = true; });
       range.addEventListener('pointercancel', () => {
         dragging = false;
+        cancelInput();
         number.value = range.value = String(committedValue);
       });
       range.addEventListener('lostpointercapture', () => { dragging = false; });
       range.addEventListener('input', () => {
         number.value = range.value;
+        if (widget.update_mode === 'continuous' && dragging && frame === undefined) {
+          frame = requestAnimationFrame(() => {
+            frame = undefined;
+            this.submit(widget.id, range.valueAsNumber, 'input');
+          });
+        }
       });
       range.addEventListener('change', () => {
         dragging = false;
+        cancelInput();
         this.submit(widget.id, range.valueAsNumber, 'commit');
       });
     }
@@ -161,6 +174,7 @@ export class WidgetPanel {
         if (!dragging) number.value = String(value);
         if (!dragging) range.value = String(value);
       },
+      dispose: cancelInput,
     };
   }
 

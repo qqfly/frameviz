@@ -103,3 +103,43 @@ def test_real_button_resets_object_and_widget_in_two_views(widget_pages):
         assert world(page, box) == [0, 0, 0]
     with pytest.raises(Empty):
         calls.get(timeout=.2)
+
+
+@pytest.mark.parametrize("mode", ["continuous", "commit"])
+def test_slider_drag_delivers_final_value_and_obeys_update_mode(widget_pages, mode):
+    from queue import Empty, Queue
+    from playwright.sync_api import expect
+
+    viz, _, (first, second) = widget_pages
+    widget = viz.add_widget("number", "Angle", 0, minimum=0, maximum=100,
+                            step=1, update_mode=mode)
+    calls = Queue()
+    viz.on_widget_change(widget, calls.put)
+    slider = first.get_by_role("slider", name="Angle slider")
+    expect(slider).to_be_visible()
+    box = slider.bounding_box()
+    y = box["y"] + box["height"] / 2
+    first.mouse.move(box["x"] + 8, y)
+    first.mouse.down()
+    first.mouse.move(box["x"] + box["width"] * .6, y, steps=12)
+    if mode == "continuous":
+        during = calls.get(timeout=2)
+        assert during["phase"] == "input"
+        assert during["source"] == "user"
+        assert during["value"] > 0
+    else:
+        with pytest.raises(Empty):
+            calls.get(timeout=.25)
+        assert viz.get_widget_value(widget) == 0
+    first.mouse.move(box["x"] + box["width"] * .78, y, steps=4)
+    final = float(slider.input_value())
+    first.mouse.up()
+    received = []
+    while not received or received[-1]["phase"] != "commit":
+        received.append(calls.get(timeout=2))
+    assert received[-1]["value"] == final and final > 65
+    if mode == "commit":
+        assert len(received) == 1
+    expect(second.get_by_role("spinbutton", name="Angle")).to_have_value(str(int(final)))
+    with pytest.raises(Empty):
+        calls.get(timeout=.15)
