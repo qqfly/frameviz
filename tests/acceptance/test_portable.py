@@ -75,7 +75,10 @@ def test_export_excludes_private_and_build_sentinels(tmp_path,monkeypatch):
 def test_setup_bundle_has_verifiable_installer_and_preserves_existing_prefix(tmp_path):
     import tarfile
     inputs=tmp_path/'inputs';inputs.mkdir();(inputs/'frameviz-cpp-sdk-macos-arm64.tar.gz').write_bytes(b'synthetic artifact')
-    out=tmp_path/'out';subprocess.run(['bash',str(ROOT/'scripts/release/build-setup-bundle.sh'),'v0.4.0',str(inputs),str(out)],check=True,capture_output=True)
+    version = json.loads((ROOT / 'version.json').read_text())['protocol_version']
+    out = tmp_path / 'out'
+    subprocess.run(['bash', str(ROOT / 'scripts/release/build-setup-bundle.sh'),
+                    f'v{version}', str(inputs), str(out)], check=True, capture_output=True)
     unpacked=tmp_path/'unpacked';unpacked.mkdir()
     with tarfile.open(next(out.glob('*.tar.gz'))) as archive: archive.extractall(unpacked,filter='data')
     target=tmp_path/'installed'

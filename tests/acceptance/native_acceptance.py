@@ -20,7 +20,7 @@ def main():
         app=OUT/'native/FrameViz Standalone Validation.app';exe=app/'Contents/MacOS/frameviz';exe.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(ROOT/'packages/frameviz-host-tauri/src-tauri/target/debug/frameviz',exe)
         identity='dev.qqfly.frameviz.validation'
-        (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':identity,'CFBundleName':'FrameViz Standalone Validation','CFBundleExecutable':'frameviz','CFBundlePackageType':'APPL','CFBundleVersion':'0.4.0'}))
+        (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':identity,'CFBundleName':'FrameViz Standalone Validation','CFBundleExecutable':'frameviz','CFBundlePackageType':'APPL','CFBundleVersion':'0.5.0'}))
     with tempfile.TemporaryDirectory(prefix='frameviz-native-') as temp:
         tmp=pathlib.Path(temp);port=free_port();cp=free_port()
         env=dict(os.environ,HOME=str(tmp),CFFIXED_USER_HOME=str(tmp),FRAMEVIZ_HOME=str(tmp/'state'),PATH='/usr/bin:/bin:/usr/sbin:/sbin',FRAMEVIZ_DISCOVERY_PATH=str(tmp/'host.json'),FRAMEVIZ_LOG_DIR=str(tmp/'logs'),FRAMEVIZ_TAURI_CONTROL_PORT=str(cp),FRAMEVIZ_HTTP_SERVER='0')

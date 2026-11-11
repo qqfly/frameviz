@@ -21,8 +21,8 @@ namespace frameviz
 {
 
 // Protocol version
-constexpr const char *PROTOCOL_VERSION = "0.4.0";
-constexpr const char *MIN_COMPATIBLE_VERSION = "0.4.0";
+constexpr const char *PROTOCOL_VERSION = "0.5.0";
+constexpr const char *MIN_COMPATIBLE_VERSION = "0.5.0";
 constexpr int DEFAULT_WS_PORT = 9527;
 
 // Handle type (string-based, consistent with Python SDK)

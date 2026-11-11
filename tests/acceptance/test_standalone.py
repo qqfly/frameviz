@@ -99,8 +99,8 @@ def test_repo_detection_requires_standalone_identity(tmp_path):
  (tmp_path/'pnpm-workspace.yaml').write_text('packages: []')
  (tmp_path/'packages/frameviz-host-tauri').mkdir(parents=True)
  assert not _looks_like_repo_root(tmp_path)
- for manifest in [ {'protocol_version':'0.4.0'}, {'project_id':'other.frameviz','protocol_version':'0.4.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.3.4'} ]:
+ for manifest in [ {'protocol_version':'0.5.0'}, {'project_id':'other.frameviz','protocol_version':'0.5.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.3.4'} ]:
   (tmp_path/'version.json').write_text(json.dumps(manifest))
   assert not _looks_like_repo_root(tmp_path)
- (tmp_path/'version.json').write_text(json.dumps({'project_id':'qqfly.frameviz','protocol_version':'0.4.0'}))
+ (tmp_path/'version.json').write_text(json.dumps({'project_id':'qqfly.frameviz','protocol_version':'0.5.0'}))
  assert _looks_like_repo_root(tmp_path)

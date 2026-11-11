@@ -7,7 +7,7 @@ import pytest
 from websockets.sync.server import serve
 
 
-@pytest.mark.parametrize('version,expected',[('0.4.1',None),('0.4.99',None),('0.3.8','runtime'),('0.5.0','SDK'),('0.4.01','malformed')])
+@pytest.mark.parametrize('version,expected',[('0.5.1',None),('0.5.99',None),('0.4.8','runtime'),('0.6.0','SDK'),('0.5.01','malformed')])
 def test_cpp_auth_patch_compatibility(version,expected,tmp_path):
     binary=os.environ.get('FRAMEVIZ_CPP_VERSION_CONNECT')
     if not binary:pytest.skip('Installed SDK version_connect executable required')

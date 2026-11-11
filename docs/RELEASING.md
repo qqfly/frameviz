@@ -1,6 +1,6 @@
 # Releasing
 
-Version 0.4.0 is unreleased. Local candidate builds and manual CI produce reviewable artifacts; they do not push tags, publish packages, upload releases, or rewrite history.
+Version 0.5.0 is unreleased. Local candidate builds and manual CI produce reviewable artifacts; they do not push tags, publish packages, upload releases, or rewrite history.
 
 1. Run source/privacy, license, version, contract, and installed-consumer checks against the exact source manifest.
 2. Build source, wheel, JS SDK, and C++ archives into a new output directory. Include LICENSE, NOTICE, dependency license files, source identity, and artifact hashes.

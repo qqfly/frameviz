@@ -1,6 +1,6 @@
 # FrameViz external application example
 
-This example uses a Vue UI, a Python or C++ business backend, and FrameViz protocol 0.4.0. It demonstrates a synthetic six-axis fixture. See the root installation guide for source builds and local SDK packages.
+This example uses a Vue UI, a Python or C++ business backend, and FrameViz protocol 0.5.0. It demonstrates a synthetic six-axis fixture. See the root installation guide for source builds and local SDK packages.
 
 Set `FRAMEVIZ_BUSINESS_TOKEN` to a random token of at least 32 characters before starting the backend. Supply it to the UI in the URL fragment as `business_token=<value>`. The Host Viewer credential is separate: `#token=<Host session token>&business_token=<business token>`. Do not write either value into source, build output, or persistent logs.
 

@@ -66,7 +66,7 @@ def test_embedded_viewer_and_authenticated_url_without_source_or_display(standal
     info, _, log, discovery = standalone
     assert info['host'] == '127.0.0.1'
     assert info['http_port'] != info['port']
-    assert info['version'] == '0.4.0'
+    assert info['version'] == '0.5.0'
     assert not (discovery.stat().st_mode & 0o077)
     with urlopen(info['viewer_url'], timeout=3) as response:
         html = response.read().decode()

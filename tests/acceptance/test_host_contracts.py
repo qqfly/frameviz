@@ -18,7 +18,7 @@ class Session:
    if view:
     assert json.loads(ws.recv(timeout=2))['type']=='init';assert json.loads(ws.recv(timeout=2))['type']=='scene_snapshot'
   return ws
- def request(self,ws,name,args,version='0.4.0'):
+ def request(self,ws,name,args,version='0.5.0'):
   ws.send(json.dumps({'type':'cmd','protocol_version':version,'id':'review','name':name,'args':args}))
   while True:
    msg=json.loads(ws.recv(timeout=3))

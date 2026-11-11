@@ -1,6 +1,6 @@
 # macOS Apple Silicon preview
 
-The current native preview targets Apple Silicon (M-series) Macs. Its executable and bundle declare macOS 11.0 as the minimum deployment target; runtime acceptance has been executed on the maintainer's macOS 27.2 machine. That declaration is not independent testing on every older macOS version. The other Mac remains a separate acceptance environment.
+The published 0.4 private preview targets Apple Silicon (M-series) Macs. Its executable and bundle declare macOS 11.0 as the minimum deployment target; runtime acceptance has been executed on the maintainer's macOS 27.2 machine. That declaration is not independent testing on every older macOS version. The other Mac remains a separate acceptance environment.
 
 ## Install and start
 
@@ -9,9 +9,11 @@ The current native preview targets Apple Silicon (M-series) Macs. Its executable
 3. Open FrameViz once to complete macOS's first-open approval. The welcome window appears on the first manual launch. Closing it leaves the App waiting in the background; later manual launches stay in the background. Help → 使用指南 reopens the guide. The standalone App embeds its viewer and does not require Node, Rust, Python or the source checkout just to run.
 4. Python discovers a verified FrameViz bundle in `~/Applications/FrameViz.app` or `/Applications/FrameViz.app`, starts it silently if needed, and opens a scene window. An already running Host is reused. Use the App menu to quit; scenes belong to the current Host session and are not persisted across Host restart.
 
-The current private preview uses an ad-hoc local signature and has not been submitted for Apple notarization. Downloaded copies can be blocked by Gatekeeper. After checking the source and checksum, if you choose to allow this preview, first attempt to open the App, then use System Settings → Privacy & Security → Open Anyway for this App. Managed Macs may not permit this exception. See [Apple's instructions](https://support.apple.com/en-us/102445).
+The published 0.4 private preview uses an ad-hoc local signature and has not been submitted for Apple notarization. Downloaded copies can be blocked by Gatekeeper. After checking the source and checksum, if you choose to allow this preview, first attempt to open the App, then use System Settings → Privacy & Security → Open Anyway for this App. Managed Macs may not permit this exception. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
 ## Python
+
+The commands below apply to the 0.4 private preview. The 0.5 development tree requires a matching 0.5 App or standalone Host and a 0.5 SDK built from the same candidate.
 
 Python development requires Python 3.9 or newer and the two third-party dependencies declared by the wheel. Installation can require internet access; the SDK folder is not a complete offline Python distribution.
 

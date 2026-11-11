@@ -16,7 +16,7 @@ def bundle(path, *, identity='dev.qqfly.frameviz.viewer', executable='frameviz')
         'CFBundleIdentifier': identity,
         'CFBundlePackageType': 'APPL',
         'CFBundleExecutable': executable,
-        'CFBundleShortVersionString': '0.4.0',
+        'CFBundleShortVersionString': '0.5.0',
     }))
     binary = contents / 'MacOS' / 'frameviz'
     binary.write_text('#!/bin/sh\nexit 0\n')

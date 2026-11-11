@@ -1,6 +1,6 @@
 # FrameViz external application example
 
-This example uses a Vue UI, a Python or C++ business backend, and FrameViz protocol 0.4.0. It demonstrates a slider-controlled scene. See the root installation guide for source builds and local SDK packages.
+This example uses a Vue UI, a Python or C++ business backend, and FrameViz protocol 0.5.0. It demonstrates a slider-controlled scene. See the root installation guide for source builds and local SDK packages.
 
 ## Try the Python browser demo
 

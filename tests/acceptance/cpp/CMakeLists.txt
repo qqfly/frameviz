@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(frameviz_installed_consumer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
-find_package(frameviz 0.4.0 EXACT CONFIG REQUIRED)
+find_package(frameviz 0.5.0 EXACT CONFIG REQUIRED)
 add_executable(consumer main.cpp)
 target_link_libraries(consumer PRIVATE frameviz::frameviz-cpp)
 

@@ -4,7 +4,7 @@
 
 用 **Python 或 C++** 绘制并交互操作三维数据，显示在桌面窗口、浏览器或你的 **Vue** 应用里。FrameViz 提供对象句柄、NumPy/数组输入、实例化、相机控制、拾取事件和 Gizmo。Rust Host 在本地维护场景，Three.js Viewer 负责渲染。
 
-当前为 **0.4.0 私有预览版**。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+当前为 **0.5.0 开发候选版**。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
 ## 可以绘制什么？
 
@@ -36,7 +36,7 @@
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
+python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
 ```
 
 在 IPython 或 Python 会话中运行：
@@ -213,7 +213,7 @@ Windows 将 `.venv/bin/python` 替换为 `.venv/Scripts/python.exe`。运行隔�
 
 ## 兼容范围与限制
 
-Host、SDK、Viewer 和模板必须使用 **0.4.0 协议**，缺失或不同版本会被拒绝。请使用同一预览版配套 App/SDK；相同版本号本身不能唯一标识预览构建。
+Host、SDK、Viewer 和模板使用 **0.5.x 协议系列**。其他系列的连接会被拒绝。请使用同一预览版配套 App/SDK；相同版本号本身不能唯一标识预览构建。
 
 当前验收目标为本地单用户使用。远程多用户授权、共享内存上传、Host 重启持久恢复、生产负载上限和签名跨平台安装包，仍不属于本预览版的已验收范围。浏览器采集使用软件 WebGL，不能据此判断硬件 GPU 性能。
 

@@ -1,4 +1,4 @@
-# FrameViz API Definition v0.4.0
+# FrameViz API Definition v0.5.0
 
 后续场景树、控件和显示输出的契约见 [FrameViz 显示场景契约](SCENE_TREE.md)。每项能力的实现状态以发布版本及接口表为准。
 
@@ -16,6 +16,7 @@
   - 修正 **Overlay Lifecycle** (remove_object 支持 view_id)。
   - 规范 **Color/Unit** (JSON float 0..1)。
   - 统一 **Logging Schema**。
+- **v0.5.0**: 刚体场景树、子树同步和整云 ID。
 - **v0.4.0**: 引入 Scene-View 分离，Primitives，Base64/Binary 混合传输。
 
 ---
@@ -24,7 +25,7 @@
 **保持 v0.2.x 结构不变**。
 
 ### 1.1 基础约定 (@MUST)
-- **Protocol Version**: `"0.4.0"`
+- **Protocol Version**: `"0.5.0"`
 - **Compatibility**: 同一 `major.minor` 内的补丁版本互通；缺失、格式错误或不同主/次版本在执行命令前以 `ERR_PROTOCOL_VERSION` 拒绝，并说明应升级运行环境还是 SDK/Viewer。精确格式及发现文件规则见 [COMPATIBILITY.md](COMPATIBILITY.md)。
 - **Coordinate System**: 右手系 Z-up，单位：米。
 - **Colors**: 
@@ -42,7 +43,7 @@
 **Command (Client -> Host)**
 ```json
 {
-  "protocol_version": "0.4.0",
+  "protocol_version": "0.5.0",
   "type": "cmd",
   "id": "c_1",
   "name": "command_name",
@@ -53,7 +54,7 @@
 **Response (Host -> Client)**
 ```json
 {
-  "protocol_version": "0.4.0",
+  "protocol_version": "0.5.0",
   "type": "resp",
   "id": "c_1",
   "ok": true,
@@ -65,7 +66,7 @@
 **Error Response (ok=false)**
 ```json
 {
-  "protocol_version": "0.4.0",
+  "protocol_version": "0.5.0",
   "type": "resp",
   "id": "c_1",
   "ok": false,
@@ -88,7 +89,7 @@
 **Event (Host -> Client)**
 ```json
 {
-  "protocol_version": "0.4.0",
+  "protocol_version": "0.5.0",
   "type": "event",
   "name": "event_name",
   "data": {}

@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = "0.4.0" as const;
+export const PROTOCOL_VERSION = "0.5.0" as const;
 
 export const DEFAULT_WS_HOST = "127.0.0.1";
 export const DEFAULT_WS_PORT = 9527;

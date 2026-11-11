@@ -30,9 +30,9 @@ mod tests {
     use super::*;
     #[test]
     fn series_is_canonical_and_patch_independent() {
-        for version in ["0.4.0", "0.4.1", "0.4.999999999"] { assert!(compatible(version,"0.4.0")); }
-        for version in ["0.3.9", "0.5.0", "00.4.1", "0.4.01", "0.4.1-beta", "0.4.1000000000", "0.4", ""] {
-            assert!(!compatible(version,"0.4.0"));
+        for version in ["0.5.0", "0.5.1", "0.5.999999999"] { assert!(compatible(version,"0.5.0")); }
+        for version in ["0.4.9", "0.6.0", "00.5.1", "0.5.01", "0.5.1-beta", "0.5.1000000000", "0.5", ""] {
+            assert!(!compatible(version,"0.5.0"));
         }
     }
 }

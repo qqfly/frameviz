@@ -31,13 +31,13 @@ using json = nlohmann::json;
 using namespace std::chrono_literals;
 
 TEST(VersionTest, SameSeriesAcceptsPatchesAndRejectsMalformedValues) {
-    for (const auto* version : {"0.4.0", "0.4.1", "0.4.999999999"}) EXPECT_TRUE(isProtocolCompatible(version));
-    for (const auto* version : {"0.3.9", "0.5.0", "0.4", "00.4.1", "0.4.01", "0.4.1-beta", "0.4.9999999999"}) EXPECT_FALSE(isProtocolCompatible(version));
+    for (const auto* version : {"0.5.0", "0.5.1", "0.5.999999999"}) EXPECT_TRUE(isProtocolCompatible(version));
+    for (const auto* version : {"0.4.9", "0.6.0", "0.5", "00.5.1", "0.5.01", "0.5.1-beta", "0.5.9999999999"}) EXPECT_FALSE(isProtocolCompatible(version));
 }
 
 TEST(VersionTest, UpgradeDirectionIdentifiesTheOlderSide) {
-    EXPECT_NE(hostVersionError("0.3.9").find("Upgrade the FrameViz runtime"), std::string::npos);
-    EXPECT_NE(hostVersionError("0.5.0").find("Upgrade the C++ SDK"), std::string::npos);
+    EXPECT_NE(hostVersionError("0.4.9").find("Upgrade the FrameViz runtime"), std::string::npos);
+    EXPECT_NE(hostVersionError("0.6.0").find("Upgrade the C++ SDK"), std::string::npos);
     EXPECT_NE(hostVersionError("").find("malformed"), std::string::npos);
 }
 
@@ -283,7 +283,7 @@ TEST(DiscoveryTest, ResolveWsUrlUsesDiscoveryWhenAvailable)
         close(fd);
     }
     std::ofstream file(path);
-    file << R"({"ws_url":"ws://10.0.0.1:1234","version":"0.4.7"})";
+    file << R"({"ws_url":"ws://10.0.0.1:1234","version":"0.5.7"})";
     file.close();
 
     ScopedEnvVar discovery_path("FRAMEVIZ_DISCOVERY_PATH", path);

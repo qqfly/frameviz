@@ -4,7 +4,7 @@
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
 ```
 
 源码仓库用户可改用 `.venv/bin/python -m pip install ./packages/frameviz-py`。标准位置的已安装运行环境会被自动发现和启动；同一 `major.minor` 的不同 patch 版本兼容，跨次版本会明确提示应升级 SDK 还是运行环境。[完整安装说明](INSTALLATION.md)。

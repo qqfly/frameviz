@@ -1,6 +1,6 @@
 # FrameViz Vue
 
-Build `@frameviz/protocol`, `@frameviz/core`, and `@frameviz/vue` from the same 0.4.0 source. Use locally packed SDK tarballs until public package publication is approved.
+Build `@frameviz/protocol`, `@frameviz/core`, and `@frameviz/vue` from the same 0.5.0 source. Use locally packed SDK tarballs until public package publication is approved.
 
 ```vue
 <FrameVizViewer name="main" :auth-token="sessionToken" />

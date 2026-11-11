@@ -30,7 +30,7 @@ use crate::RegisteredViewer;
 use crate::version::{compatible, client_version_error};
 
 
-const PROTOCOL_VERSION: &str = "0.4.0";
+const PROTOCOL_VERSION: &str = "0.5.0";
 static DISPATCH: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 const BUFFER_UPLOAD_TIMEOUT_MS: u64 = 2000;

@@ -4,7 +4,7 @@
 
 Draw and interact with 3D data from **Python or C++**, in a desktop window, browser, or your **Vue** application. FrameViz provides object handles, NumPy/array input, instancing, camera control, picking events, and transform handles. A local Rust Host keeps scene state; a Three.js viewer renders it.
 
-Version **0.4.0**, private preview. Copyright **qqfly**, [MIT](LICENSE). Third-party attribution: [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+Version **0.5.0**, development candidate. Copyright **qqfly**, [MIT](LICENSE). Third-party attribution: [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
 
 ## What can I draw?
 
@@ -36,7 +36,7 @@ Install the runtime once, then install its paired Python SDK wheel in each proje
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
+python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
 ```
 
 In IPython or a Python session:
@@ -213,7 +213,7 @@ For source development, start `cargo run --manifest-path packages/frameviz-serve
 
 ## Scope and support
 
-All Host, SDK, viewer, and template components must use protocol **0.4.0**. Missing or different versions are rejected. Use App/SDK artifacts from the same preview; a version string alone does not identify a preview build.
+Host, SDK, viewer, and templates use the **0.5.x** protocol series. Versions outside this series are rejected. Use App/SDK artifacts from the same preview; a version string alone does not identify a preview build.
 
 The acceptance target is local single-user use. Remote multi-user authorization, shared-memory upload, persistence across Host restart, production load limits, and signed cross-platform installers remain outside this preview's acceptance. Software WebGL captures are not hardware GPU benchmarks.
 

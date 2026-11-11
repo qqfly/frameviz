@@ -2,7 +2,7 @@
 import json,os,pathlib,subprocess
 import pytest
 ROOT=pathlib.Path(__file__).resolve().parents[2]
-@pytest.mark.parametrize('identity',[None,{}, {'project_id':'other.frameviz','protocol_version':'0.4.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.3.4'}, {'project_id':'qqfly.frameviz','protocol_version':'0.4.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.4.7'}, {'project_id':'qqfly.frameviz','protocol_version':'0.4.01'}])
+@pytest.mark.parametrize('identity',[None,{}, {'project_id':'other.frameviz','protocol_version':'0.5.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.4.4'}, {'project_id':'qqfly.frameviz','protocol_version':'0.5.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.5.7'}, {'project_id':'qqfly.frameviz','protocol_version':'0.5.01'}])
 def test_cpp_source_identity(tmp_path,identity):
  executable=os.environ.get('FRAMEVIZ_CPP_FIND_HOST')
  if not executable:pytest.skip('Set FRAMEVIZ_CPP_FIND_HOST to the installed SDK find_host acceptance executable')
@@ -13,4 +13,4 @@ def test_cpp_source_identity(tmp_path,identity):
  env=dict(os.environ)
  for key in ['FRAMEVIZ_HOST_PATH','FRAMEVIZ_TAURI_APP']:env.pop(key,None)
  result=subprocess.run([executable],cwd=tmp_path,env=env,capture_output=True,text=True,check=True).stdout.strip()
- assert result==(str(binary) if identity and identity.get('project_id')=='qqfly.frameviz' and identity.get('protocol_version') in ('0.4.0','0.4.7') else 'NONE')
+ assert result==(str(binary) if identity and identity.get('project_id')=='qqfly.frameviz' and identity.get('protocol_version') in ('0.5.0','0.5.7') else 'NONE')

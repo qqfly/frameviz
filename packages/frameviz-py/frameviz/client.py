@@ -20,8 +20,8 @@ from .exceptions import (
 from .discovery import get_discovery_path, get_token_from_discovery, get_ws_url_from_discovery
 from .version import host_version_error
 
-PROTOCOL_VERSION = "0.4.0"
-MIN_COMPATIBLE_VERSION = "0.4.0"  # Minimum Host version SDK can work with
+PROTOCOL_VERSION = "0.5.0"
+MIN_COMPATIBLE_VERSION = "0.5.0"  # Minimum Host version SDK can work with
 DEFAULT_WS_URL = "ws://127.0.0.1:9527"
 
 # P0-2: Token authentication support

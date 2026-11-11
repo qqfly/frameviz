@@ -51,7 +51,7 @@ def test_installed_standalone_cold_start_without_runtime_path_or_token(local_use
         assert process is not None and process.pid==info['pid']
         handle=viz.add_box()
         assert viz.is_object_alive(handle)
-        assert info['viewer_url'] and info['version']=='0.4.0'
+        assert info['viewer_url'] and info['version']=='0.5.0'
         if sys.platform.startswith('linux'):
             output=capsys.readouterr().out
             assert info['viewer_url'] in output and '#token='+info['token'] in output
@@ -75,7 +75,7 @@ def test_repeated_open_reuses_the_same_owned_runtime(local_user):
 def test_live_incompatible_record_is_not_replaced(local_user):
     first=open_backend()
     try:
-        path=get_discovery_path();info=read_discovery_file();info['version']='0.5.0'
+        path=get_discovery_path();info=read_discovery_file();info['version']='0.6.0'
         record=json.dumps(info);path.write_text(record)
         with pytest.raises(ProtocolError,match='Upgrade.*SDK'):open_backend()
         assert path.read_text()==record
