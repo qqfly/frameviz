@@ -4,17 +4,20 @@ This example uses a Vue UI, a Python or C++ business backend, and FrameViz proto
 
 ## Try the Python browser demo
 
-With source dependencies and the matching Python SDK/App installed, run from the repository root:
+With Python 3, Node, pnpm and Rust installed, run:
 
 ```sh
-python -m pip install -r examples/apps/simple_slider/python/requirements.txt
-pnpm --filter simple-slider-app build
-python examples/apps/simple_slider/python/run_browser_demo.py
+git clone https://github.com/qqfly/frameviz.git
+cd frameviz
+bash examples/apps/simple_slider/run-demo.sh
 ```
 
-The launcher starts a local HTTP server and Python business backend, opens the real Vue application, and supplies fresh Host/business credentials in the URL fragment. It does not print the session URL or embed credentials in the build. Move X/Y/Z and Z-rotation sliders, then use Reset. Press Enter in the launching terminal to stop the demo's backend/server and close its scene. A manually running FrameViz App remains running.
-
-The UI build must use its default business endpoint `127.0.0.1:9621` (leave `VITE_SIMPLE_SLIDER_BACKEND_WS_URL` unset). If that port is occupied, the launcher stops instead of connecting to an unrelated backend. `--ui-dir` can select a prebuilt UI directory. Use an already running matching Host or the installed App auto-discovery described in [MACOS.md](../../../docs/MACOS.md).
+The script builds the local SDK, Viewer and standalone Host, then launches the
+Vue app using a project-local Python environment and a temporary runtime state.
+It assigns free ports and supplies both session credentials directly to the
+browser. Move the sliders, then use Reset. Press Enter in the terminal to stop
+the demo. A matching prebuilt UI can also be used with
+`python examples/apps/simple_slider/python/run_browser_demo.py --ui-dir PATH`.
 
 The README recording uses the same app and Python backend. Only recording setup changes: fixed camera, hidden world-origin axes (helper and the demo's drawn axes), white background, a lighter ground plane, and hidden diagnostic handles/footer. Object changes come from real pointer input to the controls. The loop shows positions, rotation and reset; it does not claim new color-picker or C++ application acceptance.
 

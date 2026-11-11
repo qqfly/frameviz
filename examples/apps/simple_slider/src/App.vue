@@ -62,7 +62,10 @@ const backendConnected = ref(false)
 let backendSocket: WebSocket | null = null
 let shouldReconnect = true
 
-const BACKEND_WS_URL = import.meta.env.VITE_SIMPLE_SLIDER_BACKEND_WS_URL || DEFAULT_BACKEND_WS_URL
+const launcherPort = Number(new URLSearchParams(window.location.search).get('business_port'))
+const BACKEND_WS_URL = Number.isInteger(launcherPort) && launcherPort > 0 && launcherPort <= 65535
+  ? `ws://127.0.0.1:${launcherPort}`
+  : import.meta.env.VITE_SIMPLE_SLIDER_BACKEND_WS_URL || DEFAULT_BACKEND_WS_URL
 
 type SliderStateUpdate = {
   type: 'state_update'
