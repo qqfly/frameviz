@@ -519,7 +519,7 @@
     "tests/acceptance/test_standalone_viewer.py": "2632ea048797a49615f2152bba25afa1d0f9e39824881c86176c1fc38f9560e4",
     "tests/acceptance/test_startup_runtime.py": "4e2b6553d73783f14590a4e100875f03e701bea7792744cc88c3759b1ee923ac",
     "tests/acceptance/test_three_link_example.py": "c73d1c3496c6d993130d3708ad32a86a93f48174690b70a5f03949aeab26125c",
-    "tests/acceptance/test_widget_browser.py": "14ca634af3b8be04d0951b89416269883a31b3b47e93ae54177132be64c4cfea",
+    "tests/acceptance/test_widget_browser.py": "3f50d2e322cdde92011dcec5337daaeca4bcfe4c1df523185ad010be210b95d4",
     "tests/acceptance/test_widget_contracts.py": "fc40fa30031be1141ad3ccbe0a533bc04056030013e0fe85cd176b59a2cd51c5",
     "tests/acceptance/cpp/CMakeLists.txt": "ec6e386f9893cb3ab188d8adf2bceb510cfa70cdd239179fa31541a9081273e2",
     "tests/acceptance/cpp/asset_harness.cpp": "a96f22d2224d2f8f0b11e876276c5113bf45de63f668cc3d2af72c6c3e0d8e68",

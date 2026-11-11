@@ -67,3 +67,39 @@ def test_precision_input_and_cross_view_sync(widget_pages):
     client.send_command("remove_widget", {**scene, "widget_id": group})
     expect(first).to_have_count(0)
     expect(second_input).to_have_count(0)
+
+
+def test_real_button_resets_object_and_widget_in_two_views(widget_pages):
+    from queue import Empty, Queue
+    from playwright.sync_api import expect
+    from test_scene_tree_browser import world
+
+    viz, _, (first, second) = widget_pages
+    box = viz.add_box()
+    number = viz.add_widget("number", "Position", 0)
+    button = viz.add_widget("button", "Reset")
+    calls = Queue()
+
+    def move(event):
+        viz.set_transform(box, position=[event["value"], 0, 0])
+        calls.put(("move", event["value"]))
+
+    def reset(event):
+        viz.set_widget_value(number, 0)
+        viz.set_transform(box, position=[0, 0, 0])
+        calls.put(("reset", event["source"]))
+
+    viz.on_widget_change(number, move)
+    viz.on_widget_change(button, reset)
+    field = first.get_by_role("spinbutton", name="Position")
+    field.fill("1.25")
+    field.press("Enter")
+    assert calls.get(timeout=2) == ("move", 1.25)
+    first.get_by_role("button", name="Reset").click(click_count=2)
+    assert [calls.get(timeout=2) for _ in range(2)] == [("reset", "user")] * 2
+    for page in (first, second):
+        expect(page.get_by_role("spinbutton", name="Position")).to_have_value("0")
+        page.wait_for_function("h => window.__FRAMEVIZ_CORE__.objects.get(h)?.position.x === 0", arg=box)
+        assert world(page, box) == [0, 0, 0]
+    with pytest.raises(Empty):
+        calls.get(timeout=.2)
