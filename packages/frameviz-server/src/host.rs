@@ -968,6 +968,7 @@ impl Host {
                     ));
                 }
 
+                args["scene_id"] = json!(obj.scene_id);
                 // Update data fields if provided
                 if let Some(data) = obj.data.as_mut() {
                     if let Some(map) = data.as_object_mut() {
@@ -1028,6 +1029,7 @@ impl Host {
                     .get_mut(&handle)
                     .ok_or_else(|| HostError::new("ERR_NOT_FOUND", format!("Object not found: {}", handle)))?;
 
+                args["scene_id"] = json!(obj.scene_id);
                 if let Some(text) = new_text {
                     if let Some(data) = obj.data.as_mut() {
                         if let Some(map) = data.as_object_mut() {
@@ -1180,6 +1182,7 @@ impl Host {
                     .get(&handle)
                     .ok_or_else(|| HostError::new("ERR_NOT_FOUND", format!("Object not found: {}", handle)))?
                     .clone();
+                args["scene_id"] = json!(source.scene_id);
                 let new_handle = format!("h_{}", self.next_handle_id());
                 let mut cloned = source.clone();
                 cloned.handle = new_handle.clone();

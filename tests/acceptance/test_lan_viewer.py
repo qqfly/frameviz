@@ -96,3 +96,93 @@ def test_lan_link_authenticates_only_shared_view_and_receives_scene(tmp_path):
             assert init["read_only"] is True and init["view_id"] == viz.view_id
             assert snapshot["scene_id"] == viz.scene_id
             assert [obj["handle"] for obj in snapshot["objects"]] == [box]
+
+
+def send_lan_command(ws, name, args):
+    ws.send(json.dumps({"type": "cmd", "protocol_version": PROTOCOL_VERSION,
+                        "id": name, "name": name, "args": args}))
+    return json.loads(ws.recv(timeout=2))
+
+
+def test_read_only_requests_cannot_mutate_or_follow_a_rebound_view(tmp_path):
+    from websockets.exceptions import ConnectionClosed
+
+    with lan_host(tmp_path) as (viz, _, _):
+        obj = viz.add_box(name="Shared")
+        slider = viz.add_widget("number", "X", 0)
+        link = viz.get_lan_view_link()
+        ws, reply = remote_auth(link)
+        with ws:
+            assert reply["ok"]
+            assert json.loads(ws.recv(timeout=2))["read_only"]
+            snapshot = json.loads(ws.recv(timeout=2))
+            assert snapshot["widgets"] == []
+            for command, args in [
+                ("set_transform", {"handle": obj, "pose": [9, 0, 0, 0, 0, 0, 1]}),
+                ("set_widget_value", {"widget_id": slider, "value": 9}),
+                ("clear_scene", {"scene_id": viz.scene_id}),
+                ("register_viewer", {"viewer_name": "forged"}),
+            ]:
+                response = send_lan_command(ws, command, args)
+                assert response["id"] == command and response["error"]["code"] == "ERR_FORBIDDEN"
+            ws.send(json.dumps({"type": "event", "protocol_version": PROTOCOL_VERSION,
+                                "name": "camera_view_changed",
+                                "data": {"eye": [9, 9, 9], "target": [0, 0, 0], "up": [0, 0, 1],
+                                         "projection": {"type": "perspective", "fov": 67}}}))
+            assert send_lan_command(ws, "get_scene_snapshot", {})["error"]["code"] == "ERR_FORBIDDEN"
+            assert viz.get_transform(obj)["position"] == [0, 0, 0]
+            assert viz.get_widget_value(slider) == 0
+            assert viz.get_camera_view()["projection"]["fov"] == 30
+
+            other = viz._client.send_command("create_view", {})
+            secret = Viz(viz._client, other["scene_id"], other["view_id"], owns_view=False).add_box(name="Unshared")
+            with pytest.raises(TimeoutError):
+                ws.recv(timeout=.15)
+            viz.set_transform(obj, position=[.4, 0, 0])
+            update = json.loads(ws.recv(timeout=2))
+            assert update["command"] == "set_transform" and update["args"]["handle"] == obj
+            assert secret not in json.dumps(update)
+            cloned = viz.clone_object(obj)
+            clone_update = json.loads(ws.recv(timeout=2))
+            assert clone_update["command"] == "clone_object" and clone_update["result"]["handle"] == cloned
+            viz._client.send_command("attach_scene", {"view_id": viz.view_id, "scene_id": other["scene_id"]})
+            with pytest.raises(ConnectionClosed):
+                ws.recv(timeout=2)
+        stale, denied = remote_auth(link)
+        with stale:
+            assert denied["ok"] is False
+
+
+def test_read_only_browser_orbits_locally_and_renders_updates(tmp_path):
+    import math
+    from playwright.sync_api import expect, sync_playwright
+    from test_scene_tree_browser import wait_drawable, world
+
+    with lan_host(tmp_path) as (viz, _, _):
+        obj = viz.add_box(name="Shared", color="orange")
+        viz.add_widget("number", "X", 0)
+        pose = viz.get_camera_view()
+        with sync_playwright() as pw:
+            options = {"args": ["--use-gl=angle", "--use-angle=swiftshader",
+                                "--enable-unsafe-swiftshader"]}
+            if os.environ.get("FRAMEVIZ_TEST_CHROME"):
+                options["executable_path"] = os.environ["FRAMEVIZ_TEST_CHROME"]
+            browser = pw.chromium.launch(**options)
+            try:
+                page = browser.new_page(viewport={"width": 900, "height": 630})
+                page.goto(viz.get_lan_view_link())
+                wait_drawable(page, obj)
+                expect(page.get_by_role("spinbutton", name="X")).to_have_count(0)
+                eye = page.evaluate("window.__FRAMEVIZ_CORE__.getCameraView().eye")
+                page.mouse.move(450, 320)
+                page.mouse.down()
+                page.mouse.move(580, 358, steps=12)
+                page.mouse.up()
+                changed = page.evaluate("window.__FRAMEVIZ_CORE__.getCameraView().eye")
+                assert math.dist(eye, changed) > .2
+                assert viz.get_camera_view() == pose
+                viz.set_transform(obj, position=[.6, -.1, .2])
+                page.wait_for_function("h => window.__FRAMEVIZ_CORE__.objects.get(h)?.position.x === .6", arg=obj)
+                assert world(page, obj) == pytest.approx([.6, -.1, .2])
+            finally:
+                browser.close()

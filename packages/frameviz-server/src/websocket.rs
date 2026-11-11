@@ -23,7 +23,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::accept_hdr_async;
+use tokio_tungstenite::accept_hdr_async_with_config;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use url::form_urlencoded;
 
 use crate::RegisteredViewer;
@@ -382,7 +383,12 @@ async fn handle_connection(stream: TcpStream, state: SharedState, remote_origin:
     let info = Arc::new(std::sync::Mutex::new(ClientHello::default()));
     let info_clone = info.clone();
 
-    let ws_stream = accept_hdr_async(stream, move |req: &Request, resp: Response| {
+    let config = read_only.then(|| WebSocketConfig {
+        max_message_size: Some(64 * 1024),
+        max_frame_size: Some(64 * 1024),
+        ..WebSocketConfig::default()
+    });
+    let handshake = accept_hdr_async_with_config(stream, move |req: &Request, resp: Response| {
         if let Some(origin) = req.headers().get("origin") {
             let allowed = origin.to_str().ok().is_some_and(|origin| {
                 if let Some(expected) = &remote_origin { return origin == expected; }
@@ -396,9 +402,13 @@ async fn handle_connection(stream: TcpStream, state: SharedState, remote_origin:
             *guard = parse_client_hello(req);
         }
         Ok(resp)
-    })
-    .await
-    .map_err(|err| format!("handshake failed: {}", err))?;
+    }, config);
+    let ws_stream = if read_only {
+        time::timeout(Duration::from_secs(5), handshake).await
+            .map_err(|_| "LAN handshake timed out".to_string())?
+    } else {
+        handshake.await
+    }.map_err(|err| format!("handshake failed: {}", err))?;
 
     let hello = Arc::try_unwrap(info)
         .map_err(|_| "hello unwrap failed".to_string())?
