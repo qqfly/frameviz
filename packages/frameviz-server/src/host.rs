@@ -156,6 +156,7 @@ pub struct ViewInfo {
     pub camera_controls: serde_json::Map<String, Value>,
     pub camera_pose: Option<Value>,
     pub render_mode: String,
+    pub keyboard_shortcuts: bool,
     #[allow(dead_code)]
     pub decorations: bool,
 }
@@ -406,6 +407,7 @@ impl Host {
             "camera_controls": view.map(|v| &v.camera_controls),
             "camera_pose": view.and_then(|v| v.camera_pose.as_ref()),
             "render_mode": view.map(|v| v.render_mode.as_str()),
+            "keyboard_shortcuts": view.map(|v| v.keyboard_shortcuts),
             "overlays": self.overlays.values().filter(|o| o.view_id == view_id).collect::<Vec<_>>()
         })
     }
@@ -600,6 +602,7 @@ impl Host {
                         camera_controls: Host::default_camera_controls(),
                         camera_pose: None,
                         render_mode: "solid".into(),
+                        keyboard_shortcuts: true,
                         decorations,
                     },
                 );
@@ -708,6 +711,7 @@ impl Host {
                     camera_controls: Host::default_camera_controls(),
                     camera_pose: None,
                     render_mode: "solid".into(),
+                    keyboard_shortcuts: true,
                     decorations: true,  // Default: true
                 });
                 if view.scene_id.as_ref() != Some(&scene_id) {
@@ -1610,6 +1614,15 @@ impl Host {
                     "View preset changed".to_string(),
                     self.fields_from_args(args, &["view_id", "view", "fit_all"]),
                 );
+                Ok(json!({}))
+            }
+            "set_keyboard_shortcuts" => {
+                let view_id = self.require_string(args, "view_id")?;
+                let enabled = args["enabled"].as_bool()
+                    .ok_or_else(|| HostError::new("ERR_INVALID_ARGS", "enabled must be a boolean"))?;
+                let view = self.views.get_mut(&view_id)
+                    .ok_or_else(|| HostError::new("ERR_NOT_FOUND", "View not found"))?;
+                view.keyboard_shortcuts = enabled;
                 Ok(json!({}))
             }
             "set_render_mode" => {

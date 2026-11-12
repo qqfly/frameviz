@@ -1,5 +1,5 @@
 use frameviz_server::{build_diagnostics, start_http_server, start_http_server_at, HttpServerConfig};
-use frameviz_server::websocket::{run_server_with_lan, LanViewerEndpoint};
+use frameviz_server::websocket::{run_server_with_lan, sdk_owner_release, LanViewerEndpoint};
 use include_dir::{include_dir, Dir};
 use std::env;
 use tokio::sync::watch;
@@ -102,7 +102,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
-    let server = run_server_with_lan(listener, build_diagnostics(options.ws_port).with_http_port(actual_http_port), shutdown_rx, lan);
+    let diagnostics = build_diagnostics(options.ws_port)
+        .with_http_port(actual_http_port)
+        .with_owner_release(sdk_owner_release());
+    let server = run_server_with_lan(listener, diagnostics, shutdown_rx, lan);
     tokio::pin!(server);
     println!("[FrameViz] Press Ctrl+C to stop");
     tokio::select! {

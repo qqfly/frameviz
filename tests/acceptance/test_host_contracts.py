@@ -2,7 +2,8 @@
 import base64,json,os,pathlib,time
 import pytest
 from websockets.sync.client import connect
-from frameviz.client import FrameVizClient
+from websockets.exceptions import ConnectionClosed
+from frameviz.client import FrameVizClient, PROTOCOL_VERSION
 from test_standalone_viewer import standalone_runtime
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 OUT=pathlib.Path(os.environ.get('FRAMEVIZ_EVIDENCE',ROOT/'.validation/evidence'))
@@ -94,10 +95,21 @@ def test_referenced_buffer_rejects_mutation(h):
  with pytest.raises(RuntimeError):h.cmd('upload_buffer_chunk',buffer_id=b['buffer_id'],offset_bytes=0,chunk_bytes=12,data_base64=base64.b64encode(b'\1'*12).decode())
 
 def test_malformed_viewer_event_releases_connection_slot(h):
- v=h.view('a');before=h.cmd('get_resource_counts')['connections'];ws=h.viewer(v)
- ws.send(json.dumps({'type':'event','name':'picked','data':'not-an-object'}))
- time.sleep(.15);ws.close();time.sleep(.15)
- assert h.cmd('get_resource_counts')['connections']==before
+    view = h.view('a')
+    before = h.cmd('get_resource_counts')['connections']
+    ws = h.viewer(view)
+    assert h.cmd('get_resource_counts')['connections'] == before + 1
+    event = {'type': 'event', 'protocol_version': PROTOCOL_VERSION, 'name': 'key_down'}
+    ws.send(json.dumps(dict(event, data={'key': 'x'})))
+    assert h.c.wait_for_event('key_down', timeout=2)['view_id'] == view
+    ws.send(json.dumps(dict(event, data='not-an-object')))
+    with pytest.raises(ConnectionClosed):
+        ws.recv(timeout=2)
+    deadline = time.monotonic() + 2
+    while h.cmd('get_resource_counts')['connections'] != before:
+        assert time.monotonic() < deadline, 'Host did not free the malformed event connection slot'
+        time.sleep(.01)
+
 
 def test_snapshot_read_unknown_scene_has_no_side_effect(h):
  before=h.cmd('list_scenes');h.cmd('get_scene_snapshot',scene_id='unknown-read');assert h.cmd('list_scenes')==before

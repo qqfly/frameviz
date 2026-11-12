@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration as StdDuration;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Mutex, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{mpsc, watch, Mutex, Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
@@ -73,14 +73,33 @@ impl LogWriter {
     }
 }
 
+/// An SDK launch keeps stdin open until the launching process releases it.
+pub fn sdk_owner_release() -> Option<watch::Receiver<bool>> {
+    if std::env::var_os("FRAMEVIZ_SDK_MANAGED").as_deref() != Some("1".as_ref()) {
+        return None;
+    }
+    let (released, receiver) = watch::channel(false);
+    thread::spawn(move || {
+        let _ = std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink());
+        let _ = released.send(true);
+    });
+    Some(receiver)
+}
+
 pub struct ServerDiagnostics {
     log_writer: Option<LogWriter>,
     log_path: Option<PathBuf>,
     discovery_path: Option<PathBuf>,
     http_port: Option<u16>,
+    owner_release: Option<watch::Receiver<bool>>,
 }
 
 impl ServerDiagnostics {
+    pub fn with_owner_release(mut self, release: Option<watch::Receiver<bool>>) -> Self {
+        self.owner_release = release;
+        self
+    }
+
     /// Publish the standalone Viewer's HTTP port in the initial discovery record.
     pub fn with_http_port(mut self, port: u16) -> Self {
         self.http_port = Some(port);
@@ -114,6 +133,7 @@ pub fn build_diagnostics(port: u16) -> ServerDiagnostics {
         log_path,
         discovery_path,
         http_port: None,
+        owner_release: None,
     }
 }
 
@@ -244,6 +264,8 @@ struct ServerState {
     host: Host,
     clients: HashMap<usize, ClientState>,
     next_client_id: usize,
+    closing: bool,
+    client_left: Arc<Notify>,
     revision: u64,
     view_to_scene: HashMap<String, String>,
     view_camera_commands: HashMap<String, u64>,
@@ -263,6 +285,8 @@ impl ServerState {
             host,
             clients: HashMap::new(),
             next_client_id: 1,
+            closing: false,
+            client_left: Arc::new(Notify::new()),
             revision: 0,
             view_to_scene: HashMap::new(),
             view_camera_commands: HashMap::new(),
@@ -285,6 +309,12 @@ impl ServerState {
         }
     }
 
+    fn remove_client(&mut self, id: usize) {
+        if self.clients.remove(&id).is_some() {
+            self.client_left.notify_one();
+        }
+    }
+
     fn next_id(&mut self) -> usize {
         let id = self.next_client_id;
         self.next_client_id += 1;
@@ -293,6 +323,29 @@ impl ServerState {
 }
 
 type SharedState = Arc<Mutex<ServerState>>;
+
+async fn wait_for_managed_shutdown(
+    state: &SharedState,
+    release: Option<watch::Receiver<bool>>,
+) {
+    let Some(mut release) = release else { return std::future::pending().await; };
+    if release.wait_for(|released| *released).await.is_err() {
+        return std::future::pending().await;
+    }
+    let client_left = state.lock().await.client_left.clone();
+    loop {
+        {
+            let mut guard = state.lock().await;
+            if guard.clients.is_empty() {
+                // Decide and close admission under the same lock used to
+                // register a connection, so a new client cannot race shutdown.
+                guard.closing = true;
+                return;
+            }
+        }
+        client_left.notified().await;
+    }
+}
 
 pub async fn run_server(
     port: u16,
@@ -316,7 +369,7 @@ pub async fn run_server_on_listener(
 
 pub async fn run_server_with_lan(
     listener: TcpListener,
-    diagnostics: ServerDiagnostics,
+    mut diagnostics: ServerDiagnostics,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     lan: Option<LanViewerEndpoint>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -325,6 +378,7 @@ pub async fn run_server_with_lan(
     println!("[WS] Server listening on ws://{}", addr);
 
     let http_port = diagnostics.http_port;
+    let owner_release = diagnostics.owner_release.take();
     if http_port.is_some() && diagnostics.discovery_path.is_none() {
         return Err("Cannot resolve the standalone Host state directory".into());
     }
@@ -384,8 +438,11 @@ pub async fn run_server_with_lan(
         }
     });
 
+    let managed_shutdown = wait_for_managed_shutdown(&state, owner_release);
+    tokio::pin!(managed_shutdown);
     loop {
         tokio::select! {
+            _ = &mut managed_shutdown => break,
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
                     break;
@@ -446,11 +503,11 @@ impl Drop for ConnectionGuard {
     fn drop(&mut self) {
         if let Some(writer) = self.writer.take() { writer.abort(); }
         if let Ok(mut state) = self.state.try_lock() {
-            state.clients.remove(&self.client_id);
+            state.remove_client(self.client_id);
         } else {
             let state = self.state.clone();
             let id = self.client_id;
-            tokio::spawn(async move { state.lock().await.clients.remove(&id); });
+            tokio::spawn(async move { state.lock().await.remove_client(id); });
         }
     }
 }
@@ -497,6 +554,9 @@ async fn handle_connection(stream: TcpStream, state: SharedState, remote_origin:
     let sender = ClientSender { queue, cancel, budget: Arc::new(Semaphore::new(CLIENT_QUEUE_BYTES)) };
     let client_id = {
         let mut state_guard = state.lock().await;
+        if state_guard.closing {
+            return Err("Host is shutting down".into());
+        }
         let limit = if read_only { 16 } else { 64 };
         if state_guard.clients.values().filter(|client| client.read_only == read_only).count() >= limit {
             return Err("Client limit reached".into());
@@ -588,7 +648,7 @@ async fn handle_connection(stream: TcpStream, state: SharedState, remote_origin:
 
     // A transport disconnect (including page refresh) does not destroy a view.
     // Lifetime ends with explicit destroy_view/destroy_scene or Host shutdown.
-    state.lock().await.clients.remove(&client_id);
+    state.lock().await.remove_client(client_id);
 
     log_event(
         &state,
@@ -1448,7 +1508,8 @@ fn lan_display_message(message: &Value) -> bool {
         "set_transform" | "set_object_transforms" | "set_parent" | "set_geometry_scale" |
         "set_color" | "set_alpha" | "set_visible" | "set_object_colors" | "set_object_alphas" |
         "set_object_visibilities" | "set_object_metadata" | "clone_object" | "remove_object" |
-        "remove_objects" | "clear_scene" | "destroy_scene" | "set_view_config" | "set_render_mode"
+        "remove_objects" | "clear_scene" | "destroy_scene" | "set_view_config" | "set_render_mode" |
+        "set_keyboard_shortcuts"
     ))
 }
 
@@ -1602,7 +1663,8 @@ async fn send_init_and_snapshot(
         "camera_controls": view_state.get("camera_controls"),
         "overlays": view_state.get("overlays"),
         "camera_pose": view_state.get("camera_pose"),
-        "render_mode": view_state.get("render_mode")
+        "render_mode": view_state.get("render_mode"),
+        "keyboard_shortcuts": view_state.get("keyboard_shortcuts")
     });
     let packet = Outbound::new(
         vec![Message::Text(init_msg.to_string()), Message::Text(snapshot_msg.to_string())],
@@ -2139,7 +2201,7 @@ mod backpressure_tests {
     #[tokio::test]
     async fn slow_lan_viewer_does_not_block_ordered_delivery() {
         let diagnostics = ServerDiagnostics {
-            log_writer: None, log_path: None, discovery_path: None, http_port: None,
+            log_writer: None, log_path: None, discovery_path: None, http_port: None, owner_release: None,
         };
         let mut state = ServerState::new(Host::new(None), diagnostics, 0);
         state.view_to_scene.insert("view".into(), "scene".into());

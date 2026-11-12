@@ -8,7 +8,6 @@ buffer management, camera control, and event handling.
 from __future__ import annotations
 
 import builtins
-import atexit
 import hashlib
 import logging
 import json
@@ -19,7 +18,6 @@ import socket
 import struct
 import subprocess
 import sys
-import signal
 import tempfile
 import time
 import threading
@@ -38,9 +36,6 @@ from ._scene_tree import components, node_arguments, rigid_pose
 from .discovery import get_discovery_path, get_viewer_url_from_discovery
 from .exceptions import ConnectionError as FrameVizConnectionError, TimeoutError as FrameVizTimeoutError, ProtocolError
 from ._internal import (
-    _AUTO_WS_LOG_HANDLE,
-    _AUTO_WS_LOG_PATH,
-    _AUTO_WS_PROCESS,
     _get_repo_root,
     _get_ws_port_from_url,
     _get_ws_startup_timeout,
@@ -49,6 +44,7 @@ from ._internal import (
     _read_ws_log_tail,
     _resolve_discovery_port,
     _resolve_ws_url,
+    _sdk_host_stdio,
     _should_auto_start_ws,
     _wait_for_discovery_port,
     _wait_for_ws_ready,
@@ -60,46 +56,6 @@ from ._internal import (
 DEFAULT_VIEWER_URL = "http://localhost:8080/"
 DEFAULT_TAURI_CONTROL_PORT = 9528
 _AUTO_TAURI_PROCS: List[subprocess.Popen] = []
-_AUTO_TAURI_ATEXIT_REGISTERED = False
-
-
-def _stop_auto_tauri_processes() -> None:
-    global _AUTO_TAURI_PROCS
-    procs = _AUTO_TAURI_PROCS
-    _AUTO_TAURI_PROCS = []
-    for proc in procs:
-        if proc.poll() is not None:
-            continue
-        sent_group_signal = False
-        if os.name == "posix":
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                sent_group_signal = True
-            except OSError:
-                pass
-        try:
-            if not sent_group_signal:
-                proc.terminate()
-            proc.wait(timeout=3)
-        except (OSError, subprocess.TimeoutExpired):
-            if os.name == "posix":
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except OSError:
-                    pass
-            else:
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
-
-
-def _register_auto_tauri_atexit() -> None:
-    global _AUTO_TAURI_ATEXIT_REGISTERED
-    if _AUTO_TAURI_ATEXIT_REGISTERED:
-        return
-    _AUTO_TAURI_ATEXIT_REGISTERED = True
-    atexit.register(_stop_auto_tauri_processes)
 
 
 def _get_viewer_url(expected_ws_url: Optional[str] = None) -> Optional[str]:
@@ -1940,7 +1896,10 @@ class Viz:
 
     def enable_keyboard_shortcuts(self, enabled: bool = True) -> None:
         """
-        Enable or disable built-in keyboard shortcuts for this viewer.
+        Enable or disable built-in keyboard shortcuts for this View.
+
+        The setting survives Viewer reconnection. Application key events and
+        normal input in controls remain available.
 
         Args:
             enabled: True to enable (default), False to disable.
@@ -3123,7 +3082,7 @@ def _run_process(cmd: List[str]) -> bool:
         kwargs: Dict[str, Any] = {
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
-            "stdin": subprocess.DEVNULL,
+            **_sdk_host_stdio(),
             "close_fds": True,
         }
         if os.name == "posix":
@@ -3133,7 +3092,6 @@ def _run_process(cmd: List[str]) -> bool:
             **kwargs,
         )
         _AUTO_TAURI_PROCS.append(proc)
-        _register_auto_tauri_atexit()
     except OSError:
         return False
     return True

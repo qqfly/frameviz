@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import atexit
 import os
 import plistlib
 import shutil
@@ -25,6 +24,7 @@ from ._internal import (
     _get_ws_port_from_url,
     _maybe_auto_start_ws,
     _resolve_ws_url,
+    _sdk_host_stdio,
     _should_auto_start_ws,
     _wait_for_ws_ready,
     _pid_is_running,
@@ -34,7 +34,6 @@ from ._internal import (
 # Track the host process started by this module.
 _started_host_proc: Optional[subprocess.Popen] = None
 _started_host_we_own: bool = False
-_atexit_registered: bool = False
 _started_host_log_path: Optional[Path] = None
 
 
@@ -141,7 +140,7 @@ def _launch_executable(path: Path, args: list[str]) -> subprocess.Popen:
         binary=_get_macos_app_executable(path)
         if binary is None:raise RuntimeError(f"Incomplete FrameViz application: {path}")
         path=binary
-    options=dict(stdin=subprocess.DEVNULL,start_new_session=os.name=='posix')
+    options=dict(**_sdk_host_stdio(), start_new_session=os.name == 'posix')
     target=os.environ.get('FRAMEVIZ_WS_SERVER_LOG','').strip()
     if target.lower() in ('inherit','stdout','stderr'):
         _started_host_log_path=None
@@ -197,7 +196,6 @@ def start_host(
                 if isinstance(port,int) and _is_port_open('127.0.0.1',port) and (not headless or info.get('viewer_url')):
                     _started_host_proc=proc
                     _started_host_we_own=True
-                    _register_atexit()
                     return info.get('ws_url') or f'ws://127.0.0.1:{port}'
             time.sleep(.025)
         if proc.poll() is None:
@@ -224,7 +222,7 @@ def start_host(
 
 
 def stop_host() -> None:
-    """Stop the host process if it was started by this module."""
+    """Explicitly stop the Host started by this module, including for its other clients."""
     global _started_host_proc, _started_host_we_own
     proc = _started_host_proc
     if proc is None or not _started_host_we_own:
@@ -241,14 +239,9 @@ def stop_host() -> None:
             proc.kill()
         except OSError:
             pass
-
-
-def _register_atexit() -> None:
-    global _atexit_registered
-    if _atexit_registered:
-        return
-    _atexit_registered = True
-    atexit.register(stop_host)
+    finally:
+        if proc.stdin is not None:
+            proc.stdin.close()
 
 
 def ensure_host_running(ws_url: str = DEFAULT_WS_URL, timeout: float = 10.0) -> str:

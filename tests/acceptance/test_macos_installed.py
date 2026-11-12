@@ -10,6 +10,7 @@ import time
 
 import pytest
 from test_macos_app import observer, ping
+from test_open_runtime import exercise_shared_runtime
 
 pytestmark = pytest.mark.skipif(sys.platform != 'darwin', reason='macOS desktop required')
 
@@ -29,6 +30,8 @@ first=fv.open(title='Installed Python acceptance')
 second=None
 try:
     first.add_box(color=(.2,.7,.9))
+    first.enable_keyboard_shortcuts(False)
+    first.enable_keyboard_shortcuts(True)
     first.set_camera_pose((5,-7,5),(0,0,0))
     pose=first.get_camera_pose()
     assert all(abs(a-b)<1e-5 for a,b in zip(pose['eye'],[5,-7,5]))
@@ -118,3 +121,11 @@ def test_python_reuses_a_manually_started_app_and_leaves_it_running(installed, o
             if process.poll() is None:
                 process.terminate()
             process.wait(timeout=10)
+
+
+def test_installed_host_survives_starting_python_process_exit(installed):
+    home, _, python, env, _ = installed
+    exercise_shared_runtime(home, python, env)
+    for role in ('owner', 'peer'):
+        record = json.loads((home / f'{role}-ready.json').read_text())
+        assert pathlib.Path(record['sdk']).resolve().is_relative_to(python.parent.parent)

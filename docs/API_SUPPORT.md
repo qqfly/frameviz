@@ -67,6 +67,7 @@ This table records command-name literals in the implementation. Presence does no
 | `set_geometry_scale` | present | present | present | present |
 | `set_gizmo_mode` | present | present | present | present |
 | `set_interaction_mode` | present | present | not directly referenced | not directly referenced |
+| `set_keyboard_shortcuts` | present | present | present | not directly referenced |
 | `set_log_config` | present | not directly referenced | present | not directly referenced |
 | `set_object_alphas` | present | present | present | not directly referenced |
 | `set_object_colors` | present | present | present | not directly referenced |

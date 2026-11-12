@@ -54,6 +54,7 @@ export class FrameVizCore {
   private environmentVisibility: { showGrid?: boolean; showAxes?: boolean } = {};
   private environmentOverride: { showGrid?: boolean; showAxes?: boolean } = {};
   private keyboardShortcutsEnabled = true;
+  private viewKeyboardShortcutsEnabled = true;
   private keydownHandler?: (event: KeyboardEvent) => void;
 
   private objects = new Map<string, THREE.Object3D>();
@@ -233,21 +234,33 @@ export class FrameVizCore {
     this.widgetPanel = undefined;
   }
 
+  /** Local viewer preference. A Host View can also disable its built-ins. */
   setKeyboardShortcutsEnabled(enabled: boolean): void {
-    if (this.keyboardShortcutsEnabled === enabled) return;
+    const wasEnabled = this.areKeyboardShortcutsEnabled();
     this.keyboardShortcutsEnabled = enabled;
+    this.updateKeyboardShortcuts(wasEnabled);
+  }
+
+  areKeyboardShortcutsEnabled(): boolean {
+    return this.keyboardShortcutsEnabled && this.viewKeyboardShortcutsEnabled;
+  }
+
+  private updateKeyboardShortcuts(wasEnabled: boolean): void {
+    const enabled = this.areKeyboardShortcutsEnabled();
+    if (enabled === wasEnabled) return;
     if (enabled) {
       this.enableKeyboardShortcuts();
     } else {
       this.disableKeyboardShortcuts();
     }
+    this.options.onKeyboardShortcutsChange?.(enabled);
   }
 
   private enableKeyboardShortcuts(): void {
     if (this.keydownHandler || typeof window === "undefined") return;
     this.keydownHandler = (event: KeyboardEvent) => {
       if (!this.sceneManager || !this.cameraController) return;
-      if (!this.keyboardShortcutsEnabled) return;
+      if (!this.areKeyboardShortcutsEnabled()) return;
 
       const target = event.target as HTMLElement | null;
       if (target?.isContentEditable) return;
@@ -937,9 +950,10 @@ export class FrameVizCore {
         return;
       }
       case "set_keyboard_shortcuts": {
-        const enabled = args.enabled as boolean | undefined;
-        if (enabled !== undefined) {
-          this.setKeyboardShortcutsEnabled(Boolean(enabled));
+        if (typeof args.enabled === "boolean") {
+          const wasEnabled = this.areKeyboardShortcutsEnabled();
+          this.viewKeyboardShortcutsEnabled = args.enabled;
+          this.updateKeyboardShortcuts(wasEnabled);
         }
         return;
       }

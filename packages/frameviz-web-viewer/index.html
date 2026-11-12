@@ -121,9 +121,9 @@
   </div>
   <div id="info">
     <strong>FrameViz Web Viewer</strong><br>
-    <small>按 <kbd
+    <small id="shortcuts-hint">按 <kbd
         style="background:rgba(255,255,255,0.2);padding:1px 4px;border-radius:2px;font-family:monospace;">H</kbd>
-      显示快捷键</small><br>
+      显示快捷键<br></small>
     <span id="objects">Objects: 0</span>
   </div>
 
@@ -203,11 +203,16 @@
       objectsEl.textContent = `Objects: ${core.getObjectCount({ grouped: true })}`;
     }
 
+    const shortcutsPanel = document.getElementById('shortcuts');
+    const shortcutsHint = document.getElementById('shortcuts-hint');
+
     function toggleShortcutsPanel() {
-      const panel = document.getElementById('shortcuts');
-      if (panel) {
-        panel.classList.toggle('visible');
-      }
+      if (core?.areKeyboardShortcutsEnabled()) shortcutsPanel.classList.toggle('visible');
+    }
+
+    function updateShortcutsVisibility(enabled) {
+      shortcutsHint.hidden = !enabled;
+      if (!enabled) shortcutsPanel.classList.remove('visible');
     }
 
     function sendEnvelope(envelope) {
@@ -427,6 +432,7 @@
         'set_view',
         'reset_camera',
         'set_render_mode',
+        'set_keyboard_shortcuts',
         'set_performance_mode',
         'set_camera_pose',
         'set_camera_controls',
@@ -625,7 +631,8 @@
         meta: e.metaKey,
       });
 
-      if (!e.ctrlKey && !e.metaKey && key === 'h') {
+      if (!e.ctrlKey && !e.metaKey && key === 'h' &&
+          !e.target.isContentEditable && e.target.tagName !== 'SELECT') {
         toggleShortcutsPanel();
       }
     });
@@ -737,6 +744,7 @@
         performanceMode,
         showWidgetPanel: !capture,
         background: initialBackground,  // Pass background from URL param
+        onKeyboardShortcutsChange: updateShortcutsVisibility,
         onEvent: (name, data) => sendEvent(name, data),
         onCommand: (name, args) => sendCommand(name, args),
       });
