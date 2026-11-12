@@ -30,14 +30,14 @@ first=fv.open(title='Installed Python acceptance')
 second=None
 try:
     first.add_box(color=(.2,.7,.9))
-    first.enable_keyboard_shortcuts(False)
-    first.enable_keyboard_shortcuts(True)
     first.set_camera_pose((5,-7,5),(0,0,0))
     pose=first.get_camera_pose()
     assert all(abs(a-b)<1e-5 for a,b in zip(pose['eye'],[5,-7,5]))
     pid=read_discovery_file()['pid']
     windows=json.loads(subprocess.check_output([sys.argv[1],str(pid)],text=True))
     assert len(windows)==1,windows
+    first.enable_keyboard_shortcuts(False)
+    first.enable_keyboard_shortcuts(True)
     second=fv.open(title='Same installed Host')
     second.add_sphere()
     assert read_discovery_file()['pid']==pid
@@ -128,4 +128,4 @@ def test_installed_host_survives_starting_python_process_exit(installed):
     exercise_shared_runtime(home, python, env)
     for role in ('owner', 'peer'):
         record = json.loads((home / f'{role}-ready.json').read_text())
-        assert pathlib.Path(record['sdk']).resolve().is_relative_to(python.parent.parent)
+        assert pathlib.Path(record['sdk']).resolve().is_relative_to(python.parent.parent.resolve())
