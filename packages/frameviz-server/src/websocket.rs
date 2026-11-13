@@ -731,6 +731,9 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
                 if send_init_and_snapshot(state, client_id, &view_id, &scene_id).await.is_ok() {
                     broadcast_event_to_protocol(state, "viewer_ready", json!({ "view_id": view_id, "scene_id": scene_id })).await;
                 }
+            } else if !read_only {
+                let status = json!({"type": "view_unavailable", "view_id": view_id});
+                send_to_client(state, client_id, Message::Text(status.to_string())).await;
             }
         }
     }
@@ -788,11 +791,14 @@ async fn handle_text_message(state: &SharedState, client_id: usize, text: String
                         }
                         return;
                     }
-                    if !matches!(name, "picked" | "transformed" | "camera_pose_response" | "pick_config_response" | "pick_info_response" | "object_ready" | "object_failed" | "key_down") { return; }
+                    if !matches!(name, "picked" | "transformed" | "camera_pose_response" | "pick_config_response" | "pick_info_response" | "object_ready" | "object_failed" | "key_down" | "view_destroyed") { return; }
                     let guard = state.lock().await;
                     let Some(client) = guard.clients.get(&client_id) else { return; };
                     if !data.is_object() {
                         let _ = client.sender.cancel.send(true);
+                        return;
+                    }
+                    if name == "view_destroyed" && (client.view_id.is_none() || client.scene_id.is_some()) {
                         return;
                     }
                     if matches!(name, "picked" | "transformed" | "pick_info_response") {

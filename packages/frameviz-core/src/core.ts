@@ -1185,8 +1185,9 @@ export class FrameVizCore {
         if (viewId) {
           this.views.delete(viewId);
           if (this.viewId === viewId) {
-            this.viewId = undefined;
+            this.setViewId(undefined);
             this.clearSceneContents();
+            this.widgetPanel?.reset([]);
             // Only the owning viewer should signal that local teardown is done.
             this.emitEvent("view_destroyed", { view_id: viewId });
           }

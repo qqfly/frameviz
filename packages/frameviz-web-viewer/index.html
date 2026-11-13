@@ -380,7 +380,20 @@
       updateObjectCount();
     }
 
+    function showInactiveView(message) {
+      sceneId = null;
+      document.documentElement.dataset.sceneReady = 'false';
+      pendingBinaryQueue.length = 0;
+      gizmoAttachedHandle = null;
+      updateGizmoModeDisplay();
+      statusEl.textContent = `${viewId} · ${message}`;
+      statusEl.className = 'disconnected';
+    }
+
     function updateUiState(command, args) {
+      if (command === 'destroy_view' && args.view_id === viewId) {
+        showInactiveView('View closed');
+      }
       if (command === 'set_render_mode') {
         currentRenderMode = args.mode || currentRenderMode;
         updateRenderModeDisplay();
@@ -524,18 +537,28 @@
         }
         return;
       }
+      if (msg.type === 'view_unavailable' && msg.view_id === viewId) {
+        core?.handleCommand('clear_scene', {});
+        core?.restoreWidgets([]);
+        core?.setViewId(undefined);
+        showInactiveView('View unavailable');
+        updateObjectCount();
+        return;
+      }
       if (msg.type === 'init') {
         readOnly = msg.read_only === true;
         core?.setWidgetPanelEnabled(!readOnly && !capture);
         document.documentElement.dataset.sceneReady = 'false';
         if (core) core.sceneRevision = 0;
-        if (msg.view_id && msg.view_id !== viewId) {
+        if (msg.view_id) {
           viewId = msg.view_id;
           document.title = `FrameViz - ${viewId}`;
-          if (urlParams.get('browser_session')) {
+          if (!isTauri) {
             const currentUrl = new URL(location.href);
-            currentUrl.searchParams.set('view_id', viewId);
-            history.replaceState(null, '', currentUrl);
+            if (currentUrl.searchParams.get('view_id') !== viewId) {
+              currentUrl.searchParams.set('view_id', viewId);
+              history.replaceState(null, '', currentUrl);
+            }
           }
         }
         sceneId = msg.scene_id;
