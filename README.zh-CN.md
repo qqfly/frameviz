@@ -184,7 +184,7 @@ python examples/apps/simple_slider/python/run_browser_demo.py
 
 ![FrameViz 中的 SO-101 关节滑条与夹爪控制](docs/media/so101-joint-controls.webp)
 
-模型来自 [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101)，固定版本 `98a70c569c4c1b6da467a20012f766ee1f8dc521`，采用 [Apache-2.0 许可](docs/media/LICENSE-so101-model.txt)。**模型文件不进入本仓库**，仅提供录制的 WebP 和来源声明。短循环采用 1.5 倍速回放，不代表渲染或更新速率。
+模型来自 [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101)，固定版本 `98a70c569c4c1b6da467a20012f766ee1f8dc521`，采用 [Apache-2.0 许可](docs/media/LICENSE-so101-model.txt)。[Python 示例](examples/python/04_robotics/extra/README.md) 首次运行时将固定版本的模型下载到本地缓存。仓库收录示例代码、演示 WebP 和来源声明。短循环采用 1.5 倍速回放，不代表渲染或更新速率。
 
 采集复用现有[关节面板](examples/apps/urdf_robot/src/components/ControlPanel.vue)，由仓库外的适配器读取 MJCF 关节定义，向 FrameViz 提交 STL URL 与各部件位姿。适配器的运动学已与 MuJoCo `mj_forward` 对照，画面由 FrameViz 渲染。本次媒体更新不新增内置 MJCF/URDF 导入器或配套 SO-101 应用。[采集来源说明](docs/media/README.md#so-101-external-model)。
 

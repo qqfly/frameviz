@@ -184,7 +184,7 @@ Use an articulated robot model with the same viewer and object-pose APIs. This r
 
 ![SO-101 arm joint sliders and gripper control in FrameViz](docs/media/so101-joint-controls.webp)
 
-Model: [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101), fixed revision `98a70c569c4c1b6da467a20012f766ee1f8dc521`, [Apache-2.0 license](docs/media/LICENSE-so101-model.txt). **Model files are not included in this repository.** Only the recorded WebP and attribution are distributed. The short loop plays at 1.5× speed; this is not a rendering-rate measurement.
+Model: [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101), fixed revision `98a70c569c4c1b6da467a20012f766ee1f8dc521`, [Apache-2.0 license](docs/media/LICENSE-so101-model.txt). The [Python demo](examples/python/04_robotics/extra/README.md) downloads the pinned model into a local cache on first use. The repository includes the demo code, recording and attribution. The short loop plays at 1.5× speed; this is not a rendering-rate measurement.
 
 The recording reuses the [joint panel](examples/apps/urdf_robot/src/components/ControlPanel.vue) with an external capture adapter: it reads the model's MJCF joint definitions and sends STL URLs and per-part poses to FrameViz. Its kinematics were compared with MuJoCo `mj_forward`; FrameViz renders the result. This media update does not add a built-in MJCF/URDF importer or a bundled SO-101 application. [Capture provenance](docs/media/README.md#so-101-external-model).
 
