@@ -1,6 +1,6 @@
 # Installation
 
-Use a dedicated development environment and a new, explicit version prefix. Do not overwrite an existing installation to try this unreleased version.
+For 0.5.0 trials, ask the maintainer for the matching runtime, SDK and checksums, or build them from this checkout. Use 0.4 SDKs with the older 0.4 runtimes on Releases. Install into a dedicated development environment and a new version prefix.
 
 Python source installation:
 
@@ -59,14 +59,14 @@ Apple Silicon native preview installation, signing status, paired SDKs and sourc
 
 Install the matching Windows App and use a desktop PowerShell session. The x64 trial needs Microsoft Edge WebView2 Runtime. Open the directory with the prebuilt examples and run `.\hello_world.exe` or `.\scene_slider.exe`. The C++ SDK can start the installed App. Use Ctrl+C in the example's PowerShell to close its Viewer.
 
-For Python, create a virtual environment in the directory with the wheel and examples. When starting the App from Python, point `FRAMEVIZ_TAURI_APP` to the installed executable in this PowerShell session. The trial installer records its directory under the current user's FrameViz registry key.
+For Python, create a virtual environment in the directory with the wheel. When starting the App from Python, point `FRAMEVIZ_TAURI_APP` to the installed executable in this PowerShell session. The trial installer records its directory under the current user's FrameViz registry key.
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install .\frameviz-0.5.0-py3-none-any.whl
 $appDir = (Get-Item 'HKCU:\Software\qqfly\FrameViz').GetValue('')
 $env:FRAMEVIZ_TAURI_APP = Join-Path $appDir 'frameviz.exe'
-.\.venv\Scripts\python.exe .\hello_world.py
+.\.venv\Scripts\python.exe -c "import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()"
 ```
 
 If you installed into another directory by hand, use that executable path. A running compatible Host can be reused by Python without the variable.

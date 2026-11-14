@@ -25,11 +25,13 @@ Coordinates and dimensions come from your application. Quaternions use **`[x, y,
 
 ## Quick start
 
+Ask the maintainer for the **0.5.0 trial runtime and its matching SDK** for your platform, or build both from this checkout. The older [0.4 previews](https://github.com/qqfly/frameviz/releases) need their matching 0.4 SDK. See the [installation guide](docs/INSTALLATION.md) for artifact choices and commands.
+
 Install the runtime once, then install its paired Python SDK wheel in each project environment:
 
 | Environment | Runtime | Viewer |
 |---|---|---|
-| Apple Silicon Mac | Private-preview `FrameViz.app` from the [releases](https://github.com/qqfly/frameviz/releases) | Native window by default |
+| Apple Silicon Mac | Matching trial DMG with `FrameViz.app` | Native window by default |
 | Windows x64 desktop | Matching App and SDK. See the [Windows trial instructions](docs/INSTALLATION.md#windows-x64-trial). | Native window by default |
 | Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./FrameViz_*.deb` | Native window by default |
 | Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |

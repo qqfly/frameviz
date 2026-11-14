@@ -10,15 +10,13 @@ include(CMakeFindDependencyMacro)
 
 # Find Threads (required by ixwebsocket)
 find_dependency(Threads REQUIRED)
-# zlib is required when ixwebsocket is built with permessage-deflate enabled
-find_dependency(ZLIB QUIET)
 
 # Handle ixwebsocket dependency
 # For static library builds, frameviz-cpp depends on ixwebsocket.
 # We bundle the ixwebsocket library in the SDK installation.
 if(NOT TARGET ixwebsocket::ixwebsocket)
     # First, try to find the bundled ixwebsocket library in the SDK installation
-    set(_IXWEBSOCKET_LIB_DIR "${PACKAGE_PREFIX_DIR}/lib")
+    set(_IXWEBSOCKET_LIB_DIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
     find_library(IXWEBSOCKET_LIBRARY
         NAMES ixwebsocket libixwebsocket
         PATHS "${_IXWEBSOCKET_LIB_DIR}"
@@ -26,12 +24,15 @@ if(NOT TARGET ixwebsocket::ixwebsocket)
     )
 
     if(IXWEBSOCKET_LIBRARY)
+        if(@FRAMEVIZ_IXWEBSOCKET_NEEDS_ZLIB@)
+            find_dependency(ZLIB)
+        endif()
         add_library(ixwebsocket::ixwebsocket STATIC IMPORTED)
         set_target_properties(ixwebsocket::ixwebsocket PROPERTIES
             IMPORTED_LOCATION "${IXWEBSOCKET_LIBRARY}"
             INTERFACE_LINK_LIBRARIES "Threads::Threads"
         )
-        if(ZLIB_FOUND)
+        if(@FRAMEVIZ_IXWEBSOCKET_NEEDS_ZLIB@)
             set_property(TARGET ixwebsocket::ixwebsocket APPEND PROPERTY
                 INTERFACE_LINK_LIBRARIES ZLIB::ZLIB
             )

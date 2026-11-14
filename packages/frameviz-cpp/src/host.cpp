@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
@@ -707,7 +708,7 @@ void launchHost(const std::string &exe, const std::vector<std::string> &args) {
   }
   FreeEnvironmentStringsW(entries);
   constexpr wchar_t managed[] = L"FRAMEVIZ_SDK_MANAGED=1";
-  environment.insert(environment.end(), managed, managed + sizeof(managed));
+  environment.insert(environment.end(), std::begin(managed), std::end(managed));
   environment.push_back(L'\0');
 
   STARTUPINFOEXW startup{};

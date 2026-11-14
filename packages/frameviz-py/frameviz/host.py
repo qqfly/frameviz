@@ -49,6 +49,15 @@ def _desktop_available() -> bool:
 
 
 def _installation_hint() -> str:
+    if sys.platform.startswith('win'):
+        return (
+            "Get the compatible Windows FrameViz App from the project maintainer. "
+            "In the current PowerShell session, point to the installed executable, for example "
+            "$env:FRAMEVIZ_TAURI_APP = 'C:\\path\\to\\FrameViz\\frameviz.exe'. "
+            "A Python wheel alone is not the runtime. "
+            "See the Windows trial instructions at "
+            "https://github.com/qqfly/frameviz/blob/task/7.6-release-candidate/docs/INSTALLATION.md#windows-x64-trial"
+        )
     if sys.platform == 'darwin':
         command="open ./FrameViz*.dmg, then copy FrameViz.app to /Applications"
     elif sys.platform.startswith('linux'):

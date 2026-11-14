@@ -164,10 +164,18 @@ install(EXPORT frameviz-targets
 # Generate config file
 include(CMakePackageConfigHelpers)
 
+# IXWebSocket exposes this definition for both source builds and installed targets.
+get_target_property(ixwebsocket_definitions ixwebsocket::ixwebsocket INTERFACE_COMPILE_DEFINITIONS)
+set(FRAMEVIZ_IXWEBSOCKET_NEEDS_ZLIB OFF)
+if("IXWEBSOCKET_USE_ZLIB" IN_LIST ixwebsocket_definitions)
+    set(FRAMEVIZ_IXWEBSOCKET_NEEDS_ZLIB ON)
+endif()
+
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/frameviz-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/frameviz-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/frameviz
+    PATH_VARS CMAKE_INSTALL_LIBDIR
 )
 
 write_basic_package_version_file(

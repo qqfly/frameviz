@@ -25,11 +25,13 @@
 
 ## 快速开始
 
+请向维护者获取适合你平台的 **0.5.0 试用运行时和配套 SDK**，也可从当前源码构建。[Releases](https://github.com/qqfly/frameviz/releases) 上已有的 0.4 预览包请搭配 0.4 SDK。各平台文件和命令见[安装说明](docs/INSTALLATION.md)。
+
 先安装一次运行环境，再在每个 Python 项目环境里安装配套 SDK：
 
 | 环境 | 运行环境 | 显示方式 |
 |---|---|---|
-| Apple 芯片 Mac | [私有 Releases](https://github.com/qqfly/frameviz/releases) 中的预览版 `FrameViz.app` | 默认原生窗口 |
+| Apple 芯片 Mac | 随配套试用 DMG 提供的 `FrameViz.app` | 默认原生窗口 |
 | Windows x64 桌面 | 配套 App 和 SDK，见 [Windows 试用指引](docs/INSTALLATION.md#windows-x64-trial) | 默认原生窗口 |
 | Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
 | 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
