@@ -408,6 +408,17 @@ public:
   void setCameraView(const json &cameraView);
   json getDisplayState(bool includeBounds = false);
 
+  /** Capture a PNG with the optional Python/Chromium renderer.
+   *  An empty path returns bytes only. A temporary camera does not move this View.
+   */
+  std::vector<uint8_t> screenshot(const std::string &path = "",
+      const std::optional<json> &cameraView = std::nullopt,
+      const std::optional<int> &width = std::nullopt,
+      const std::optional<int> &height = std::nullopt);
+
+  /** Export a self-contained HTML lesson with optional pose keyframes. */
+  void exportHtml(const std::string &path, const json &animation = nullptr);
+
   void onEvent(const std::string &name, EventHandler handler);
 
   void pollEvents();

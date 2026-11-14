@@ -22,3 +22,9 @@ target_link_libraries(scene_tree PRIVATE frameviz::frameviz-cpp)
 
 add_executable(widgets_and_queries widgets_and_queries.cpp)
 target_link_libraries(widgets_and_queries PRIVATE frameviz::frameviz-cpp)
+
+add_executable(capture capture.cpp)
+target_link_libraries(capture PRIVATE frameviz::cpp)
+
+add_executable(tauri_control tauri_control.cpp)
+target_link_libraries(tauri_control PRIVATE frameviz::cpp)

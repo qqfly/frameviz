@@ -16,8 +16,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
 
@@ -76,6 +78,20 @@ bool isDefaultLocalWsUrl(const std::string &url) {
 } // namespace
 
 std::optional<std::string> getDiscoveryPath() {
+#if defined(_WIN32)
+  if (const auto *value = _wgetenv(L"FRAMEVIZ_DISCOVERY_PATH"); value && *value) {
+    return std::filesystem::path(value).u8string();
+  }
+  if (const auto *base = _wgetenv(L"FRAMEVIZ_HOME"); base && *base) {
+    return (std::filesystem::path(base) / L"host.json").u8string();
+  }
+  for (const wchar_t *key : {L"LOCALAPPDATA", L"APPDATA"}) {
+    if (const auto *base = _wgetenv(key); base && *base) {
+      return (std::filesystem::path(base) / L"qqfly" / L"FrameViz" / L"host.json").u8string();
+    }
+  }
+  return std::nullopt;
+#else
   // Check environment variable first
   const char *env_path = std::getenv("FRAMEVIZ_DISCOVERY_PATH");
   if (env_path != nullptr && std::string(env_path).length() > 0) {
@@ -85,16 +101,6 @@ std::optional<std::string> getDiscoveryPath() {
   if (const char *base = std::getenv("FRAMEVIZ_HOME")) {
     if (std::string(base).length()) return trimTrailingSlashes(base) + "/host.json";
   }
-#if defined(_WIN32) || defined(_WIN64)
-  // Windows: %LOCALAPPDATA%/FrameViz/host.json
-  char local_app_data[MAX_PATH];
-  if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0,
-                       local_app_data) == S_OK) {
-    std::string path =
-        std::string(local_app_data) + "\\qqfly\\FrameViz\\host.json";
-    return path;
-  }
-#else
   // macOS and Linux: ~/.local/share/qqfly/frameviz/host.json
   const char *home = std::getenv("HOME");
   if (home != nullptr) {
@@ -110,9 +116,8 @@ std::optional<std::string> getDiscoveryPath() {
     return path;
   }
 #endif
-#endif
-
   return std::nullopt;
+#endif
 }
 
 std::optional<DiscoveryInfo> readDiscoveryFile(const std::string &path) {
@@ -128,7 +133,7 @@ std::optional<DiscoveryInfo> readDiscoveryFile(const std::string &path) {
   }
 
   // Try to open and read the file
-  std::ifstream file(actual_path);
+  std::ifstream file(std::filesystem::u8path(actual_path));
   if (!file.is_open()) {
     return std::nullopt;
   }
@@ -170,6 +175,10 @@ std::optional<DiscoveryInfo> readDiscoveryFile(const std::string &path) {
     // Version
     if (data.contains("version") && data["version"].is_string()) {
       info.version = data["version"].get<std::string>();
+    }
+    if (data.contains("pid") && data["pid"].is_number_unsigned() &&
+        data["pid"].get<uint64_t>() <= std::numeric_limits<uint32_t>::max()) {
+      info.pid = data["pid"].get<uint32_t>();
     }
 
     return info;

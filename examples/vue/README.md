@@ -21,3 +21,16 @@ The script opens the page with a per-session credential in the URL fragment. It 
 The `viewId` selects the Python-created view. Your application should supply `authToken` from its trusted bootstrap. `autoStartHost=false` makes the page depend on the existing local Host. This example does not implement remote users or Host-restart persistence. The small `window.showcase` object exposes diagnostics for recording the example; it is not an SDK API.
 
 Source: [page](embedded_viewer.html), [Python bootstrap](open_scene.py), [Vue SDK guide](../../packages/frameviz-vue/README.md).
+
+## C++ scene producer
+
+Build the examples as described in [the example index](../README.md). With
+the same local Host running and the same Vue page served, run:
+
+```sh
+.cache/cpp-examples/bin/vue/open_vue_scene
+```
+
+Pass the page URL as the first argument to use another loopback HTTP port.
+Both SDK versions display the same objects. Click Hide viewer and Show
+viewer to verify restoration, then press Enter to close the scene.

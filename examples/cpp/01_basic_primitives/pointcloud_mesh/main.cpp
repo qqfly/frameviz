@@ -5,6 +5,7 @@
  */
 
 #include <frameviz/viz.hpp>
+#include "example_interrupt.hpp"
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -16,6 +17,7 @@ int main() {
     std::cout << "FrameViz Point Cloud + Mesh" << std::endl;
     std::cout << "==================================================" << std::endl;
 
+    const frameviz::example::Interrupt interrupt;
     auto viz = Viz::open();
 
     // Point cloud: circle
@@ -56,12 +58,18 @@ int main() {
         1, 3, 4,
     };
 
-    viz->addMesh(vertices, faces, FacesFormat::TRI);
+    SceneNodeOptions left, right;
+    left.pose = RigidPose{{-0.65f, 0, 0}};
+    right.pose = RigidPose{{0.65f, 0, 0}};
+    viz->addMesh(vertices, faces, FacesFormat::TRI, {1, 1, 1}, {}, std::nullopt, false, true, left);
+    // In polygon format, prefix each face with its vertex count.
+    viz->addMesh(vertices, {4, 1, 2, 3, 4}, FacesFormat::POLY,
+                 {1, 0.65f, 0}, {}, std::nullopt, false, true, right);
 
     viz->setCameraPose({5, 5, 3}, {0, 0, 0.3f}, {0, 0, 1});
 
     std::cout << "\nPress Enter to exit..." << std::endl;
-    std::cin.get();
+    if (!interrupt.waitForEnter(*viz)) return 130;
 
     viz->close();
     return 0;

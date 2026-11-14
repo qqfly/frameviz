@@ -3,6 +3,7 @@
 import argparse
 from dataclasses import dataclass
 import hashlib
+import json
 import math
 from pathlib import Path
 import sys
@@ -71,56 +72,72 @@ def read_model(path):
     return ET.fromstring(data)
 
 
+def describe_model(path):
+    """Normalize this pinned model into local poses and geometry descriptors."""
+    model = read_model(path)
+    colors = {m.attrib["name"]: vector(m, "rgba", ".7 .7 .7 1").tolist()
+              for m in model.findall("./asset/material")}
+    paths = {m.get("name", Path(m.attrib["file"]).stem): m.attrib["file"]
+             for m in model.findall("./asset/mesh")}
+
+    def describe_body(body):
+        result = {"name": body.attrib["name"], "pose": local_pose(body), "geometry": [],
+                  "children": [describe_body(child) for child in body.findall("body")]}
+        hinge = body.find("joint")
+        if hinge is not None:
+            axis = vector(hinge, "axis", "0 0 1")
+            result["joint"] = {"name": hinge.attrib["name"], "axis": (axis / np.linalg.norm(axis)).tolist(),
+                               "limits": vector(hinge, "range", "").tolist()}
+        for geom in body.findall("geom"):
+            if geom.get("class") != "visual" and geom.get("group") not in ("1", "2"):
+                continue
+            item = {"kind": geom.attrib["type"], "pose": local_pose(geom),
+                    "color": colors[geom.attrib["material"]]}
+            if item["kind"] == "mesh":
+                item["file"] = paths[geom.attrib["mesh"]]
+            elif item["kind"] in ("box", "cylinder"):
+                item["size"] = (2 * vector(geom, "size", "")).tolist()
+            else:
+                raise ValueError(f"Unsupported SO-101 visual geometry: {item['kind']}")
+            result["geometry"].append(item)
+        return result
+
+    return describe_body(model.find("./worldbody/body"))
+
+
 class So101:
     def __init__(self, viz, model_path):
         self.viz = viz
         model_path = Path(model_path)
-        model = read_model(model_path)
         self.bodies = {}
         self.geometry = []
         self.joints = []
-        colors = {m.attrib["name"]: vector(m, "rgba", ".7 .7 .7 1").tolist()
-                  for m in model.findall("./asset/material")}
-        paths = {m.get("name", Path(m.attrib["file"]).stem):
-                 model_path.parent / "assets" / m.attrib["file"]
-                 for m in model.findall("./asset/mesh")}
         meshes = {}
 
         def add_body(body, parent):
-            name = body.attrib["name"]
-            rest = local_pose(body)
+            name, rest = body["name"], body["pose"]
             handle = viz.add_node(parent=parent, name=name, pose=rest)
             self.bodies[name] = handle
-            hinge = body.find("joint")
-            if hinge is not None:
-                axis = vector(hinge, "axis", "0 0 1")
-                self.joints.append(Joint(hinge.attrib["name"], handle, rest,
-                                         axis / np.linalg.norm(axis), vector(hinge, "range", "")))
-
-            for geom in body.findall("geom"):
-                if geom.get("class") != "visual" and geom.get("group") not in ("1", "2"):
-                    continue
-                options = dict(parent=handle, name=name, pose=local_pose(geom),
-                               color=colors[geom.attrib["material"]])
-                kind = geom.attrib["type"]
-                if kind == "mesh":
-                    path = paths[geom.attrib["mesh"]]
+            if joint := body.get("joint"):
+                self.joints.append(Joint(joint["name"], handle, rest, np.array(joint["axis"]),
+                                         np.array(joint["limits"])))
+            for geom in body["geometry"]:
+                options = dict(parent=handle, name=name, pose=geom["pose"], color=geom["color"])
+                if geom["kind"] == "mesh":
+                    path = model_path.parent / "assets" / geom["file"]
                     if path not in meshes:
                         meshes[path] = read_stl(path)
                     drawable = viz.add_mesh(*meshes[path], **options)
-                elif kind == "box":
-                    drawable = viz.add_box(size=(2 * vector(geom, "size", "")).tolist(), **options)
-                elif kind == "cylinder":
-                    radius, half_height = vector(geom, "size", "")
-                    drawable = viz.add_cylinder(radius=float(radius), height=float(2 * half_height), **options)
+                elif geom["kind"] == "box":
+                    drawable = viz.add_box(size=geom["size"], **options)
                 else:
-                    raise ValueError(f"Unsupported SO-101 visual geometry: {kind}")
+                    diameter, height = geom["size"]
+                    drawable = viz.add_cylinder(radius=diameter / 2, height=height, **options)
                 self.geometry.append((name, drawable))
-
-            for child in body.findall("body"):
+            for child in body["children"]:
                 add_body(child, handle)
 
-        add_body(model.find("./worldbody/body"), None)
+        add_body(describe_model(model_path), None)
         viz.set_view_config(show_axes=False)
         viz.set_camera_pose([.72, -.83, .58], [.08, 0, .19])
 
@@ -163,6 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("model", nargs="?", type=Path,
                         help="Path to the pinned so101.xml (default: use the model cache)")
     parser.add_argument("--cache-dir", type=Path, help="Root directory for downloaded models")
+    parser.add_argument("--describe", action="store_true", help="Write model descriptors as JSON for the C++ example")
     parser.add_argument("--controls", action="store_true", help="Show joint sliders")
     args = parser.parse_args()
     try:
@@ -170,6 +188,10 @@ if __name__ == "__main__":
                       if args.model is None else args.model.expanduser())
     except (OSError, RuntimeError) as error:
         parser.error(str(error))
+
+    if args.describe:
+        print(json.dumps(describe_model(model_path)))
+        sys.exit(0)
 
     print("Opening FrameViz and building the SO-101 scene…", file=sys.stderr, flush=True)
     viz = fv.open(title="SO-101 · FrameViz")

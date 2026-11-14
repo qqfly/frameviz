@@ -45,6 +45,8 @@ python examples/python/03_interaction/use_scene_slider.py --mode commit
 
 ### PNG 截图
 
+[完整脚本](../examples/python/06_scene_output/save_png.py)演示从临时视角生成 PNG。
+
 先在使用 FrameViz 的 Python 环境安装同版本 SDK 的 `capture` extra 和后台浏览器。
 从源码开发时运行以下命令。
 
@@ -64,8 +66,11 @@ viz.close()
 
 也可传入 `camera_view=viz.get_camera_view()` 的同结构数据，改变这一次的拍摄视角。
 后台 Chromium 自动启动并在同一个 Python 进程中复用。默认使用同版本本机 Host 提供的 Viewer。
+在 C++ 中调用 `viz->screenshot(path, cameraView, width, height)`。C++ 每次调用启动同一个可选渲染器的独立进程，使用 `FRAMEVIZ_PYTHON` 指定上述环境。[C++ PNG 案例](../examples/cpp/06_scene_output/save_png/main.cpp)
 
 ### 离线教程
+
+[完整脚本](../examples/python/06_scene_output/export_html.py)演示导出带位姿动画的 HTML。
 
 使用和截图相同的后台组件。仅导出静态场景时调用 `viz.export_html("lesson.html")`。
 也可以给对象 ID 指定预先计算好的局部刚体位姿轨迹，时间单位为秒，严格递增。
@@ -81,8 +86,9 @@ viz.export_html("lesson.html", animation={
 ```
 
 读者双击 `lesson.html` 即可浏览，或由教程页面以 `<iframe src="lesson.html" title="位姿动画"></iframe>` 嵌入。
-播放、暂停和进度只作用于预计算轨迹，读者仍可独立旋转和缩放视角。
+播放、暂停、进度和 Loop 只作用于预计算轨迹，读者仍可独立旋转和缩放视角。使用新版 Viewer 重新导出 HTML 后可用 Loop。
 导出时需要能加载场景引用的模型和图片，成功后页面携带其绘图数据。
+在 C++ 中调用 `viz->exportHtml(path, animation)`，动画 JSON 使用相同的字段。[C++ HTML 案例](../examples/cpp/06_scene_output/export_html/main.cpp)
 
 ### C++ 场景节点
 

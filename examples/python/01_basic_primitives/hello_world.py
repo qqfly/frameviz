@@ -44,6 +44,8 @@ def main():
     cylinder = viz.add_cylinder(radius=0.2, height=1.0, pos=[-2, 0, 0.5], color='green')
     print(f"    ✓ 圆柱: {cylinder}")
     
+    viz.add_cone(radius=0.35, height=0.8, position=[-1.8, 1.5, 0.4], color="orange")
+    # The endpoints define the arrow in its local frame; set_transform moves the whole arrow.
     # 黄色箭头
     arrow = viz.add_arrow(start=[1, 2, 0], end=[1, 2, 1.5], color='yellow')
     print(f"    ✓ 箭头: {arrow}")

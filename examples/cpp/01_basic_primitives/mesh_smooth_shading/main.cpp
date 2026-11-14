@@ -5,6 +5,7 @@
  */
 
 #include <frameviz/viz.hpp>
+#include "example_interrupt.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -76,6 +77,7 @@ int main() {
   std::cout << "FrameViz C++ - Mesh Flat Shading vs Smooth Shading\n";
   std::cout << "======================================================\n";
 
+  const frameviz::example::Interrupt interrupt;
   auto viz = Viz::open("ws://127.0.0.1:9527", "Mesh Smooth Shading Demo", 1200, 800);
   std::cout << "Connected: scene=" << viz->sceneId() << "\n";
 
@@ -103,7 +105,7 @@ int main() {
   std::cout << "- Left sphere: highlights show faceted triangles\n";
   std::cout << "- Right sphere: highlights are smoother and more continuous\n";
   std::cout << "\nPress Enter to exit...\n";
-  std::cin.get();
+  if (!interrupt.waitForEnter(*viz)) return 130;
 
   viz->close();
   std::cout << "Connection closed\n";

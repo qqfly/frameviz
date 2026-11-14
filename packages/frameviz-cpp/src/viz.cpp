@@ -20,6 +20,7 @@ extern char **environ;
 
 #include "frameviz/viz.hpp"
 #include "frameviz/host.hpp"
+#include "frameviz/protocol_version.hpp"
 #include "frameviz/internal/color_utils.hpp"
 #include "frameviz/internal/ws_url.hpp"
 #include "frameviz/tauri.hpp"
@@ -120,6 +121,41 @@ std::string buildViewerUrl(const std::string &viewer_url,
 } // namespace
 
 namespace {
+
+// The legacy default URL is also used by callers to request local discovery.
+constexpr const char *defaultWsUrl = "ws://127.0.0.1:9527";
+
+std::unique_ptr<FrameVizClient> connectRuntime(std::string &url, bool autoEvents,
+                                               std::chrono::seconds timeout) {
+  const char *configured = std::getenv("FRAMEVIZ_HOST");
+  const bool automatic = (url.empty() || url == defaultWsUrl) && (!configured || !*configured);
+  const auto live = automatic ? detail::runningLocalHost() : std::nullopt;
+  if (live) {
+    if (auto error = hostVersionError(live->version); !error.empty()) throw std::runtime_error(error);
+    url = live->ws_url;
+  }
+  else if (automatic) url = defaultWsUrl;
+  else if ((url.empty() || url == defaultWsUrl) && configured && *configured) url = configured;
+
+  auto connect = [&]() {
+    auto client = std::make_unique<FrameVizClient>(url, autoEvents);
+    client->connect(timeout);
+    return client;
+  };
+  // Reuse a live peer and surface authentication/version failures to the caller.
+  // An unclaimed default port can be occupied by an unrelated local process.
+  if (live || !detail::isLocalWsUrl(url) ||
+      (!automatic && isHostRunning(url)) ||
+      (automatic && std::getenv("FRAMEVIZ_AUTH_TOKEN") && isHostRunning(url))) {
+    return connect();
+  }
+  if (const char *value = std::getenv("FRAMEVIZ_AUTO_START_WS"); value &&
+      std::regex_match(value, std::regex(R"(\s*(0|false|no|off)\s*)", std::regex::icase))) {
+    return connect();
+  }
+  url = detail::startLocalHost(url, timeout.count(), true, automatic);
+  return connect();
+}
 
 json toList(const Vec3 &v) { return json::array({v[0], v[1], v[2]}); }
 
@@ -239,16 +275,8 @@ std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
                                int width, int height, bool windowDecorations,
                                const std::optional<std::string>& shareScene,
                                int windowMode, bool autoEvents) {
-  std::string resolved_url = resolveWsUrl(url);
-  auto client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
-  try {
-    client->connect();
-  } catch (const std::exception &) {
-    // Connection failed — try to auto-start the host and retry.
-    ensureHostRunning(resolved_url);
-    client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
-    client->connect();
-  }
+  std::string resolved_url = url;
+  auto client = connectRuntime(resolved_url, autoEvents, std::chrono::seconds(10));
 
   // Use existing scene or create new one
   std::string scene_id;
@@ -296,6 +324,10 @@ std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
       for (unsigned char c : *token) { encoded += '%'; encoded += hex[c >> 4]; encoded += hex[c & 15]; }
       viewer_url = viewer_url.substr(0, viewer_url.find('#')) + "#token=" + encoded;
     }
+    if (!detail::hasDesktop()) {
+      std::cout << "[FrameViz] Viewer URL: " << viewer_url << std::endl;
+      return false;
+    }
 #if defined(_WIN32) || defined(_WIN64)
     ShellExecuteA(nullptr, "open", viewer_url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #else
@@ -309,6 +341,7 @@ std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
     if (posix_spawnp(&pid, program, nullptr, nullptr, argv, environ) != 0) throw std::runtime_error("Unable to open Viewer");
     int status; waitpid(pid, &status, 0);
 #endif
+    return true;
   };
 
   // Match Python SDK behavior:
@@ -316,27 +349,29 @@ std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
   //   1: browser only
   //   2: try tauri then browser
   bool opened_via_tauri = false;
+  bool opened_viewer = false;
   int normalized_window_mode = windowMode;
   if (normalized_window_mode < 0 || normalized_window_mode > 2) {
     normalized_window_mode = 2;
   }
 
   if (normalized_window_mode == 1) {
-    open_browser();
+    opened_viewer = open_browser();
   } else if (normalized_window_mode == 2) {
-    if (tryOpenTauriWindow(view_id, title, width, height, std::nullopt,
+    if (detail::hasDesktop() && tryOpenTauriWindow(view_id, title, width, height, std::nullopt,
                           std::nullopt, "", scene_id, "balanced",
                           windowDecorations)) {
       opened_via_tauri = true;
+      opened_viewer = true;
     } else {
-      open_browser();
+      opened_viewer = open_browser();
     }
   }
 
   auto viz = std::unique_ptr<Viz>(
       new Viz(std::move(client), scene_id, view_id, opened_via_tauri, true,
               true));
-  if (normalized_window_mode != 0 && !viz->waitForViewer(std::chrono::seconds(10))) {
+  if (opened_viewer && !viz->waitForViewer(std::chrono::seconds(10))) {
     std::cerr << "[FrameViz] Viewer not ready within timeout. "
               << "Continuing without viewer readiness." << std::endl;
   }
@@ -346,15 +381,8 @@ std::unique_ptr<Viz> Viz::open(const std::string &url, const std::string &title,
 std::unique_ptr<Viz> Viz::connect(const std::string &url,
                                   const std::string &view_id,
                                   std::chrono::seconds timeout, bool autoEvents) {
-  std::string resolved_url = resolveWsUrl(url);
-  auto client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
-  try {
-    client->connect(timeout);
-  } catch (const std::exception &) {
-    ensureHostRunning(resolved_url);
-    client = std::make_unique<FrameVizClient>(resolved_url, autoEvents);
-    client->connect(timeout);
-  }
+  std::string resolved_url = url;
+  auto client = connectRuntime(resolved_url, autoEvents, timeout);
 
   auto start = std::chrono::steady_clock::now();
   constexpr auto poll_interval = std::chrono::milliseconds(500);

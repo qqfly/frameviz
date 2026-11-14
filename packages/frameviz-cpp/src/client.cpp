@@ -28,12 +28,32 @@
 #include <unordered_set>
 #include <vector>
 
+#ifdef _WIN32
+#include <ixwebsocket/IXNetSystem.h>
+#endif
 #include <ixwebsocket/IXWebSocket.h>
 #include <nlohmann/json.hpp>
 
 namespace frameviz {
 
 using json = nlohmann::json;
+
+#ifdef _WIN32
+namespace {
+class WinsockSession {
+public:
+  WinsockSession() {
+    if (!ix::initNetSystem()) {
+      throw std::runtime_error("Unable to initialize Winsock for FrameViz");
+    }
+  }
+
+  ~WinsockSession() { ix::uninitNetSystem(); }
+  WinsockSession(const WinsockSession &) = delete;
+  WinsockSession &operator=(const WinsockSession &) = delete;
+};
+} // namespace
+#endif
 
 class FrameVizClient::Impl : public std::enable_shared_from_this<Impl> {
 public:
@@ -53,6 +73,9 @@ public:
     if (m_eventRunning || m_eventThread.joinable()) {
       throw std::runtime_error("Close the previous FrameViz event session before reconnecting");
     }
+#ifdef _WIN32
+    if (!m_winsock) m_winsock.emplace();
+#endif
     m_timeout = timeout;
     m_stopEvents = false;
     { std::lock_guard<std::mutex> guard(m_connectMutex); m_connectError.reset(); }
@@ -492,6 +515,7 @@ private:
       throw std::runtime_error("Authentication failed: invalid token");
     }
     if (!m_authVersionOk) throw std::runtime_error(hostVersionError(m_hostVersion));
+    m_sessionToken = std::move(token);
     m_authenticated = true;
     // std::cerr << "[DEBUG] Authentication successful" << std::endl;
   }
@@ -509,6 +533,13 @@ private:
   }
 
 public:
+  std::pair<std::string, std::string> captureSession() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_authenticated || !m_connected) {
+      throw std::runtime_error("FrameViz capture requires an authenticated connection");
+    }
+    return {m_url, m_sessionToken};
+  }
   std::optional<json> waitForEvent(const std::string &event_name,
                                    std::chrono::seconds timeout) {
     // Default filter accepts all events
@@ -612,6 +643,10 @@ public:
 
 private:
   std::string m_url;
+#ifdef _WIN32
+  // Keep Winsock active until the WebSocket and its worker are destroyed.
+  std::optional<WinsockSession> m_winsock;
+#endif
   ix::WebSocket m_ws;
   std::atomic<bool> m_connected;
   std::atomic<bool> m_authenticated;
@@ -633,6 +668,7 @@ private:
   std::atomic<bool> m_authOk;
   std::atomic<bool> m_authVersionOk{false};
   std::string m_hostVersion;
+  std::string m_sessionToken;
   std::atomic<bool> m_authDone{false};
 
   std::mutex m_lifecycleMutex;
@@ -672,6 +708,10 @@ FrameVizClient::FrameVizClient(const std::string &url, bool autoEvents)
 
 FrameVizClient::~FrameVizClient() {
   if (m_impl) m_impl->close();
+}
+
+std::pair<std::string, std::string> FrameVizClient::captureSession() const {
+  return m_impl->captureSession();
 }
 
 FrameVizClient::FrameVizClient(FrameVizClient &&) noexcept = default;

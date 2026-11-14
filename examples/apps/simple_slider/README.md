@@ -32,3 +32,26 @@ The browser sends the temporary business token in the first WebSocket frame and 
 Use `FRAMEVIZ_PYTHON` to select a Python interpreter, `FRAMEVIZ_HOME` for state, `FRAMEVIZ_RUNTIME_MANIFEST` for an explicit runtime manifest, and `CMAKE_PREFIX_PATH` for the C++ SDK. No internal installation directory is searched. The standalone template's packaged desktop credential injection and complete installer still need target-platform acceptance.
 
 Run `python3 scripts/generate_samples.py` from the project root to reproduce the MIT synthetic data. User-supplied model roots must be explicit; model assets are never inferred from another project.
+
+## Try the C++ backend in the same browser app
+
+Start a matching local FrameViz Host and prepare the [installed C++ SDK](../../../docs/INSTALLATION.md).
+Set a new local business token in the terminal that runs the backend. Build
+and serve the Vue application from the repository root.
+
+```sh
+pnpm --filter @frameviz/vue build
+pnpm -C examples/apps/simple_slider dev --host 127.0.0.1
+```
+
+In a second terminal:
+
+```sh
+export FRAMEVIZ_BUSINESS_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+CMAKE_PREFIX_PATH="$PWD/.local/sdk" pnpm -C examples/apps/simple_slider backend:cpp:build
+pnpm -C examples/apps/simple_slider backend:cpp
+```
+
+Open the address printed by Vite with `?ws_port=<Host port>#token=<Host token>&business_token=<business token>`.
+Use the active Host's local discovery record and the token from the backend
+terminal. Drag X/Y/Z, rotate, then use Reset. Stop both terminals with Ctrl+C.

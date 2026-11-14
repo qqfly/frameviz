@@ -29,9 +29,9 @@ export class WidgetPanel {
     this.panel.className = 'frameviz-widget-panel';
     Object.assign(this.panel.style, {
       position: 'absolute', top: '12px', right: '12px', zIndex: '5',
-      maxHeight: 'calc(100% - 24px)', width: 'min(260px, calc(100% - 24px))',
-      overflow: 'auto', padding: '10px', borderRadius: '8px', boxSizing: 'border-box',
-      background: '#202630', color: '#fff', colorScheme: 'dark',
+      maxHeight: 'calc(100% - 24px)', width: 'min(272px, calc(100% - 24px))',
+      overflow: 'auto', padding: '12px', borderRadius: '8px', boxSizing: 'border-box',
+      background: '#202630', color: '#f2f5f9', colorScheme: 'dark',
       font: '13px/1.4 system-ui, sans-serif',
     });
     // Viewer shortcuts and camera controls should not consume widget interactions.
@@ -66,6 +66,7 @@ export class WidgetPanel {
       const summary = document.createElement('summary');
       element.open = true;
       summary.textContent = widget.label;
+      Object.assign(summary.style, { cursor: 'pointer', fontWeight: '600', marginBottom: '8px', overflowWrap: 'anywhere' });
       element.append(summary);
       row = { element, setValue: () => {} };
     } else if (widget.kind === 'number') {
@@ -74,7 +75,7 @@ export class WidgetPanel {
       row = this.control(widget);
     }
     row.element.dataset.widgetId = widget.id;
-    Object.assign(row.element.style, { margin: '4px 0', padding: '2px' });
+    row.element.style.marginBlock = '6px';
     (this.rows.get(widget.parent ?? '')?.element ?? this.panel).append(row.element);
     this.rows.set(widget.id, row);
     this.updateVisibility();
@@ -99,21 +100,40 @@ export class WidgetPanel {
     this.panel.remove();
   }
 
+  private fieldLabel(text: string, input: HTMLElement): HTMLLabelElement {
+    const label = document.createElement('label');
+    Object.assign(label.style, {
+      display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
+      columnGap: '8px', alignItems: 'center', minHeight: '30px',
+    });
+    const name = document.createElement('span');
+    name.textContent = text;
+    name.style.overflowWrap = 'anywhere';
+    label.append(name, input);
+    return label;
+  }
+
+  private styleField(field: HTMLElement): void {
+    Object.assign(field.style, {
+      boxSizing: 'border-box', minWidth: '0', width: '100%', minHeight: '30px',
+      font: 'inherit', padding: '4px 8px', border: '1px solid #647084',
+      borderRadius: '5px', color: 'inherit', background: '#151b24',
+    });
+  }
+
   private number(widget: WidgetDefinition): Row {
     const element = document.createElement('div');
     const number = document.createElement('input');
     number.type = 'number';
     number.step = 'any';
     number.setAttribute('aria-label', widget.label);
-    number.style.width = '7ch';
+    this.styleField(number);
     number.value = String(widget.value);
-    const label = document.createElement('label');
-    label.append(document.createTextNode(widget.label + ' '), number);
-    element.append(label);
+    element.append(this.fieldLabel(widget.label, number));
     const range = document.createElement('input');
     range.type = 'range';
     range.setAttribute('aria-label', widget.label + ' slider');
-    range.style.width = '100%';
+    Object.assign(range.style, { display: 'block', width: '100%', margin: '5px 0 8px', accentColor: '#83b8ff' });
 
     if (widget.minimum !== undefined) number.min = String(widget.minimum);
     if (widget.maximum !== undefined) number.max = String(widget.maximum);
@@ -179,11 +199,16 @@ export class WidgetPanel {
   }
 
   private control(widget: WidgetDefinition): Row {
-    const element = document.createElement('label');
-    element.style.display = 'block';
-    element.append(document.createTextNode(widget.label + ' '));
     const commit = (value: WidgetDefinition['value']) => this.submit(widget.id, value, 'commit');
     if (widget.kind === 'text') {
+      const element = document.createElement('div');
+      Object.assign(element.style, { color: '#c6cfdb', overflowWrap: 'anywhere' });
+      if (widget.label) {
+        const title = document.createElement('strong');
+        title.textContent = widget.label;
+        title.style.display = 'block';
+        element.append(title);
+      }
       const text = document.createElement('span');
       text.textContent = String(widget.value);
       element.append(text);
@@ -193,11 +218,14 @@ export class WidgetPanel {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = widget.label;
+      this.styleField(button);
+      Object.assign(button.style, { display: 'block', background: '#2c3849', cursor: 'pointer', overflowWrap: 'anywhere' });
       button.addEventListener('click', () => commit(null));
       return { element: button, setValue: () => {} };
     }
     if (widget.kind === 'select') {
       const select = document.createElement('select');
+      this.styleField(select);
       for (const choice of widget.choices ?? []) {
         const option = document.createElement('option');
         option.textContent = option.value = choice;
@@ -205,12 +233,17 @@ export class WidgetPanel {
       }
       select.value = String(widget.value);
       select.addEventListener('change', () => commit(select.value));
-      element.append(select);
+      const element = this.fieldLabel(widget.label, select);
       return { element, setValue: value => { select.value = String(value); } };
     }
     const input = document.createElement('input');
     const checkbox = widget.kind === 'checkbox';
     input.type = checkbox ? 'checkbox' : 'text';
+    if (checkbox) {
+      Object.assign(input.style, { justifySelf: 'start', width: '16px', height: '16px', margin: '0', accentColor: '#83b8ff' });
+    } else {
+      this.styleField(input);
+    }
     const setValue = (value: WidgetDefinition['value']) => {
       if (checkbox) input.checked = value === true;
       else input.value = String(value);
@@ -220,7 +253,6 @@ export class WidgetPanel {
     input.addEventListener('keydown', event => {
       if (event.key === 'Enter') input.blur();
     });
-    element.append(input);
-    return { element, setValue };
+    return { element: this.fieldLabel(widget.label, input), setValue };
   }
 }

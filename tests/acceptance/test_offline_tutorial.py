@@ -113,6 +113,25 @@ def test_offline_static_and_animation_embed_and_use_real_pointer(tree_viz, model
             assert float(seek.input_value()) > 0
             seek.press("Home")
             assert canvas.screenshot() != start
+            loop = frame.get_by_role("checkbox", name="Loop")
+            loop.check()
+            play.click()
+            seek.evaluate("""slider => {
+                slider.value = Number(slider.max) - 0.05;
+                slider.dispatchEvent(new Event('input', {bubbles: true}));
+            }""")
+            assert seek.evaluate("""slider => new Promise(resolve => {
+                const deadline = performance.now() + 1500;
+                function check() {
+                    if (slider.valueAsNumber < 0.5) resolve(true);
+                    else if (performance.now() >= deadline) resolve(false);
+                    else requestAnimationFrame(check);
+                }
+                check();
+            })""", timeout=1500)
+            expect(pause).to_be_visible()
+            loop.uncheck()
+            expect(play).to_be_visible(timeout=2000)
             assert not network and not errors
         finally:
             browser.close()

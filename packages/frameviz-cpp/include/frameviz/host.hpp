@@ -38,13 +38,15 @@ bool isHostRunning(const std::string &ws_url = "ws://127.0.0.1:9527",
  * Search order:
  *  1. `FRAMEVIZ_HOST_PATH` environment variable
  *  2. `FRAMEVIZ_TAURI_APP` environment variable
- *  3. Executables built inside a matching qqfly.frameviz source tree
+ *  3. Compatible installations in known locations for macOS, Linux or Windows
+ *  4. Executables built inside a matching qqfly.frameviz source tree
  *     (project identity and protocol version must match)
- *  4. Linux AppImage bundles in that source tree
+ *  5. Linux AppImage bundles in that source tree
  *
  * Global PATH/system app names are not searched automatically.
  *
  * @return Absolute path to the executable, or std::nullopt if not found.
+ * @throws std::runtime_error if an explicitly configured runtime is invalid.
  */
 std::optional<std::string> findHostExecutable();
 
@@ -52,6 +54,7 @@ std::optional<std::string> findHostExecutable();
  * @brief Launch the FrameViz Host and wait until its WebSocket port is ready.
  *
  * If the host is already running, this is a no-op that returns immediately.
+ * An SDK-started Host exits after the SDK process and its last client leave.
  *
  * @param ws_url   Target WebSocket URL (default: ws://127.0.0.1:9527).
  * @param timeout_sec  Max seconds to wait for the host to become ready.
@@ -82,8 +85,7 @@ void ensureHostRunning(const std::string &ws_url = "ws://127.0.0.1:9527",
 /**
  * @brief Stop the host process if it was started by this module.
  *
- * Sends SIGTERM, waits briefly, then SIGKILL if still running.
- * Called automatically via atexit when startHost() succeeds.
+ * Explicit stop also disconnects other clients of that Host.
  */
 void stopHost();
 

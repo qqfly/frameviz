@@ -2,82 +2,82 @@
 
 本目录包含 FrameViz 的使用示例，按语言与场景分类。先按[安装说明](../docs/INSTALLATION.md)安装运行环境和配套 SDK。Python 的 `fv.open()` 会自动发现、启动并打开场景；无需启动 pnpm 开发服务器。强制浏览器用 `window_mode=1`，无桌面 Linux 会打印私有链接。[故障排查](../docs/TROUBLESHOOTING.md)。
 
-## Python 示例（`examples/python/`）
+[Python／C++ 案例清单](INVENTORY.md)列出 Python 和 C++ 的成对案例和运行入口，以及 Vue 和完整应用的运行路线。
 
-| 分类 | 说明 |
-|------|------|
-| **01_basic_primitives** | Box、Sphere、点云、网格、Instancing 等基础图元 |
-| **02_camera_views** | 多视图与相机控制 |
-| **03_interaction** | Gizmo、拾取、事件 |
-| **04_robotics** | 简单机械臂动画、Octomap |
-| **05_developer_features** | README 对应的固定输入案例：网格、实例更新、拾取/Gizmo、模型标注 |
+## Python 入门顺序
 
-[README 功能图鉴与短动图](../README.zh-CN.md)展示各类输入和 API；[Vue 滑动条应用](apps/simple_slider/README.md)展示控件与场景联动，[最小 Vue 接入](vue/README.md)提供组件起步示例。
+先用已安装配套 SDK 的 Python，从仓库根目录运行示例。第一步可以在 IPython 逐行输入。
 
-## C++ 示例（`examples/cpp/`）
+```python
+import frameviz as fv
 
-C++ 示例覆盖相同的主要绘制与交互场景；具体接口支持见 [API 对照](../docs/API_SUPPORT.md)：
-
-| 分类 | 说明 |
-|------|------|
-| **01_basic_primitives** | Box、Sphere、点云、网格、Instancing 等基础图元 |
-| **02_camera_views** | 多视图与相机控制 |
-| **03_interaction** |  Gizmo、拾取、事件 |
-| **04_robotics** | 简单机械臂动画、Octomap |
-
-运行 C++ 示例：
-
-```bash
-cd examples/cpp/01_basic_primitives/hello_world
-mkdir build && cd build
-cmake ..
-cmake --build .
-./hello_world
+viz = fv.open()
+box = viz.add_box()
+viz.set_transform(box, position=[1, 0, 0])
 ```
 
----
+窗口中的方块会移动。试完运行 `viz.close()`。写成独立脚本时，在末尾加 `viz.keep_running()`，回到终端按 Ctrl+C 退出。
 
-### APP 示例（`examples/apps/`）
+| 想学什么 | 从哪里开始 | 运行后观察什么 |
+| --- | --- | --- |
+| 基础图元、颜色与文字 | [基础图元一览](python/01_basic_primitives/hello_world.py) | 场景中同时出现坐标轴、几何体和三维文字。 |
+| 点云、线和网格 | [点云与网格](python/01_basic_primitives/use_pointcloud_mesh.py) · [索引线段](python/01_basic_primitives/use_lines_indices.py) | 用坐标数组绘制点和面，用索引控制哪些顶点相连。 |
+| 一次绘制或更新大量重复对象 | [实例化](python/01_basic_primitives/use_instancing.py) | 多个盒子使用同一实例对象，随后可以批量更新。 |
+| 点选和拖动 | [物体拾取](python/03_interaction/use_picking.py) · [Gizmo](python/03_interaction/use_gizmo.py)（加 `--points` 观察点云索引） | 选择物体、拖动手柄，或在终端读到单点索引与世界坐标。 |
+| 滑条、精确输入和重置 | [滑条](python/03_interaction/use_scene_slider.py) · [完整面板](python/03_interaction/use_widget_panel.py) | 拖动或输入方块的位置。用 `--mode commit` 对比松手后更新。 |
+| 相机和多个 View | [相机适配物体](python/02_camera_views/use_camera_controls_fit_object.py) · [共享场景](python/02_camera_views/use_multi_view.py)（加 `--app` 优先打开桌面窗口，加 `--independent` 使用独立场景） | 比较共享场景的不同视角与各自拥有对象的独立场景。 |
+| 场景树和局部关节位姿 | [场景树](python/05_scene/use_scene_tree.py) · [三连杆](python/04_robotics/use_robot_arm.py) · [父子节点与改挂用法](../docs/SCENE_TREE.md#3-通用场景树与独立-camera-view) | 更新父节点后，子连杆跟随移动。 |
+| 查询显示状态 | [场景与相机查询](../docs/SCENE_TREE.md#6-显示状态查询截图与教程-html-导出) | 查看对象层级、位姿和相机参数。 |
+| 无窗口截图 | [生成 PNG](python/06_scene_output/save_png.py) | 从临时视角保存 `scene.png`，不打开交互窗口。 |
+| 离线 HTML | [导出动画场景](python/06_scene_output/export_html.py) | 打开 `lesson.html` 后可以旋转视角、播放和拖动进度。 |
+| 接入 Vue 应用 | [最小 Vue 嵌入](vue/README.md) · [Vue 滑条应用](apps/simple_slider/README.md) | 将 Viewer 放进现有页面，用应用控件更新三维场景。 |
 
-| 分类 | 说明 |
-|------|------|
-| **simple_slider** | 后端控最小示例（Vue + Tauri + C++ backend） |
-| **urdf_robot** | 合成六轴关节与 Visual/Collision 视图示例（Vue + Tauri + Python/C++ backend） |
+截图和 HTML 导出需要 [`capture` 依赖及 Chromium](../docs/PYTHON_DISTRIBUTION.md)。准备好以后，从仓库根目录运行：
 
 ```bash
-# 发布包：直接运行独立应用（.dmg/.deb）
-# macOS: 双击 .dmg 安装后运行
-# Linux:
-sudo dpkg -i examples/apps/simple_slider/*.deb
-sudo dpkg -i examples/apps/urdf_robot/*.deb
+python examples/python/06_scene_output/save_png.py
+python examples/python/06_scene_output/export_html.py
 ```
+
+文件保存在运行命令时终端所在的目录。离线打开 HTML，点 Play 播放方块轨迹，勾选 Loop 连续播放。Loop 随新版 Viewer 提供，已有文件需要重新导出。
+
+C++ 使用同一后台渲染器。在下面的 CMake 构建完成后，设置
+`FRAMEVIZ_PYTHON` 为安装了配套 FrameViz SDK 与 `capture` 依赖的 Python 路径，再运行
+`.cache/cpp-examples/bin/06_scene_output/save_png` 或 `.cache/cpp-examples/bin/06_scene_output/export_html`。
+
+## 模型与文字
+
+从仓库根目录任选一条。案例会加载内置的蓝色四棱锥。
 
 ```bash
-# 源码开发（需要 JS SDK）
-cd examples/apps/simple_slider/
-pnpm install
-pnpm tauri:dev
-
-# 另开终端运行 C++ backend
-pnpm backend:cpp:build
-pnpm backend:cpp
-
-# 或运行 Python backend
-pip install -r python/requirements.txt
-pnpm backend:py
-
-# 构建和运行 urdf_robot
-cd examples/apps/urdf_robot/
-pnpm install
-pnpm tauri:dev
-
-# 运行后端 （Python）
-python3 examples/apps/urdf_robot/python/backend_urdf.py --path /path/to/sample_robot_folder
-
-# 编译运行后端（C++）
-cd examples/apps/urdf_robot/cpp/
-mkdir build && cd build
-cmake ..
-cmake --build .
-./bin/urdf_robot_backend --path /path/to/sample_robot_folder
+python examples/python/01_basic_primitives/use_load_mesh_and_labels.py
+python examples/python/01_basic_primitives/serve_sample_mesh.py --run \
+  .cache/cpp-examples/bin/01_basic_primitives/load_mesh_and_labels
 ```
+
+按 Enter 移动模型。三维文字随模型移动，屏幕文字保持原位。两种语言也都可以给模型案例直接传入自己的 STL 或 DAE URL。
+
+## 进阶案例
+
+- [拖动目标并更新轨迹](python/03_interaction/use_target_trajectory.py)展示怎样使用拖动事件中的世界位姿，更新应用自己计算的路径。
+- [SO-101](python/04_robotics/extra/README.md)把场景树、网格和原生控件用在同一个机械臂示例里。首次运行会缓存外部模型。
+
+## C++ 示例
+
+按[安装说明](../docs/INSTALLATION.md)安装 C++ SDK 并准备匹配的 Host。若 SDK 安装到了说明中的 `.local/sdk`，从仓库根目录构建并运行图元示例。连接要求见 [C++ 示例说明](cpp/README.md)。
+
+```bash
+cmake -S examples/cpp -B .cache/cpp-examples -DCMAKE_PREFIX_PATH="$PWD/.local/sdk"
+cmake --build .cache/cpp-examples --parallel
+.cache/cpp-examples/bin/01_basic_primitives/hello_world
+```
+
+[案例清单](INVENTORY.md)列有各个 C++ 目标与对应的 Python 示例。
+
+## Vue 与应用示例
+
+- [最小 Vue 嵌入](vue/README.md)演示组件连接一个由 Python 创建的场景，以及卸载后恢复显示。
+- [Vue 滑条应用](apps/simple_slider/README.md)提供浏览器启动器，可调节方块位置、旋转和复位。
+- [六轴机器人应用](apps/urdf_robot/README.md)用网页关节滑条驱动合成机械臂，同时显示 Visual 与 Collision 两个 View。
+
+应用启动前置条件与支持范围见[应用说明](apps/README.md)。

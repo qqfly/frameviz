@@ -41,6 +41,7 @@ struct DiscoveryInfo {
   std::string token;       ///< Authentication token
   int32_t port = 0;        ///< Port number (0 means unavailable)
   std::string version;     ///< Protocol version
+  uint32_t pid = 0;         ///< Host process ID
 };
 
 /**

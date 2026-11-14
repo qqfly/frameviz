@@ -69,6 +69,28 @@ def test_precision_input_and_cross_view_sync(widget_pages):
     expect(second_input).to_have_count(0)
 
 
+def test_widget_panel_fields_and_buttons_align(widget_pages):
+    viz, _, (page, _) = widget_pages
+    group = viz.add_widget("group", "Box settings")
+    viz.add_widget("number", "X", 0, parent=group, minimum=-2, maximum=2)
+    viz.add_widget("select", "Color", "Blue", parent=group, choices=["Blue", "Orange"])
+    viz.add_widget("text_input", "Name", "Box", parent=group)
+    viz.add_widget("button", "Apply", parent=group)
+    viz.add_widget("button", "Set X from code", parent=group)
+    fields = [page.get_by_role("spinbutton", name="X"), page.get_by_role("combobox", name="Color"),
+              page.get_by_role("textbox", name="Name")]
+    for field in fields:
+        field.wait_for()
+    bounds = [field.bounding_box() for field in fields]
+    assert all(rect["x"] == pytest.approx(bounds[0]["x"], abs=1) for rect in bounds)
+    assert all(rect["width"] == pytest.approx(bounds[0]["width"], abs=1) for rect in bounds)
+    assert all(rect["height"] == pytest.approx(bounds[0]["height"], abs=1) for rect in bounds)
+    first = page.get_by_role("button", name="Apply").bounding_box()
+    second = page.get_by_role("button", name="Set X from code").bounding_box()
+    assert first["width"] == pytest.approx(second["width"], abs=1)
+    assert first["y"] + first["height"] < second["y"]
+
+
 def test_real_button_resets_object_and_widget_in_two_views(widget_pages):
     from queue import Empty, Queue
     from playwright.sync_api import expect

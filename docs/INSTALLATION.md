@@ -55,6 +55,35 @@ This describes the discovery contract, not a claim that a particular Ubuntu inst
 
 Apple Silicon native preview installation, signing status, paired SDKs and source reproduction are documented in [MACOS.md](MACOS.md).
 
+## Windows x64 trial
+
+Install the matching Windows App and use a desktop PowerShell session. The x64 trial needs Microsoft Edge WebView2 Runtime. Open the directory with the prebuilt examples and run `.\hello_world.exe` or `.\scene_slider.exe`. The C++ SDK can start the installed App. Use Ctrl+C in the example's PowerShell to close its Viewer.
+
+For Python, create a virtual environment in the directory with the wheel and examples. When starting the App from Python, point `FRAMEVIZ_TAURI_APP` to the installed executable in this PowerShell session. The trial installer records its directory under the current user's FrameViz registry key.
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install .\frameviz-0.5.0-py3-none-any.whl
+$appDir = (Get-Item 'HKCU:\Software\qqfly\FrameViz').GetValue('')
+$env:FRAMEVIZ_TAURI_APP = Join-Path $appDir 'frameviz.exe'
+.\.venv\Scripts\python.exe .\hello_world.py
+```
+
+If you installed into another directory by hand, use that executable path. A running compatible Host can be reused by Python without the variable.
+
+## Installed runtime discovery for C++
+
+`Viz::open()` reuses a compatible running Host. On Linux it looks for the
+desktop executable installed by the `.deb` at `/usr/bin/frameviz` when a
+display is available. It also recognizes `frameviz-server` at `/usr/bin`,
+`/usr/local/bin`, and `~/.local/bin`. On Windows it checks the FrameViz MSI
+and NSIS installer entries and the standard per-user and system-wide
+installation directories. See [C++ examples](../examples/cpp/README.md).
+
+Ctrl+C closes the example's views. A Host started by the SDK exits after
+the launching process has exited and its last client disconnects. A
+manually started Host remains available until closed by its operator.
+
 ## Standalone Host and browser
 
 The standalone `frameviz-server` binary serves the bundled Viewer without Tauri, a display server, Node.js, or a source checkout at run time. Both WebSocket and HTTP listeners bind only to `127.0.0.1`. Start it in your normal user account:

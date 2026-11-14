@@ -28,3 +28,21 @@ auto scene = viz->getDisplayState(true); // Include available bounds.
 
 Pass `true` to `setWidgetValue` to emit a program event. Rebinding
 `onWidgetChange` replaces the previous handler unless you explicitly append.
+
+## Screenshots and offline HTML
+
+Install the matching Python SDK with its `capture` extra and Chromium.
+Set `FRAMEVIZ_PYTHON` to the Python executable in that environment. On
+macOS and Linux it defaults to `python3`; on Windows it defaults to `python`.
+The C++ SDK connects to its existing View through the same renderer used
+by Python. It starts a renderer process per call.
+
+```cpp
+auto png = viz->screenshot("scene.png", std::nullopt, 640, 480);
+viz->exportHtml("lesson.html");
+```
+
+An empty screenshot path returns PNG bytes. A temporary camera can be
+supplied as the second argument. HTML optionally takes a JSON mapping
+from object handles to pose keyframes. See the runnable [PNG and HTML
+examples](../../examples/README.md).

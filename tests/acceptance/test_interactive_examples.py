@@ -1,5 +1,6 @@
-"""Run actual tutorial entrypoints; pointer interaction needs no polling."""
+"""Drive the teaching entry points with real Chromium pointer input."""
 import runpy
+import sys
 import threading
 import time
 
@@ -10,12 +11,16 @@ from test_browser_reuse import browser_runtime
 from test_standalone_viewer import ROOT, standalone
 
 
-@pytest.mark.parametrize('example', ['use_picking_demo', 'use_gizmo_demo', 'use_gizmo_config'])
-def test_interactive_example_lifetime_and_real_pointer(example, browser_runtime, monkeypatch):
+@pytest.mark.parametrize("example,arguments,count", [
+    ("use_picking", [], 1),
+    ("use_picking", ["--points"], 1),
+    ("use_gizmo", [], 2),
+])
+def test_interactive_example_lifetime_and_real_pointer(example, arguments, count, browser_runtime, monkeypatch):
     _, pages, errors = browser_runtime
     viz = fv.open(window_mode=1, timeout=3)
     page = pages[-1]
-    module = runpy.run_path(str(ROOT / 'examples/python/03_interaction' / (example + '.py')))
+    module = runpy.run_path(str(ROOT / "examples/python/03_interaction" / (example + ".py")))
     ready, failures = threading.Event(), []
     lifetime = viz.keep_running
 
@@ -23,43 +28,50 @@ def test_interactive_example_lifetime_and_real_pointer(example, browser_runtime,
         ready.set()
         lifetime()
 
-    monkeypatch.setattr(viz, 'keep_running', keep_running)
-    monkeypatch.setattr(fv, 'open', lambda **kwargs: viz)
-    monkeypatch.setattr('builtins.input', lambda *a: pytest.fail('Interactive sample still needs input()'))
+    monkeypatch.setattr(viz, "keep_running", keep_running)
+    monkeypatch.setattr(fv, "open", lambda **kwargs: viz)
+    monkeypatch.setattr(sys, "argv", [example, *arguments])
 
     def run():
         try:
-            module['main']()
+            module["main"]()
         except BaseException as error:
             failures.append(error)
 
     worker = threading.Thread(target=run)
     worker.start()
     try:
-        assert ready.wait(4), f'{example} did not reach keep_running(): {failures}'
+        assert ready.wait(4), failures
         assert worker.is_alive()
         objects = viz.list_objects()
-        expected = 5 if example == 'use_gizmo_demo' else 3 if example == 'use_picking_demo' else 1
-        assert len(objects) == expected
-        snapshot = viz._client.send_command('get_scene_snapshot', {'scene_id': viz.scene_id})
-        box = next(o['handle'] for o in snapshot['objects'] if (o.get('data') or {}).get('type') == 'box')
-        page.wait_for_function('h=>window.__FRAMEVIZ_CORE__?.objects.has(h)', arg=box)
-        if example != 'use_gizmo_config':
-            viz.set_camera_pose((0, -8, 6), (0, 0, .5), up=(0, 0, 1))
-            assert viz.get_pick_config()['enabled']
-            page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
-            center = page.evaluate('''h=>{const c=window.__FRAMEVIZ_CORE__,m=c.getSceneManager(),
-                r=m.renderer.domElement.getBoundingClientRect(),o=c.objects.get(h),
-                p=o.getWorldPosition(o.position.clone()).project(m.camera);
-                return {x:r.x+(p.x+1)*r.width/2,y:r.y+(1-p.y)*r.height/2};}''', box)
-            page.mouse.click(center['x'], center['y'], button='right' if example == 'use_gizmo_demo' else 'left')
-            if example == 'use_picking_demo':
-                deadline = time.monotonic() + 3
-                while viz.get_color(box)[:3] != [1., 1., .2] and time.monotonic() < deadline:
-                    page.wait_for_timeout(10)
-                assert viz.get_color(box)[:3] == [1., 1., .2]
-            else:
-                page.wait_for_function('h=>window.__FRAMEVIZ_CORE__.gizmoManager.getAttachedHandle()===h', arg=box)
+        assert len(objects) == count
+        handle = objects[0]["handle"]
+        page.wait_for_function("h => window.__FRAMEVIZ_CORE__?.objects.has(h)", arg=handle)
+        page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        assert viz.get_pick_config()["button"] == 0
+        center = page.evaluate("""([h, points]) => {
+            const c = window.__FRAMEVIZ_CORE__, m = c.getSceneManager();
+            const r = m.renderer.domElement.getBoundingClientRect(), o = c.objects.get(h);
+            const p = o.getWorldPosition(o.position.clone());
+            if (points) p.set(0, 0, .25);
+            p.project(m.camera);
+            return [r.x + (p.x + 1) * r.width / 2, r.y + (1 - p.y) * r.height / 2];
+        }""", [handle, bool(arguments)])
+        page.mouse.click(*center)
+        if example == "use_gizmo":
+            page.wait_for_function("h => window.__FRAMEVIZ_CORE__.gizmoManager.getAttachedHandle() === h", arg=handle)
+        elif arguments:
+            deadline = time.monotonic() + 3
+            event = viz.get_picked_info()
+            while event.get("point_index") != 4 and time.monotonic() < deadline:
+                page.wait_for_timeout(20)
+                event = viz.get_picked_info()
+            assert event["point_index"] == 4 and event["point_world"] == [0, 0, .25]
+        else:
+            deadline = time.monotonic() + 3
+            while viz.get_color(handle)[0] < 0.99 and time.monotonic() < deadline:
+                page.wait_for_timeout(20)
+            assert viz.get_color(handle)[:3] == pytest.approx([1, 0.5, 0])
         assert not errors and not failures
     finally:
         viz._client.close()
@@ -68,34 +80,28 @@ def test_interactive_example_lifetime_and_real_pointer(example, browser_runtime,
     assert not worker.is_alive() and not failures
 
 
-@pytest.mark.parametrize('example,counts', [
-    ('use_multi_view_isolation', [1, 1]),
-    ('use_multi_view_demo', [3, 3, 4, 3]),
-])
-def test_multi_view_examples_keep_distinct_browser_pages(example, counts, browser_runtime, monkeypatch):
+@pytest.mark.parametrize("independent", [False, True])
+def test_multi_view_examples_keep_distinct_browser_pages(independent, browser_runtime, monkeypatch):
     context, pages, errors = browser_runtime
-    original_open, views = fv.open, []
-
-    def browser_open(**kwargs):
-        kwargs['window_mode'] = 1
-        kwargs['timeout'] = 3
-        viz = original_open(**kwargs)
-        views.append(viz)
-        return viz
+    checks = 0
+    monkeypatch.setattr(sys, "argv", ["use_multi_view", *(["--independent"] if independent else [])])
 
     def check_pages(*_):
-        assert len(pages) == len(context.pages) == len(counts)
-        assert [len(v.list_objects()) for v in views] == counts
-        for page, viz, count in zip(pages, views, counts):
-            page.wait_for_function('n=>window.__FRAMEVIZ_CORE__?.getObjectCount()===n', arg=count)
+        nonlocal checks
+        checks += 1
+        assert len(pages) == len(context.pages) == 2
+        ids = [page.evaluate("() => new URLSearchParams(location.search).get('view_id')") for page in pages]
+        assert ids[0] != ids[1]
+        for page in pages:
+            page.wait_for_function("() => window.__FRAMEVIZ_CORE__?.getObjectCount() === 1")
+        if checks == 1:
+            pages[1].reload()
+            pages[1].wait_for_function("() => window.__FRAMEVIZ_CORE__?.getObjectCount() === 1")
+            assert pages[1].evaluate("() => new URLSearchParams(location.search).get('view_id')") == ids[1]
         assert not errors
-        return ''
+        return ""
 
-    monkeypatch.setattr(fv, 'open', browser_open)
-    monkeypatch.setattr('builtins.input', check_pages)
-    module = runpy.run_path(str(ROOT / 'examples/python/02_camera_views' / (example + '.py')))
-    try:
-        module['main']()
-    finally:
-        for viz in reversed(views):
-            viz.close()
+    monkeypatch.setattr("builtins.input", check_pages)
+    module = runpy.run_path(str(ROOT / "examples/python/02_camera_views/use_multi_view.py"))
+    module["main"]()
+    assert checks == 2

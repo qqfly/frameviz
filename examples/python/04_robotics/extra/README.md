@@ -21,3 +21,21 @@ python examples/python/04_robotics/extra/so101_display.py /path/to/robotstudio_s
 Drag a joint slider or enter an exact angle in radians. Click a link to print its name. Use Reset pose to restore the starting pose.
 
 The demo reads the fixed model's link tree and visual meshes, then applies a local hinge rotation when a slider changes. FrameViz composes the child poses and draws the meshes and camera primitives. It runs with the FrameViz Python SDK and its NumPy dependency. MuJoCo is used by the optional reference test. The pinned model has a fixed gripper body and one moving jaw.
+
+## C++ with the same cached model
+
+Build the C++ examples as shown in the [examples index](../../../README.md).
+The Python utility reads the pinned XML once and writes its body, hinge and
+geometry descriptions. The C++ example builds the scene and handles the
+sliders. Both use the same local STL files.
+
+```sh
+model="$(python examples/python/04_robotics/extra/so101_model.py)"
+description="$(mktemp)"
+python examples/python/04_robotics/extra/so101_display.py "$model" --describe > "$description"
+.cache/cpp-examples/bin/04_robotics/so101_display "$description" "$(dirname "$model")/assets"
+rm "$description"
+```
+
+Move a slider, check the gripper or a link, and try Reset pose. Press Enter
+in the C++ terminal or Ctrl+C in the Python terminal to close the scene.

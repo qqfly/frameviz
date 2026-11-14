@@ -59,6 +59,80 @@ WinsockInitializer &getWinsockInitializer() {
   static WinsockInitializer initializer;
   return initializer;
 }
+#ifdef _WIN32
+using ControlSocket = SOCKET;
+constexpr ControlSocket invalidSocket = INVALID_SOCKET;
+#else
+using ControlSocket = int;
+constexpr ControlSocket invalidSocket = -1;
+#endif
+
+bool exchangeControlMessage(ControlSocket sock, const std::string &message) {
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(getTauriControlPort());
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if (connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) return false;
+
+  // Creating or closing a native WebView can take longer than one UI frame.
+#ifdef _WIN32
+  const DWORD timeout = 2000;
+#else
+  const timeval timeout{2, 0};
+#endif
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeout), sizeof(timeout));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&timeout), sizeof(timeout));
+#if defined(SO_NOSIGPIPE)
+  const int enabled = 1;
+  setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled));
+#endif
+#ifdef MSG_NOSIGNAL
+  constexpr int sendFlags = MSG_NOSIGNAL;
+#else
+  constexpr int sendFlags = 0;
+#endif
+  for (size_t offset = 0; offset < message.size();) {
+    const auto sent = send(sock, message.data() + offset,
+                           static_cast<int>(message.size() - offset), sendFlags);
+    if (sent <= 0) return false;
+    offset += sent;
+  }
+
+  std::string response;
+  char buffer[1024];
+  while (response.size() < 16384) {
+    const auto received = recv(sock, buffer, sizeof(buffer), 0);
+    if (received <= 0) return false;
+    response.append(buffer, received);
+    const auto newline = response.find('\n');
+    if (newline == std::string::npos) continue;
+    const auto reply = json::parse(response.substr(0, newline), nullptr, false);
+    return reply.is_object() && reply.contains("ok") && reply["ok"] == true;
+  }
+  return false;
+}
+
+bool requestWindow(json payload) {
+  getWinsockInitializer();
+  if (const char *token = std::getenv("FRAMEVIZ_AUTH_TOKEN")) payload["token"] = token;
+  else if (auto token = getTokenFromDiscovery()) payload["token"] = *token;
+  const auto sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock == invalidSocket) return false;
+
+  bool ok = false;
+  try {
+    ok = exchangeControlMessage(sock, payload.dump() + '\n');
+  } catch (const json::exception &) {
+    // Treat an invalid request or response as a failed operation.
+  }
+#ifdef _WIN32
+  closesocket(sock);
+#else
+  close(sock);
+#endif
+  return ok;
+}
+
 } // namespace
 
 int32_t getTauriControlPort() {
@@ -91,11 +165,6 @@ bool tryOpenTauriWindow(
     const std::string &performance_mode,
     bool decorations
 ) {
-  // Ensure Winsock is initialized
-  getWinsockInitializer();
-
-  int32_t port = getTauriControlPort();
-
   // Build JSON payload
   json payload = {
     {"action", "open_view"},
@@ -122,197 +191,11 @@ bool tryOpenTauriWindow(
     payload["performance_mode"] = performance_mode;
   }
 
-  // Serialize to JSON
-  std::string message;
-  try {
-    if (const char* token = std::getenv("FRAMEVIZ_AUTH_TOKEN")) payload["token"] = token;
-    else if (auto token = getTokenFromDiscovery()) payload["token"] = *token;
-    message = payload.dump();
-  } catch (const json::exception &e) {
-    std::cerr << "[FrameViz] Failed to serialize Tauri command: " << e.what()
-              << std::endl;
-    return false;
-  }
-
-  message += "\n";  // Add newline delimiter
-
-  // Create socket
-#ifdef _WIN32
-  SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (sock == INVALID_SOCKET) {
-    return false;
-  }
-#else
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    return false;
-  }
-#endif
-
-  // Set non-blocking mode with timeout
-#ifdef _WIN32
-  DWORD timeout = 400;  // 400ms timeout
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
-#else
-  struct timeval tv;
-  tv.tv_sec = 0;
-  tv.tv_usec = 400000;  // 400ms timeout
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-#endif
-
-  // Connect to control server
-  struct sockaddr_in addr;
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-#ifdef _WIN32
-  if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-    closesocket(sock);
-    return false;
-  }
-#else
-  if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    close(sock);
-    return false;
-  }
-#endif
-
-  // Send command
-  if (send(sock, message.c_str(), message.length(), 0) < 0) {
-#ifdef _WIN32
-    closesocket(sock);
-#else
-    close(sock);
-#endif
-    return false;
-  }
-
-  // Receive response (wait for newline)
-  std::string response;
-  char buffer[4096];
-  bool newline_found = false;
-
-  while (!newline_found) {
-#ifdef _WIN32
-    int bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
-    if (bytes_received <= 0) {
-      break;
-    }
-#else
-    ssize_t bytes_received = recv(sock, buffer, sizeof(buffer) - 1, 0);
-    if (bytes_received <= 0) {
-      break;
-    }
-#endif
-    buffer[bytes_received] = '\0';
-    response += buffer;
-
-    // Check for newline
-    if (response.find('\n') != std::string::npos) {
-      newline_found = true;
-    }
-  }
-
-#ifdef _WIN32
-  closesocket(sock);
-#else
-  close(sock);
-#endif
-
-  // Parse response
-  if (!response.empty()) {
-    try {
-      json resp = json::parse(response);
-      if (resp.contains("ok") && resp["ok"].is_boolean()) {
-        return resp["ok"];
-      }
-    } catch (const json::exception &) {
-      // Ignore parse errors
-    }
-  }
-
-  // If we got here, connection succeeded but response parsing failed
-  // Assume success if we could send the command
-  return true;
+  return requestWindow(std::move(payload));
 }
 
 bool tryCloseTauriWindow(const std::string &view_id) {
-  // Ensure Winsock is initialized
-  getWinsockInitializer();
-
-  int32_t port = getTauriControlPort();
-
-  // Build JSON payload
-  json payload = {
-    {"action", "close_view"},
-    {"view_id", view_id}
-  };
-
-  std::string message;
-  try {
-    if (const char* token = std::getenv("FRAMEVIZ_AUTH_TOKEN")) payload["token"] = token;
-    else if (auto token = getTokenFromDiscovery()) payload["token"] = *token;
-    message = payload.dump();
-  } catch (const json::exception &e) {
-    return false;
-  }
-
-  message += "\n";
-
-  // Create and connect socket (same as tryOpenTauriWindow)
-#ifdef _WIN32
-  SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (sock == INVALID_SOCKET) {
-    return false;
-  }
-#else
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    return false;
-  }
-#endif
-
-#ifdef _WIN32
-  DWORD timeout = 400;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
-#else
-  struct timeval tv;
-  tv.tv_sec = 0;
-  tv.tv_usec = 400000;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-#endif
-
-  struct sockaddr_in addr;
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-#ifdef _WIN32
-  if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-    closesocket(sock);
-    return false;
-  }
-#else
-  if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-    close(sock);
-    return false;
-  }
-#endif
-
-  send(sock, message.c_str(), message.length(), 0);
-
-#ifdef _WIN32
-  closesocket(sock);
-#else
-  close(sock);
-#endif
-
-  return true;
+  return requestWindow({{"action", "close_view"}, {"view_id", view_id}});
 }
 
 } // namespace frameviz

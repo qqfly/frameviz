@@ -44,6 +44,12 @@ The SDK reads the current user's matching discovery record. Automatic installati
 
 ## C++ and Vue
 
+The current 0.5 C++ SDK automatically locates and starts a compatible App
+in `~/Applications` or `/Applications` when `Viz::open()` needs one. An App
+it starts quits after the launching process and the last connected client
+leave. The interactive C++ examples close their own views on Ctrl+C. An App
+started manually remains available until you quit it.
+
 Copy SDK/Cpp out of the mounted image before unmounting it. Configure a C++17 project with CMAKE_PREFIX_PATH pointing to that copied directory, use `find_package(frameviz 0.4.0 EXACT CONFIG REQUIRED)`, and link `frameviz::cpp`. The preview SDK bundles its pinned IXWebSocket static transport without TLS/zlib; it is for this local WS deployment and requires no Homebrew runtime libraries. A compiler/Xcode Command Line Tools and CMake are development prerequisites.
 
 SDK/JavaScript contains the local protocol/core/Vue tarballs. Vue embedding still requires its third-party dependencies and a backend to provide the Host session credential; never hardcode credentials in source. See the Vue README and external app template.

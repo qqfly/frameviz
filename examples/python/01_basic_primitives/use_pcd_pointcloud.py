@@ -321,7 +321,7 @@ def main() -> int:
     )
     parser.add_argument("--path", type=Path, help="Direct path to PCD file (overrides --data-dir and --file)")
     parser.add_argument("--stride", type=int, default=1, help="Point stride (>=1)")
-    parser.add_argument("--point-size", type=float, default=1.0, help="Point size in pixels")
+    parser.add_argument("--point-size", type=float, default=2.0, help="Point size in pixels")
     parser.add_argument("--no-color", action="store_true", help="Disable height-based coloring")
     parser.add_argument("--center", action="store_true", help="Center cloud at origin")
     args = parser.parse_args()
@@ -338,7 +338,8 @@ def main() -> int:
         return 1
 
     print(f"Loading PCD: {pcd_path}")
-    points = 0.001 * load_pcd_points(pcd_path)
+    # Use the sample's coordinates as-is. For millimeter input, apply a 0.001 scale.
+    points = load_pcd_points(pcd_path)
     total = points.shape[0]
     stride = max(1, args.stride)
 

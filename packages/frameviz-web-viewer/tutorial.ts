@@ -32,6 +32,11 @@ const player = document.getElementById('player')!;
 const play = document.getElementById('play') as HTMLButtonElement;
 const seek = document.getElementById('seek') as HTMLInputElement;
 const timeLabel = document.getElementById('time')!;
+const loopLabel = document.createElement('label');
+const loop = document.createElement('input');
+loop.type = 'checkbox';
+loopLabel.append(loop, ' Loop');
+player.append(loopLabel);
 const core = new FrameVizCore({
   container, keyboardShortcuts: false,
   overlay: document.getElementById('overlay')!,
@@ -90,9 +95,16 @@ function frame(now: number) {
     }
   }
   if (playing) {
-    if (lastFrame !== undefined) time = Math.min(duration, time + (now - lastFrame) / 1000);
+    if (lastFrame !== undefined) time += (now - lastFrame) / 1000;
     lastFrame = now;
-    if (time >= duration) setPlaying(false);
+    if (time >= duration) {
+      if (loop.checked) {
+        time %= duration;
+      } else {
+        time = duration;
+        setPlaying(false);
+      }
+    }
     showTime();
   }
   core.render();

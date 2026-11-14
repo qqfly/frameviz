@@ -11,3 +11,32 @@ The Python business service selects `frameviz-business` from the browser's offer
 Use `FRAMEVIZ_PYTHON` to select a Python interpreter, `FRAMEVIZ_HOME` for state, `FRAMEVIZ_RUNTIME_MANIFEST` for an explicit runtime manifest, and `CMAKE_PREFIX_PATH` for the C++ SDK. No internal installation directory is searched. The standalone template's packaged desktop credential injection and complete installer still need target-platform acceptance.
 
 Run `python3 scripts/generate_samples.py` from the project root to reproduce the MIT synthetic data. User-supplied model roots must be explicit; model assets are never inferred from another project.
+
+## Run the synthetic model with either backend
+
+Start a compatible local FrameViz Host and run these commands from the
+repository root. Both backends use the same `data/models/sample_robot` folder.
+
+```sh
+pnpm --filter @frameviz/vue build
+pnpm -C examples/apps/urdf_robot dev --host 127.0.0.1
+```
+
+In a second terminal, create a local business token and run one backend.
+
+```sh
+export FRAMEVIZ_BUSINESS_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export URDF_MODEL_PATH="$PWD/data/models/sample_robot"
+
+# Python route, from the virtual environment with the matching SDK
+python -m pip install -r examples/apps/urdf_robot/python/requirements.txt
+pnpm -C examples/apps/urdf_robot backend:py
+
+# C++ route, after installing the SDK to .local/sdk
+CMAKE_PREFIX_PATH="$PWD/.local/sdk" pnpm -C examples/apps/urdf_robot backend:cpp:build
+pnpm -C examples/apps/urdf_robot backend:cpp
+```
+
+Open the Vite address with `?ws_port=<Host port>#token=<Host token>&business_token=<business token>`.
+Adjust a joint and check both Visual and Collision. Use Home to return to the
+starting pose. Stop the backend and Vite with Ctrl+C.

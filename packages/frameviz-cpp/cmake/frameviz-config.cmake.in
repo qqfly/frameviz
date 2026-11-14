@@ -36,6 +36,10 @@ if(NOT TARGET ixwebsocket::ixwebsocket)
                 INTERFACE_LINK_LIBRARIES ZLIB::ZLIB
             )
         endif()
+        if(WIN32)
+            set_property(TARGET ixwebsocket::ixwebsocket APPEND PROPERTY
+                INTERFACE_LINK_LIBRARIES wsock32 ws2_32 shlwapi)
+        endif()
         message(STATUS "FrameViz: Using bundled ixwebsocket at ${IXWEBSOCKET_LIBRARY}")
     else()
         # Fallback: try system IXWebSocket

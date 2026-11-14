@@ -10,6 +10,8 @@
  */
 
 #include "frameviz/host.hpp"
+#include "frameviz/discovery.hpp"
+#include "frameviz/internal/ws_url.hpp"
 #include "frameviz/types.hpp"
 #include "frameviz/protocol_version.hpp"
 #include <nlohmann/json.hpp>
@@ -17,11 +19,16 @@
 #include "frameviz/tauri.hpp"
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
+#include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -37,10 +44,16 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <spawn.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+extern char **environ;
+#endif
+
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 namespace frameviz {
@@ -53,10 +66,12 @@ namespace {
 
 #if !defined(_WIN32) && !defined(_WIN64)
 static pid_t g_host_pid = 0;
+static int g_owner_pipe = -1;
 #else
 static HANDLE g_host_handle = nullptr;
+static HANDLE g_owner_pipe = nullptr;
 #endif
-static bool g_atexit_registered = false;
+std::mutex host_mutex;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // URL parsing
@@ -107,11 +122,13 @@ HostPort parseWsUrl(const std::string &url) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 bool tcpConnect(const std::string &host, int port, double timeout_sec) {
+  const char *address = host == "localhost" ? "127.0.0.1" : host.c_str();
 #if defined(_WIN32) || defined(_WIN64)
   WSADATA wsa_data;
   WSAStartup(MAKEWORD(2, 2), &wsa_data);
   SOCKET sock = ::socket(AF_INET, SOCK_STREAM, 0);
   if (sock == INVALID_SOCKET) {
+    WSACleanup();
     return false;
   }
 
@@ -121,7 +138,11 @@ bool tcpConnect(const std::string &host, int port, double timeout_sec) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(static_cast<u_short>(port));
-  inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
+  if (inet_pton(AF_INET, address, &addr.sin_addr) != 1) {
+    closesocket(sock);
+    WSACleanup();
+    return false;
+  }
 
   ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
 
@@ -133,9 +154,14 @@ bool tcpConnect(const std::string &host, int port, double timeout_sec) {
   tv.tv_usec = static_cast<long>((timeout_sec - tv.tv_sec) * 1e6);
 
   int sel = select(0, nullptr, &wset, nullptr, &tv);
+  int error = 0;
+  int len = sizeof(error);
+  const bool connected = sel > 0 &&
+      getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&error), &len) == 0 &&
+      error == 0;
   closesocket(sock);
   WSACleanup();
-  return sel > 0;
+  return connected;
 #else
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   if (sock < 0) {
@@ -149,7 +175,10 @@ bool tcpConnect(const std::string &host, int port, double timeout_sec) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(static_cast<uint16_t>(port));
-  inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
+  if (inet_pton(AF_INET, address, &addr.sin_addr) != 1) {
+    close(sock);
+    return false;
+  }
 
   int ret = ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
   if (ret == 0) {
@@ -198,8 +227,10 @@ bool fileExists(const std::string &path) {
 }
 
 bool isExecutable(const std::string &path) {
+  std::error_code error;
+  if (!std::filesystem::is_regular_file(std::filesystem::u8path(path), error)) return false;
 #if defined(_WIN32) || defined(_WIN64)
-  return fileExists(path);
+  return true;
 #else
   return access(path.c_str(), X_OK) == 0;
 #endif
@@ -213,45 +244,6 @@ bool dirExists(const std::string &path) {
   struct stat st{};
   return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 #endif
-}
-
-std::string getHome() {
-#if defined(_WIN32) || defined(_WIN64)
-  const char *home = std::getenv("USERPROFILE");
-  return home ? std::string(home) : "";
-#else
-  const char *home = std::getenv("HOME");
-  return home ? std::string(home) : "";
-#endif
-}
-
-std::optional<std::string> whichExecutable(const std::string &name) {
-  const char *path_env = std::getenv("PATH");
-  if (!path_env) {
-    return std::nullopt;
-  }
-  std::string path_str(path_env);
-#if defined(_WIN32) || defined(_WIN64)
-  const char delim = ';';
-#else
-  const char delim = ':';
-#endif
-  size_t start = 0;
-  while (start < path_str.size()) {
-    size_t end = path_str.find(delim, start);
-    if (end == std::string::npos) {
-      end = path_str.size();
-    }
-    std::string dir = path_str.substr(start, end - start);
-    if (!dir.empty()) {
-      std::string candidate = dir + "/" + name;
-      if (isExecutable(candidate)) {
-        return candidate;
-      }
-    }
-    start = end + 1;
-  }
-  return std::nullopt;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -325,45 +317,195 @@ void addIfExecutable(std::vector<std::string> &out, const std::string &path) {
   }
 }
 
+#ifdef _WIN32
+std::optional<std::string> windowsAppVersion(const std::filesystem::path &path) {
+  const auto size = GetFileVersionInfoSizeW(path.c_str(), nullptr);
+  if (!size) return std::nullopt;
+  std::vector<unsigned char> data(size);
+  if (!GetFileVersionInfoW(path.c_str(), 0, size, data.data())) return std::nullopt;
+  void *value = nullptr;
+  UINT length = 0;
+  if (!VerQueryValueW(data.data(), L"\\", &value, &length) ||
+      length < sizeof(VS_FIXEDFILEINFO)) return std::nullopt;
+  const auto &version = *static_cast<VS_FIXEDFILEINFO *>(value);
+  if (version.dwSignature != VS_FFI_SIGNATURE) return std::nullopt;
+  return std::to_string(HIWORD(version.dwProductVersionMS)) + "." +
+         std::to_string(LOWORD(version.dwProductVersionMS)) + "." +
+         std::to_string(HIWORD(version.dwProductVersionLS));
+}
+
+void addWindowsInstallations(std::vector<std::string> &out) {
+  auto add = [&](const std::filesystem::path &directory) {
+    if (!directory.is_absolute()) return;
+    const auto executable = directory / L"frameviz.exe";
+    if (auto version = windowsAppVersion(executable); version && isProtocolCompatible(*version)) {
+      addIfExecutable(out, executable.u8string());
+    }
+  };
+  constexpr wchar_t key[] = L"Software\\qqfly\\FrameViz";
+  // Tauri MSI writes InstallDir. NSIS writes the default value of the same key.
+  for (HKEY root : {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE}) {
+    for (DWORD view : {DWORD{0}, DWORD{RRF_SUBKEY_WOW6464KEY}, DWORD{RRF_SUBKEY_WOW6432KEY}}) {
+      for (const wchar_t *name : {L"InstallDir", L""}) {
+        std::vector<wchar_t> directory(32768);
+        DWORD size = static_cast<DWORD>(directory.size() * sizeof(wchar_t));
+        if (RegGetValueW(root, key, name, RRF_RT_REG_SZ | view,
+                         nullptr, directory.data(), &size) == ERROR_SUCCESS) {
+          add(directory.data());
+        }
+      }
+    }
+  }
+  for (const wchar_t *key : {L"LOCALAPPDATA", L"ProgramW6432", L"ProgramFiles", L"ProgramFiles(x86)"}) {
+    if (const auto *directory = _wgetenv(key); directory && *directory) {
+      add(std::filesystem::path(directory) / L"FrameViz");
+    }
+  }
+}
+#endif
+
+#ifdef __linux__
+std::optional<std::string> linuxRuntimeVersion(const std::string &path) {
+  if (!isExecutable(path)) return std::nullopt;
+  int output[2];
+  if (pipe2(output, O_CLOEXEC | O_NONBLOCK) != 0) return std::nullopt;
+  posix_spawn_file_actions_t actions;
+  if (posix_spawn_file_actions_init(&actions) != 0) {
+    close(output[0]);
+    close(output[1]);
+    return std::nullopt;
+  }
+  const char *args[] = {path.c_str(), "--version", nullptr};
+  pid_t pid = 0;
+  const bool spawned =
+      posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0) == 0 &&
+      posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0) == 0 &&
+      posix_spawn_file_actions_adddup2(&actions, output[1], STDOUT_FILENO) == 0 &&
+      posix_spawn(&pid, path.c_str(), &actions, nullptr, const_cast<char **>(args), environ) == 0;
+  posix_spawn_file_actions_destroy(&actions);
+  close(output[1]);
+  std::optional<std::string> version;
+  if (spawned) {
+    int status = 0;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    pid_t result;
+    do {
+      result = waitpid(pid, &status, WNOHANG);
+      if (result == 0) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while ((result == 0 || (result < 0 && errno == EINTR)) &&
+             std::chrono::steady_clock::now() < deadline);
+    if (result == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+      std::array<char, 128> buffer{};
+      const auto bytes = read(output[0], buffer.data(), buffer.size());
+      constexpr std::string_view prefix = "FrameViz Host v";
+      if (bytes > 0) {
+        std::string outputText(buffer.data(), bytes);
+        outputText.erase(outputText.find_last_not_of(" \r\n\t") + 1);
+        if (outputText.compare(0, prefix.size(), prefix) == 0) {
+          version = outputText.substr(prefix.size());
+        }
+      }
+    } else if (result == 0 || (result < 0 && errno == EINTR)) {
+      kill(pid, SIGKILL);
+      while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+    }
+  }
+  close(output[0]);
+  return version;
+}
+
+void addLinuxInstallations(std::vector<std::string> &out) {
+  auto add = [&](const std::string &executable) {
+    if (auto version = linuxRuntimeVersion(executable); version && isProtocolCompatible(*version)) {
+      out.push_back(executable);
+    }
+  };
+  if (detail::hasDesktop()) add("/usr/bin/frameviz");
+  add("/usr/bin/frameviz-server");
+  add("/usr/local/bin/frameviz-server");
+  if (const char *home = std::getenv("HOME"); home && *home) {
+    add(std::string(home) + "/.local/bin/frameviz-server");
+  }
+}
+
+int freeLocalPort() {
+  const int socketFd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  if (socketFd < 0) throw std::runtime_error("Cannot allocate a local port for FrameViz");
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  socklen_t length = sizeof(address);
+  const bool bound = bind(socketFd, reinterpret_cast<sockaddr *>(&address), length) == 0 &&
+                     getsockname(socketFd, reinterpret_cast<sockaddr *>(&address), &length) == 0;
+  close(socketFd);
+  if (!bound) throw std::runtime_error("Cannot allocate a local port for FrameViz");
+  return ntohs(address.sin_port);
+}
+#endif
+
+#ifdef __APPLE__
+struct MacApp {
+  std::string executable;
+  std::string version;
+};
+
+std::optional<MacApp> readMacApp(const std::string &app) {
+  const auto url = CFURLCreateFromFileSystemRepresentation(
+      nullptr, reinterpret_cast<const UInt8 *>(app.data()), app.size(), true);
+  if (!url) return std::nullopt;
+  const auto info = CFBundleCopyInfoDictionaryForURL(url);
+  CFRelease(url);
+  if (!info) return std::nullopt;
+  auto readString = [&](CFStringRef key) -> std::string {
+    auto value = static_cast<CFStringRef>(CFDictionaryGetValue(info, key));
+    std::array<char, 256> buffer{};
+    if (!value || CFGetTypeID(value) != CFStringGetTypeID() ||
+        !CFStringGetCString(value, buffer.data(), buffer.size(), kCFStringEncodingUTF8)) {
+      return {};
+    }
+    return buffer.data();
+  };
+  const auto id = readString(CFSTR("CFBundleIdentifier"));
+  const auto type = readString(CFSTR("CFBundlePackageType"));
+  const auto name = readString(CFSTR("CFBundleExecutable"));
+  const auto version = readString(CFSTR("CFBundleShortVersionString"));
+  CFRelease(info);
+  if (id != "dev.qqfly.frameviz.viewer" || type != "APPL" ||
+      (name != "frameviz" && name != "FrameViz")) {
+    return std::nullopt;
+  }
+  const auto directory = app + "/Contents/MacOS";
+  const auto executable = directory + "/" + name;
+  std::error_code error;
+  const auto resolvedDirectory = std::filesystem::canonical(directory, error);
+  if (error) return std::nullopt;
+  const auto resolvedExecutable = std::filesystem::canonical(executable, error);
+  if (error || resolvedExecutable.parent_path() != resolvedDirectory || !isExecutable(executable)) {
+    return std::nullopt;
+  }
+  return MacApp{executable, version};
+}
+#endif
+
 std::vector<std::string> getCandidates() {
   std::vector<std::string> candidates;
   auto repo_root = getRepoRoot();
-  std::string home = getHome();
-
-  // 1. FRAMEVIZ_HOST_PATH env
-  const char *env_path = std::getenv("FRAMEVIZ_HOST_PATH");
-  if (env_path && *env_path) {
-    addIfExecutable(candidates, env_path);
-  }
-
-  // 2. FRAMEVIZ_TAURI_APP env
-  const char *tauri_app = std::getenv("FRAMEVIZ_TAURI_APP");
-  if (tauri_app && *tauri_app) {
-    std::string tauri_app_str(tauri_app);
-#ifdef __APPLE__
-    // If it's an .app bundle, resolve to inner binary
-    if (tauri_app_str.size() > 4 &&
-        tauri_app_str.substr(tauri_app_str.size() - 4) == ".app") {
-      std::string inner = tauri_app_str + "/Contents/MacOS/FrameViz";
-      addIfExecutable(candidates, inner);
-      addIfExecutable(candidates, tauri_app_str + "/Contents/MacOS/frameviz");
-    } else {
-      addIfExecutable(candidates, tauri_app_str);
-    }
-#else
-    addIfExecutable(candidates, tauri_app_str);
+#ifdef _WIN32
+  addWindowsInstallations(candidates);
+#elif defined(__linux__)
+  addLinuxInstallations(candidates);
 #endif
-  }
-
-  // Only an explicit host path or this source tree may be auto-started.
 #ifdef __APPLE__
-  // 4. macOS .app bundles
   auto addAppBundle = [&](const std::string &app_path) {
-    std::string inner = app_path + "/Contents/MacOS/FrameViz";
-    addIfExecutable(candidates, inner);
-    addIfExecutable(candidates, app_path + "/Contents/MacOS/frameviz");
+    if (auto app = readMacApp(app_path); app && isProtocolCompatible(app->version)) {
+      candidates.push_back(app->executable);
+    }
   };
 
+  if (const char *home = std::getenv("HOME"); home && *home) {
+    addAppBundle(std::string(home) + "/Applications/FrameViz.app");
+  }
+  addAppBundle("/Applications/FrameViz.app");
   if (repo_root) {
     addAppBundle(*repo_root +
                  "/packages/frameviz-host-tauri/src-tauri/target/release/"
@@ -374,7 +516,7 @@ std::vector<std::string> getCandidates() {
   }
 #endif
 
-  // 5. Tauri exec candidates (non-.app)
+  // Tauri executables in a matching source tree.
   if (repo_root) {
 #if defined(_WIN32) || defined(_WIN64)
     addIfExecutable(candidates,
@@ -397,7 +539,7 @@ std::vector<std::string> getCandidates() {
 #endif
   }
 
-  // 6. Linux AppImage candidates (mirrors Python _get_appimage_candidates)
+  // Linux AppImages in a matching source tree.
 #if !defined(_WIN32) && !defined(_WIN64) && !defined(__APPLE__)
   if (repo_root) {
     std::string appimage_dir =
@@ -432,38 +574,63 @@ std::vector<std::string> getCandidates() {
 
 #if !defined(_WIN32) && !defined(_WIN64)
 
-void registerAtexit();
-
 void launchHost(const std::string &exe, const std::vector<std::string> &args) {
-  pid_t pid = fork();
+  // The Host sees EOF even if a signal prevents normal SDK teardown.
+  int owner[2];
+  if (pipe(owner) != 0) throw std::runtime_error("Cannot create FrameViz Host ownership pipe");
+  if (fcntl(owner[0], F_SETFD, FD_CLOEXEC) < 0 ||
+      fcntl(owner[1], F_SETFD, FD_CLOEXEC) < 0) {
+    close(owner[0]);
+    close(owner[1]);
+    throw std::runtime_error("Cannot configure FrameViz Host ownership pipe");
+  }
+  // Prepare argv and env before fork: the caller may already have SDK threads.
+  std::vector<const char *> argv{exe.c_str()};
+  for (const auto &arg : args) argv.push_back(arg.c_str());
+  argv.push_back(nullptr);
+  std::vector<const char *> env;
+  for (auto entry = environ; *entry; ++entry) {
+    if (std::string_view(*entry).rfind("FRAMEVIZ_SDK_MANAGED=", 0) != 0) env.push_back(*entry);
+  }
+  env.push_back("FRAMEVIZ_SDK_MANAGED=1");
+  env.push_back(nullptr);
+  const auto argv_data = const_cast<char *const *>(argv.data());
+  const auto env_data = const_cast<char *const *>(env.data());
+  const auto executable = exe.c_str();
+  const pid_t pid = fork();
   if (pid < 0) {
-    throw std::runtime_error("fork() failed");
+    close(owner[0]);
+    close(owner[1]);
+    throw std::runtime_error("Cannot fork FrameViz Host");
   }
   if (pid == 0) {
-    // Child: redirect stdout/stderr to /dev/null
-    int devnull = open("/dev/null", O_WRONLY);
+    close(owner[1]);
+    // Put the App outside the example's foreground terminal process group.
+    if (setsid() < 0 || dup2(owner[0], STDIN_FILENO) < 0 ||
+        fcntl(STDIN_FILENO, F_SETFD, 0) < 0) _exit(126);
+    if (owner[0] != STDIN_FILENO) close(owner[0]);
+    const int devnull = open("/dev/null", O_WRONLY);
     if (devnull >= 0) {
       dup2(devnull, STDOUT_FILENO);
       dup2(devnull, STDERR_FILENO);
-      close(devnull);
+      if (devnull > STDERR_FILENO) close(devnull);
     }
-
-    // Build argv
-    std::vector<const char *> c_args;
-    c_args.push_back(exe.c_str());
-    for (const auto &a : args) {
-      c_args.push_back(a.c_str());
-    }
-    c_args.push_back(nullptr);
-
-    execvp(exe.c_str(), const_cast<char *const *>(c_args.data()));
-    // execvp only returns on failure
+    execve(executable, argv_data, env_data);
     _exit(127);
   }
 
-  // Parent
+  close(owner[0]);
+  g_owner_pipe = owner[1];
   g_host_pid = pid;
-  registerAtexit();
+}
+
+void releaseHostPipe() {
+  if (g_owner_pipe >= 0) close(g_owner_pipe);
+  g_owner_pipe = -1;
+}
+
+uint32_t launchedHostPid() {
+  return static_cast<uint32_t>(g_host_pid);
 }
 
 bool isHostProcessAlive() {
@@ -472,64 +639,119 @@ bool isHostProcessAlive() {
   }
   int status = 0;
   pid_t ret = waitpid(g_host_pid, &status, WNOHANG);
-  if (ret == 0) {
+  if (ret == 0 || (ret < 0 && errno == EINTR)) {
     return true;  // Still running
   }
   g_host_pid = 0;
+  releaseHostPipe();
   return false;
 }
 
 void killHostProcess() {
-  if (g_host_pid <= 0) {
-    return;
-  }
+  if (!isHostProcessAlive()) return;
   pid_t pid = g_host_pid;
-  g_host_pid = 0;
 
   kill(pid, SIGTERM);
 
   // Wait up to 3 seconds for graceful exit
   for (int i = 0; i < 30; ++i) {
-    int status = 0;
-    pid_t ret = waitpid(pid, &status, WNOHANG);
-    if (ret != 0) {
-      return;  // Exited
-    }
+    if (!isHostProcessAlive()) return;
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   // Force kill
   kill(pid, SIGKILL);
-  waitpid(pid, nullptr, 0);
+  while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+  g_host_pid = 0;
+  releaseHostPipe();
 }
 
 #else  // Windows
 
-void registerAtexit();
-
 void launchHost(const std::string &exe, const std::vector<std::string> &args) {
-  std::string cmdline = "\"" + exe + "\"";
+  const auto executable = std::filesystem::u8path(exe);
+  std::wstring cmdline = L"\"" + executable.wstring() + L"\"";
   for (const auto &a : args) {
-    cmdline += " \"" + a + "\"";
+    cmdline += L" \"" + std::filesystem::u8path(a).wstring() + L"\"";
   }
 
-  STARTUPINFOA si{};
-  si.cb = sizeof(si);
-  si.dwFlags = STARTF_USESTDHANDLES;
-  si.hStdInput = INVALID_HANDLE_VALUE;
-  si.hStdOutput = INVALID_HANDLE_VALUE;
-  si.hStdError = INVALID_HANDLE_VALUE;
+  SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+  HANDLE input = nullptr, owner = nullptr;
+  if (!CreatePipe(&input, &owner, &security, 0)) {
+    throw std::runtime_error("Cannot create FrameViz Host ownership pipe");
+  }
+  const HANDLE output = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &security,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (output == INVALID_HANDLE_VALUE || !SetHandleInformation(owner, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(input);
+    CloseHandle(owner);
+    if (output != INVALID_HANDLE_VALUE) CloseHandle(output);
+    throw std::runtime_error("Cannot configure FrameViz Host standard handles");
+  }
 
+  std::vector<wchar_t> environment;
+  auto entries = GetEnvironmentStringsW();
+  if (!entries) {
+    CloseHandle(input);
+    CloseHandle(owner);
+    CloseHandle(output);
+    throw std::runtime_error("Cannot read environment for FrameViz Host");
+  }
+  constexpr std::wstring_view managedKey = L"FRAMEVIZ_SDK_MANAGED=";
+  for (const wchar_t *entry = entries; *entry;) {
+    const std::wstring_view value(entry);
+    if (_wcsnicmp(entry, managedKey.data(), managedKey.size()) != 0) {
+      environment.insert(environment.end(), entry, entry + value.size() + 1);
+    }
+    entry += value.size() + 1;
+  }
+  FreeEnvironmentStringsW(entries);
+  constexpr wchar_t managed[] = L"FRAMEVIZ_SDK_MANAGED=1";
+  environment.insert(environment.end(), managed, managed + sizeof(managed));
+  environment.push_back(L'\0');
+
+  STARTUPINFOEXW startup{};
+  startup.StartupInfo.cb = sizeof(startup);
+  startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+  startup.StartupInfo.hStdInput = input;
+  startup.StartupInfo.hStdOutput = output;
+  startup.StartupInfo.hStdError = output;
+  SIZE_T listSize = 0;
+  InitializeProcThreadAttributeList(nullptr, 1, 0, &listSize);
+  std::vector<char> attributes(listSize);
+  startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
+  HANDLE handles[] = {input, output};
   PROCESS_INFORMATION pi{};
-  BOOL ok = CreateProcessA(nullptr, &cmdline[0], nullptr, nullptr, FALSE,
-                           CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+  BOOL ok = FALSE;
+  if (InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &listSize)) {
+    if (UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                  handles, sizeof(handles), nullptr, nullptr)) {
+      ok = CreateProcessW(executable.c_str(), cmdline.data(), nullptr, nullptr, TRUE,
+                          CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP |
+                              CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+                          environment.data(), nullptr, &startup.StartupInfo, &pi);
+    }
+    DeleteProcThreadAttributeList(startup.lpAttributeList);
+  }
+  CloseHandle(input);
+  CloseHandle(output);
   if (!ok) {
+    CloseHandle(owner);
     throw std::runtime_error("CreateProcess failed for " + exe);
   }
 
   CloseHandle(pi.hThread);
   g_host_handle = pi.hProcess;
-  registerAtexit();
+  g_owner_pipe = owner;
+}
+
+void releaseHostPipe() {
+  if (g_owner_pipe) CloseHandle(g_owner_pipe);
+  g_owner_pipe = nullptr;
+}
+
+uint32_t launchedHostPid() {
+  return g_host_handle ? GetProcessId(g_host_handle) : 0;
 }
 
 bool isHostProcessAlive() {
@@ -542,6 +764,7 @@ bool isHostProcessAlive() {
   }
   CloseHandle(g_host_handle);
   g_host_handle = nullptr;
+  releaseHostPipe();
   return false;
 }
 
@@ -553,17 +776,10 @@ void killHostProcess() {
   WaitForSingleObject(g_host_handle, 3000);
   CloseHandle(g_host_handle);
   g_host_handle = nullptr;
+  releaseHostPipe();
 }
 
 #endif
-
-void registerAtexit() {
-  if (g_atexit_registered) {
-    return;
-  }
-  g_atexit_registered = true;
-  std::atexit([]() { frameviz::stopHost(); });
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Wait for port
@@ -584,6 +800,20 @@ bool waitForReady(const std::string &host, int port, double timeout_sec) {
   return false;
 }
 
+bool processExists(uint32_t pid) {
+  if (!pid) return false;
+#if defined(_WIN32) || defined(_WIN64)
+  const HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+  if (!process) return GetLastError() == ERROR_ACCESS_DENIED;
+  const bool running = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+  CloseHandle(process);
+  return running;
+#else
+  if (pid > static_cast<uint32_t>(std::numeric_limits<pid_t>::max())) return false;
+  return kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
+}
+
 }  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -596,6 +826,45 @@ bool isHostRunning(const std::string &ws_url, double timeout_sec) {
 }
 
 std::optional<std::string> findHostExecutable() {
+#ifdef _WIN32
+  for (const wchar_t *key : {L"FRAMEVIZ_HOST_PATH", L"FRAMEVIZ_TAURI_APP"}) {
+    const auto *value = _wgetenv(key);
+    if (!value || !*value) continue;
+    const std::filesystem::path path(value);
+    if (!isExecutable(path.u8string())) {
+      throw std::runtime_error("Explicit FrameViz Host is not executable: " + path.u8string());
+    }
+    if (auto version = windowsAppVersion(path); version && !isProtocolCompatible(*version)) {
+      throw std::runtime_error(path.u8string() + ": " + hostVersionError(*version));
+    }
+    return std::filesystem::absolute(path).u8string();
+  }
+#else
+  for (const char *key : {"FRAMEVIZ_HOST_PATH", "FRAMEVIZ_TAURI_APP"}) {
+    const char *value = std::getenv(key);
+    if (!value || !*value) continue;
+    const std::string path(value);
+#ifdef __APPLE__
+    if (std::filesystem::path(path).extension() == ".app") {
+      auto app = readMacApp(path);
+      if (!app) throw std::runtime_error(std::string(key) + " is not a valid FrameViz App: " + path);
+      if (auto error = hostVersionError(app->version); !error.empty()) {
+        throw std::runtime_error(std::string(key) + " (" + path + "): " + error);
+      }
+      return app->executable;
+    }
+#endif
+    if (!isExecutable(path)) {
+      throw std::runtime_error(std::string(key) + " is not an executable FrameViz Host: " + path);
+    }
+#ifdef __linux__
+    if (auto version = linuxRuntimeVersion(path); version && !isProtocolCompatible(*version)) {
+      throw std::runtime_error(std::string(key) + " (" + path + "): " + hostVersionError(*version));
+    }
+#endif
+    return std::filesystem::absolute(path).string();
+  }
+#endif
   auto candidates = getCandidates();
   if (candidates.empty()) {
     return std::nullopt;
@@ -603,9 +872,44 @@ std::optional<std::string> findHostExecutable() {
   return candidates.front();
 }
 
-void startHost(const std::string &ws_url, double timeout_sec, bool headless) {
-  if (isHostRunning(ws_url)) {
-    return;
+bool detail::isLocalWsUrl(const std::string &url) {
+  static const std::regex local(R"(^ws://(127\.0\.0\.1|localhost)(:[0-9]+)?(/.*)?$)");
+  return std::regex_match(url, local);
+}
+
+bool detail::hasDesktop() {
+#ifdef __linux__
+  const char *display = std::getenv("DISPLAY");
+  const char *wayland = std::getenv("WAYLAND_DISPLAY");
+  return (display && *display) || (wayland && *wayland);
+#else
+  return true;
+#endif
+}
+
+std::optional<DiscoveryInfo> detail::runningLocalHost() {
+  auto info = readDiscoveryFile();
+  if (info && isLocalWsUrl(info->ws_url) && processExists(info->pid) &&
+      isHostRunning(info->ws_url)) {
+    return info;
+  }
+  return std::nullopt;
+}
+
+std::string detail::startLocalHost(const std::string &ws_url, double timeout_sec,
+                                  bool headless, bool automaticEndpoint) {
+  std::lock_guard<std::mutex> lock(host_mutex);
+  if (!isLocalWsUrl(ws_url)) throw std::runtime_error("Only local FrameViz Hosts can be started");
+  if (!automaticEndpoint && isHostRunning(ws_url)) {
+    return ws_url;
+  }
+  if (auto host = runningLocalHost()) {
+    if (auto error = hostVersionError(host->version); !error.empty()) throw std::runtime_error(error);
+    if (!automaticEndpoint) throw std::runtime_error("The local discovery record belongs to a Host on a different port");
+    return host->ws_url;
+  }
+  if (isHostProcessAlive()) {
+    throw std::runtime_error("This process already started a FrameViz Host");
   }
 
   auto exe = findHostExecutable();
@@ -618,6 +922,12 @@ void startHost(const std::string &ws_url, double timeout_sec, bool headless) {
   }
 
   auto hp = parseWsUrl(ws_url);
+#ifdef __linux__
+  if (automaticEndpoint && isHostRunning(ws_url) &&
+      std::filesystem::path(*exe).filename() == "frameviz-server") {
+    hp.port = freeLocalPort();
+  }
+#endif
   std::vector<std::string> args = {"--ws-port", std::to_string(hp.port)};
   if (headless) {
     args.emplace_back("--headless");
@@ -628,21 +938,31 @@ void startHost(const std::string &ws_url, double timeout_sec, bool headless) {
 
   launchHost(*exe, args);
 
-  if (!waitForReady(hp.host, hp.port, timeout_sec)) {
-    killHostProcess();
-    throw std::runtime_error(
-        "FrameViz Host started but did not become ready within " +
-        std::to_string(static_cast<int>(timeout_sec)) + "s");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(timeout_sec);
+  while (std::chrono::steady_clock::now() < deadline && isHostProcessAlive()) {
+    if (auto info = readDiscoveryFile(); info && info->pid == launchedHostPid() &&
+        !info->token.empty() && isLocalWsUrl(info->ws_url) && isHostRunning(info->ws_url)) {
+      const auto error = hostVersionError(info->version);
+      if (!error.empty() || (!automaticEndpoint && info->port != hp.port)) {
+        killHostProcess();
+        throw std::runtime_error(error.empty() ? "FrameViz Host did not bind the requested port" : error);
+      }
+      if (std::filesystem::path(*exe).filename() != "frameviz-server") {
+        waitForReady("127.0.0.1", getTauriControlPort(), std::min(timeout_sec, 2.0));
+      }
+      std::cout << "[FrameViz] Host is ready: " << info->ws_url << std::endl;
+      return info->ws_url;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
   }
+  killHostProcess();
+  throw std::runtime_error(
+      "FrameViz Host did not publish a ready discovery record within " +
+      std::to_string(timeout_sec) + "s");
+}
 
-  // Also wait for the Tauri control port so that tryOpenTauriWindow() works
-  // immediately after startHost() returns.
-  if (!headless) {
-    int control_port = getTauriControlPort();
-    waitForReady(hp.host, control_port, std::min(timeout_sec, 5.0));
-  }
-
-  std::cout << "[FrameViz] Host is ready: " << ws_url << std::endl;
+void startHost(const std::string &ws_url, double timeout_sec, bool headless) {
+  detail::startLocalHost(ws_url, timeout_sec, headless, false);
 }
 
 void ensureHostRunning(const std::string &ws_url, double timeout_sec,
@@ -654,6 +974,7 @@ void ensureHostRunning(const std::string &ws_url, double timeout_sec,
 }
 
 void stopHost() {
+  std::lock_guard<std::mutex> lock(host_mutex);
   killHostProcess();
 }
 

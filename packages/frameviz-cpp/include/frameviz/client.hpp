@@ -19,6 +19,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
@@ -146,6 +147,8 @@ public:
   void setTimeout(std::chrono::seconds timeout);
 
 private:
+  friend class Viz;
+  std::pair<std::string, std::string> captureSession() const;
   class Impl;
   std::shared_ptr<Impl> m_impl;
 };
