@@ -59,4 +59,8 @@ jobs:
       - run: cmake --install .cache/cpp-release --prefix "$PWD/.cache/sdk"
       - run: cmake -S tests/acceptance/cpp -B .cache/installed-consumer -DCMAKE_PREFIX_PATH="$PWD/.cache/sdk"
       - run: cmake --build .cache/installed-consumer -j 2
+      - run: cmake -S examples/cpp -B .cache/cpp-examples -DCMAKE_PREFIX_PATH="$PWD/.cache/sdk"
+      - run: cmake --build .cache/cpp-examples -j 4
+      - run: FRAMEVIZ_CPP_CAPTURE="$PWD/.cache/installed-consumer/capture" python -m pytest tests/acceptance/test_cpp_capture.py -q
+      - run: FRAMEVIZ_CPP_TAURI_CONTROL="$PWD/.cache/installed-consumer/tauri_control" python -m pytest tests/acceptance/test_cpp_tauri_control.py -q
       - run: FRAMEVIZ_ASSET_TEST_BINARY="$PWD/.cache/installed-consumer/asset_harness" FRAMEVIZ_CPP_FIND_HOST="$PWD/.cache/installed-consumer/find_host" FRAMEVIZ_CPP_VERSION_CONNECT="$PWD/.cache/installed-consumer/version_connect" FRAMEVIZ_CPP_PRESENT_VIEW="$PWD/.cache/installed-consumer/present_view" FRAMEVIZ_CPP_SCENE_TREE="$PWD/.cache/installed-consumer/scene_tree" FRAMEVIZ_CPP_WIDGETS="$PWD/.cache/installed-consumer/widgets_and_queries" python -m pytest tests/acceptance/test_cpp_assets.py tests/acceptance/test_cpp_root.py tests/acceptance/test_cpp_version.py tests/acceptance/test_cpp_presentation.py tests/acceptance/test_cpp_scene_tree.py tests/acceptance/test_cpp_widgets_and_queries.py -q

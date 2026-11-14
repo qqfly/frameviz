@@ -34,6 +34,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install build
       - run: scripts/release/build-linux-preview.sh "$PWD/.cache/linux-preview"
+      - name: Build C++ example against the candidate SDK
+        run: |
+          cmake -S examples/cpp -B .cache/cpp-examples -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build .cache/cpp-examples --target hello_world -j 4
+          install -m 755 .cache/cpp-examples/bin/01_basic_primitives/hello_world .cache/linux-preview/hello_world
       - name: Install desktop package and wheel in a clean container
         run: |
           docker run --rm -v "$PWD/.cache/linux-preview:/preview:ro" -v "$PWD/tests/acceptance/linux_installed_smoke.py:/smoke.py:ro" ubuntu:${{ matrix.ubuntu }} bash -euc '
@@ -56,6 +61,18 @@ jobs:
             chown -R smoke:smoke /tmp/frameviz-home
             su -s /bin/bash smoke -c "python3 -m venv /tmp/frameviz-home/venv && /tmp/frameviz-home/venv/bin/pip install /preview/*.whl && /tmp/frameviz-home/venv/bin/python /smoke.py"
           '
+      - name: Test the installed desktop and headless Hosts with C++
+        run: |
+          docker run --rm --init -v "$PWD/.cache/linux-preview:/preview:ro" \
+            -v "$PWD/tests/acceptance/cpp_installed_linux_smoke.py:/smoke.py:ro" ubuntu:${{ matrix.ubuntu }} bash -euc '
+              apt-get update
+              apt-get install -y /preview/*.deb python3-websocket xvfb xauth libgl1-mesa-dri
+              useradd -m smoke
+              export GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
+              export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+              runuser -u smoke -- xvfb-run -a python3 /smoke.py /preview/hello_world /usr/bin/frameviz
+              runuser -u smoke -- python3 /smoke.py /preview/hello_world /usr/bin/frameviz-server
+            '
       - uses: actions/upload-artifact@v4
         if: success()
         with:
