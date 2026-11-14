@@ -27,6 +27,8 @@
 
 请向维护者获取适合你平台的 **0.5.0 试用运行时和配套 SDK**，也可从当前源码构建。[Releases](https://github.com/qqfly/frameviz/releases) 上已有的 0.4 预览包请搭配 0.4 SDK。各平台文件和命令见[安装说明](docs/INSTALLATION.md)。
 
+各平台共用一份 Python／C++ 示例源码 ZIP。文件清单、运行命令和 SDK 要求见[示例包指引](examples/DOWNLOAD.md)。
+
 先安装一次运行环境，再在每个 Python 项目环境里安装配套 SDK：
 
 | 环境 | 运行环境 | 显示方式 |

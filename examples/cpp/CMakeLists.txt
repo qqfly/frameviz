@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(frameviz 0.5.0 CONFIG QUIET)
 if(NOT TARGET frameviz::cpp)
-    add_subdirectory(../../packages/frameviz-cpp frameviz-cpp-build)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/frameviz-cpp/CMakeLists.txt")
+        add_subdirectory(../../packages/frameviz-cpp frameviz-cpp-build)
+    else()
+        message(FATAL_ERROR "Install the FrameViz C++ SDK and set CMAKE_PREFIX_PATH to its installation directory.")
+    endif()
 endif()
 
 function(frameviz_example category name)
@@ -43,8 +47,10 @@ frameviz_example(05_scene scene_tree)
 frameviz_example(06_scene_output save_png)
 frameviz_example(06_scene_output export_html)
 
-add_executable(open_vue_scene ../vue/open_scene.cpp)
-target_include_directories(open_vue_scene PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(open_vue_scene PRIVATE frameviz::cpp)
-set_target_properties(open_vue_scene PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/vue")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../vue/open_scene.cpp")
+    add_executable(open_vue_scene ../vue/open_scene.cpp)
+    target_include_directories(open_vue_scene PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(open_vue_scene PRIVATE frameviz::cpp)
+    set_target_properties(open_vue_scene PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/vue")
+endif()

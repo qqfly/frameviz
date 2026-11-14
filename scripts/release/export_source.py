@@ -5,7 +5,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts'))
 from update_source_manifest import allowed
 
-def export(dest,prefix=None):
+def export(dest,prefix=None,*,select=None):
  if dest.exists():raise ValueError('Output must be new')
  manifest=json.loads((ROOT/'source-manifest.json').read_text())
  selected=[]
@@ -13,6 +13,7 @@ def export(dest,prefix=None):
   rel=pathlib.PurePosixPath(name)
   if rel.is_absolute() or '..' in rel.parts or not allowed(rel):raise ValueError(f'Unsafe source path: {name}')
   if prefix and not pathlib.Path(rel).is_relative_to(prefix):continue
+  if select and not select(rel):continue
   p=ROOT/rel
   if p.is_symlink() or not p.resolve().is_relative_to(ROOT.resolve()) or not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=want:
    raise ValueError(f'Source changed or unsafe: {name}')

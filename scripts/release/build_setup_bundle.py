@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build a manifest-verified portable candidate from explicitly supplied artifacts."""
-import argparse, hashlib, json, pathlib, re, shutil, subprocess, tarfile, tempfile
+import argparse, hashlib, json, pathlib, re, shutil, tarfile, tempfile
+from build_examples_zip import stage_examples
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -19,14 +20,12 @@ def main():
         output=a.output/f'FrameViz-{a.version}-{platform}-bundle.tar.gz'
         if output.exists(): raise ValueError('Output already exists; choose a new directory')
         with tempfile.TemporaryDirectory(prefix='frameviz-bundle-') as temp:
-            stage=pathlib.Path(temp)
+            stage=pathlib.Path(temp)/'bundle'
+            stage_examples(stage)
             for name in ('README.txt','install.sh','uninstall.sh','portable_install.py'):
                 shutil.copy2(ROOT/'scripts/release'/name,stage/name)
-            shutil.copy2(ROOT/'version.json',stage/'version.json')
-            shutil.copy2(ROOT/'LICENSE',stage/'LICENSE');shutil.copy2(ROOT/'NOTICE',stage/'NOTICE');shutil.copytree(ROOT/'THIRD_PARTY_LICENSES',stage/'THIRD_PARTY_LICENSES')
             (stage/'artifacts').mkdir()
             for source in selected: shutil.copy2(source,stage/'artifacts'/source.name)
-            subprocess.run(['python3',str(ROOT/'scripts/release/export_source.py'),str(stage/'examples'),'--subtree','examples'],check=True)
             files={str(f.relative_to(stage)):hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(stage.rglob('*')) if f.is_file()}
             (stage/'frameviz-manifest.json').write_text(json.dumps({'format':1,'version':a.version,'platform':platform,'files':files},indent=2)+'\n')
             with tarfile.open(output,'w:gz') as archive:

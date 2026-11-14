@@ -1,12 +1,12 @@
 # FrameViz 示例
 
-本目录包含 FrameViz 的使用示例，按语言与场景分类。先按[安装说明](../docs/INSTALLATION.md)安装运行环境和配套 SDK。Python 的 `fv.open()` 会自动发现、启动并打开场景；无需启动 pnpm 开发服务器。强制浏览器用 `window_mode=1`，无桌面 Linux 会打印私有链接。[故障排查](../docs/TROUBLESHOOTING.md)。
+本目录包含 FrameViz 的使用示例，按语言与场景分类。先按[安装说明](../docs/INSTALLATION.md)安装运行环境和配套 SDK。macOS 和 Linux 上的 Python `fv.open()` 会自动查找已安装的运行时。Windows 上用 Python 冷启动前，请按[试用指引](../docs/INSTALLATION.md#windows-x64-trial)设置 App 路径。强制使用浏览器可指定 `window_mode=1`，无桌面 Linux 会打印私有链接。[故障排查](../docs/TROUBLESHOOTING.md)。
 
 [Python／C++ 案例清单](INVENTORY.md)列出 Python 和 C++ 的成对案例和运行入口，以及 Vue 和完整应用的运行路线。
 
 ## Python 入门顺序
 
-先用已安装配套 SDK 的 Python，从仓库根目录运行示例。第一步可以在 IPython 逐行输入。
+先用已安装配套 SDK 的 Python，从仓库或示例包根目录运行。第一步可以在 IPython 逐行输入。
 
 ```python
 import frameviz as fv
@@ -32,7 +32,7 @@ viz.set_transform(box, position=[1, 0, 0])
 | 离线 HTML | [导出动画场景](python/06_scene_output/export_html.py) | 打开 `lesson.html` 后可以旋转视角、播放和拖动进度。 |
 | 接入 Vue 应用 | [最小 Vue 嵌入](vue/README.md) · [Vue 滑条应用](apps/simple_slider/README.md) | 将 Viewer 放进现有页面，用应用控件更新三维场景。 |
 
-截图和 HTML 导出需要 [`capture` 依赖及 Chromium](../docs/PYTHON_DISTRIBUTION.md)。准备好以后，从仓库根目录运行：
+截图和 HTML 导出需要 [`capture` 依赖及 Chromium](../docs/PYTHON_DISTRIBUTION.md)。准备好以后，在当前目录运行以下命令。
 
 ```bash
 python examples/python/06_scene_output/save_png.py

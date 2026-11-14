@@ -27,6 +27,8 @@ Coordinates and dimensions come from your application. Quaternions use **`[x, y,
 
 Ask the maintainer for the **0.5.0 trial runtime and its matching SDK** for your platform, or build both from this checkout. The older [0.4 previews](https://github.com/qqfly/frameviz/releases) need their matching 0.4 SDK. See the [installation guide](docs/INSTALLATION.md) for artifact choices and commands.
 
+The shared examples ZIP contains the Python and C++ source examples for all platforms. See the [ZIP guide](examples/DOWNLOAD.md) for the contents, commands, and required SDKs.
+
 Install the runtime once, then install its paired Python SDK wheel in each project environment:
 
 | Environment | Runtime | Viewer |
