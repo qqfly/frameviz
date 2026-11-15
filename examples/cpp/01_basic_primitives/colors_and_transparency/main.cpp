@@ -7,6 +7,7 @@
  */
 
 #include <frameviz/viz.hpp>
+#include "example_interrupt.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -17,6 +18,7 @@ using namespace frameviz;
 int main() {
     std::cout << "FrameViz C++ - Colors and Transparency\n" << std::endl;
 
+    const frameviz::example::Interrupt interrupt;
     auto viz = Viz::open();
     std::cout << "✓ Connected to FrameViz\n" << std::endl;
 
@@ -54,7 +56,7 @@ int main() {
     std::cout << std::string(60, '=') << std::endl;
 
     // 4. 动态改变颜色
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 100 && !interrupt.requested(); ++i) {
         float t = i * 0.1f;
         float r = 0.5f + 0.5f * std::sin(t);
         float g = 0.5f + 0.5f * std::sin(t + 2.094f);
@@ -67,7 +69,8 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    std::cout << "\n✓ Demo completed" << std::endl;
     viz->close();
+    if (interrupt.requested()) return 130;
+    std::cout << "\n✓ Demo completed" << std::endl;
     return 0;
 }

@@ -75,6 +75,8 @@ def test_hundred_mouse_clicks_with_callback_commands_have_no_loss(standalone):
                     page.wait_for_timeout(10)
                 assert not failures and not errors, (failures, errors)
                 assert seen == expected, {'actual': len(seen), 'expected': 100, 'sequence': seen}
+                viz.clear_pick_highlight()
+                page.wait_for_function('window.__FRAMEVIZ_CORE__.pickingManager.selectedHandle === null')
                 page.wait_for_function('hs=>hs.every(h=>{const c=window.__FRAMEVIZ_CORE__.objects.get(h).material.color;return c.r===0&&c.g===1&&c.b===0;})', arg=list(poses))
                 print(json.dumps({'actual_mouse_clicks': len(expected), 'successful_callbacks': len(seen),
                                   'callback_commands': 200, 'ordered_handles_match': True,

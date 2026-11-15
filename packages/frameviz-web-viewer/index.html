@@ -98,6 +98,9 @@
       padding-top: 8px;
       border-top: 1px solid rgba(255, 255, 255, 0.2);
     }
+    html[data-capture] #status,
+    html[data-capture] #shortcuts,
+    html[data-capture] #info { display: none; }
   </style>
 </head>
 
@@ -118,9 +121,9 @@
   </div>
   <div id="info">
     <strong>FrameViz Web Viewer</strong><br>
-    <small>按 <kbd
+    <small id="shortcuts-hint">按 <kbd
         style="background:rgba(255,255,255,0.2);padding:1px 4px;border-radius:2px;font-family:monospace;">H</kbd>
-      显示快捷键</small><br>
+      显示快捷键<br></small>
     <span id="objects">Objects: 0</span>
   </div>
 
@@ -128,7 +131,7 @@
     import { FrameVizCore, applySceneSnapshot as replaySnapshot } from '@frameviz/core';
     import { hostVersionError } from '@frameviz/protocol';
 
-    const PROTOCOL_VERSION = '0.4.0';
+    const PROTOCOL_VERSION = '0.5.0';
     const container = document.getElementById('container');
     const overlay2d = document.getElementById('overlay-2d');
     const statusEl = document.getElementById('status');
@@ -141,6 +144,8 @@
     const injectedWsPort = window.__FRAMEVIZ_WS_PORT__;
     const injectedPerfMode = window.__FRAMEVIZ_PERFORMANCE_MODE__;
     const injectedBackground = window.__FRAMEVIZ_BACKGROUND__;
+    const capture = urlParams.get('capture') === '1';
+    if (capture) document.documentElement.dataset.capture = 'true';
     const isTauri = typeof window.__TAURI__ !== 'undefined';
     const disableConnect = window.__FRAMEVIZ_DISABLE_CONNECT__ ||
       (isTauri && !injectedViewId && !urlParams.get('view_id'));
@@ -150,6 +155,7 @@
     const performanceMode = injectedPerfMode || urlParams.get('performance_mode') || 'balanced';
     const backgroundParam = injectedBackground || urlParams.get('background');
     let sceneId = null;
+    let readOnly = false;
 
     // Parse background color from URL param (hex like "1e1e2a" or "0x1e1e2a")
     function parseBackgroundColor(bg) {
@@ -197,15 +203,20 @@
       objectsEl.textContent = `Objects: ${core.getObjectCount({ grouped: true })}`;
     }
 
+    const shortcutsPanel = document.getElementById('shortcuts');
+    const shortcutsHint = document.getElementById('shortcuts-hint');
+
     function toggleShortcutsPanel() {
-      const panel = document.getElementById('shortcuts');
-      if (panel) {
-        panel.classList.toggle('visible');
-      }
+      if (core?.areKeyboardShortcutsEnabled()) shortcutsPanel.classList.toggle('visible');
+    }
+
+    function updateShortcutsVisibility(enabled) {
+      shortcutsHint.hidden = !enabled;
+      if (!enabled) shortcutsPanel.classList.remove('visible');
     }
 
     function sendEnvelope(envelope) {
-      if (connectionStopped || !ws || ws.readyState !== WebSocket.OPEN) return;
+      if (readOnly || connectionStopped || !ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify(envelope));
     }
 
@@ -259,6 +270,8 @@
       if (!core) return;
       sceneId = snapshot.scene_id;
       replaySnapshot(core, snapshot);
+      if (capture) window.__FRAMEVIZ_CAPTURE_SNAPSHOT__ = snapshot;
+      document.documentElement.dataset.sceneReady = "true";
       updateObjectCount();
     }
 
@@ -359,7 +372,7 @@
     }
 
     function handleSyncMessage(msg) {
-      if (!core) return;
+      if (!core || (capture && document.documentElement.dataset.sceneReady === 'true')) return;
       if (!core.acceptRevision(msg.revision)) return;
       const { command, args, result } = msg;
       core.handleCommand(command, args, result || {});
@@ -367,7 +380,20 @@
       updateObjectCount();
     }
 
+    function showInactiveView(message) {
+      sceneId = null;
+      document.documentElement.dataset.sceneReady = 'false';
+      pendingBinaryQueue.length = 0;
+      gizmoAttachedHandle = null;
+      updateGizmoModeDisplay();
+      statusEl.textContent = `${viewId} · ${message}`;
+      statusEl.className = 'disconnected';
+    }
+
     function updateUiState(command, args) {
+      if (command === 'destroy_view' && args.view_id === viewId) {
+        showInactiveView('View closed');
+      }
       if (command === 'set_render_mode') {
         currentRenderMode = args.mode || currentRenderMode;
         updateRenderModeDisplay();
@@ -419,6 +445,7 @@
         'set_view',
         'reset_camera',
         'set_render_mode',
+        'set_keyboard_shortcuts',
         'set_performance_mode',
         'set_camera_pose',
         'set_camera_controls',
@@ -510,15 +537,28 @@
         }
         return;
       }
+      if (msg.type === 'view_unavailable' && msg.view_id === viewId) {
+        core?.handleCommand('clear_scene', {});
+        core?.restoreWidgets([]);
+        core?.setViewId(undefined);
+        showInactiveView('View unavailable');
+        updateObjectCount();
+        return;
+      }
       if (msg.type === 'init') {
+        readOnly = msg.read_only === true;
+        core?.setWidgetPanelEnabled(!readOnly && !capture);
+        document.documentElement.dataset.sceneReady = 'false';
         if (core) core.sceneRevision = 0;
-        if (msg.view_id && msg.view_id !== viewId) {
+        if (msg.view_id) {
           viewId = msg.view_id;
           document.title = `FrameViz - ${viewId}`;
-          if (urlParams.get('browser_session')) {
+          if (!isTauri) {
             const currentUrl = new URL(location.href);
-            currentUrl.searchParams.set('view_id', viewId);
-            history.replaceState(null, '', currentUrl);
+            if (currentUrl.searchParams.get('view_id') !== viewId) {
+              currentUrl.searchParams.set('view_id', viewId);
+              history.replaceState(null, '', currentUrl);
+            }
           }
         }
         sceneId = msg.scene_id;
@@ -547,7 +587,8 @@
       if (connectionStopped) return;
       const browserSession = urlParams.get('browser_session');
       const sessionQuery = browserSession ? `&browser_session=${encodeURIComponent(browserSession)}` : '';
-      const wsUrl = `ws://127.0.0.1:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}${sessionQuery}`;
+      const wsHost = urlParams.get('remote') === '1' ? location.hostname : '127.0.0.1';
+      const wsUrl = `ws://${wsHost}:${wsPort}?type=viewer&view_id=${encodeURIComponent(viewId)}${sessionQuery}`;
       ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       console.log(`[FrameViz] Connecting as view=${viewId}`);
@@ -613,7 +654,8 @@
         meta: e.metaKey,
       });
 
-      if (!e.ctrlKey && !e.metaKey && key === 'h') {
+      if (!e.ctrlKey && !e.metaKey && key === 'h' &&
+          !e.target.isContentEditable && e.target.tagName !== 'SELECT') {
         toggleShortcutsPanel();
       }
     });
@@ -723,7 +765,9 @@
         overlay: overlay2d,
         viewId,
         performanceMode,
+        showWidgetPanel: !capture,
         background: initialBackground,  // Pass background from URL param
+        onKeyboardShortcutsChange: updateShortcutsVisibility,
         onEvent: (name, data) => sendEvent(name, data),
         onCommand: (name, args) => sendCommand(name, args),
       });

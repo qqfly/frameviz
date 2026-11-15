@@ -1,10 +1,10 @@
 # FrameViz
 
-[中文](README.zh-CN.md) · [Examples](examples/README.md) · [API contract](docs/API_Definition.md)
+[中文](README.zh-CN.md) · [Examples](examples/README.md) · [API contract](docs/API_Definition.md) · [Changelog](CHANGELOG.md)
 
 Draw and interact with 3D data from **Python or C++**, in a desktop window, browser, or your **Vue** application. FrameViz provides object handles, NumPy/array input, instancing, camera control, picking events, and transform handles. A local Rust Host keeps scene state; a Three.js viewer renders it.
 
-Version **0.4.0**, private preview. Copyright **qqfly**, [MIT](LICENSE). Third-party attribution: [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+Version **0.5.0**, development candidate. Copyright **qqfly**, [MIT](LICENSE). Third-party attribution: [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
 
 ## What can I draw?
 
@@ -25,18 +25,23 @@ Coordinates and dimensions come from your application. Quaternions use **`[x, y,
 
 ## Quick start
 
+Ask the maintainer for the **0.5.0 trial runtime and its matching SDK** for your platform, or build both from this checkout. The older [0.4 previews](https://github.com/qqfly/frameviz/releases) need their matching 0.4 SDK. See the [installation guide](docs/INSTALLATION.md) for artifact choices and commands.
+
+The shared examples ZIP contains the Python and C++ source examples for all platforms. See the [ZIP guide](examples/DOWNLOAD.md) for the contents, commands, and required SDKs.
+
 Install the runtime once, then install its paired Python SDK wheel in each project environment:
 
 | Environment | Runtime | Viewer |
 |---|---|---|
-| Apple Silicon Mac | Private-preview `FrameViz.app` from the [releases](https://github.com/qqfly/frameviz/releases) | Native window by default |
+| Apple Silicon Mac | Matching trial DMG with `FrameViz.app` | Native window by default |
+| Windows x64 desktop | Matching App and SDK. See the [Windows trial instructions](docs/INSTALLATION.md#windows-x64-trial). | Native window by default |
 | Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./FrameViz_*.deb` | Native window by default |
 | Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
+python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
 ```
 
 In IPython or a Python session:
@@ -47,7 +52,7 @@ viz = fv.open()
 viz.add_box()
 ```
 
-A running compatible runtime is reused; otherwise Python starts a known installation automatically. No runtime path, port or token needs to be entered. In a standalone script, end with `viz.keep_running()`; Ctrl+C closes the view and connection. Use `fv.open(window_mode=1)` to force a browser, or `window_mode=0` to manage pages yourself. Without a Linux desktop, the private link is printed automatically. Repeated browser-mode opens reuse the managed page while keeping scenes independent; use `reuse_browser=False` when you want separate pages.
+A running compatible runtime is reused. Python can start a known macOS or Linux installation automatically. For a Windows cold start, set `FRAMEVIZ_TAURI_APP` to the installed executable in the current PowerShell session. The C++ SDK can discover the installed Windows App automatically. In a standalone Python script, end with `viz.keep_running()`. Ctrl+C closes the view and connection. Use `fv.open(window_mode=1)` to open a browser or `window_mode=0` to manage pages yourself. Without a Linux desktop, FrameViz prints the private link automatically. Browser mode reuses the managed page and keeps scenes independent. Use `reuse_browser=False` to keep separate pages.
 
 The existing Mac preview is ad-hoc signed and **not Apple-notarized**. Ubuntu build/container checks and native desktop/GPU acceptance are different results; the latest artifact and test records determine which has run. See [installation and source builds](docs/INSTALLATION.md), [Mac first-open steps](docs/MACOS.md), and [troubleshooting](docs/TROUBLESHOOTING.md).
 
@@ -72,7 +77,7 @@ viz.set_transform(box, pos=(0.4, 0, 0.65))
 
 ![Object appearance and state changes](docs/media/appearance.webp)
 
-Examples: [colors and transparency](examples/python/01_basic_primitives/use_colors_and_transparency.py), [batch transforms](examples/python/01_basic_primitives/use_batch_transforms_and_view_status.py), [object lifecycle](examples/python/01_basic_primitives/use_resource_cleanup.py).
+Examples: [colors and transparency](examples/python/01_basic_primitives/use_colors_and_transparency.py), [batch transforms](examples/python/05_scene/use_batch_transforms.py), [object lifecycle](examples/python/05_scene/use_object_lifecycle.py).
 
 ### Mesh data, vertex colors, and wireframe
 
@@ -86,26 +91,22 @@ viz.set_render_mode("wireframe")  # View-level display mode
 
 ![Indexed mesh colors and wireframe](docs/media/mesh-colors.webp)
 
-Run the [deterministic mesh example](examples/python/05_developer_features/showcase.py):
-
-```sh
-python examples/python/05_developer_features/showcase.py mesh
-```
-
-Also see [mesh color modes](examples/python/01_basic_primitives/use_mesh_color_modes.py) and [smooth shading](examples/python/01_basic_primitives/use_mesh_smooth_shading.py).
+Try the [mesh color modes](examples/python/01_basic_primitives/use_mesh_color_modes.py),
+[transparency and wireframe](examples/python/01_basic_primitives/use_mesh_transparency.py),
+and [smooth shading](examples/python/01_basic_primitives/use_mesh_smooth_shading.py) examples.
 
 ### Instancing and batch updates
 
-Use one handle for repeated primitives. Provided arrays replace their previous contents. The clip shows **169 box instances**, not a throughput claim.
+Use one handle for repeated primitives. Provided arrays replace their previous contents. The example updates positions, colors and the number of instances.
 
 ```python
 h = viz.add_instances("box", positions=positions, size=(0.22, 0.22, 0.22), colors=colors)
 viz.update_instances(h, positions=next_positions, colors=next_colors)
 ```
 
-![Updating 169 colored box instances](docs/media/instancing.webp)
+![Updating colored box instances](docs/media/instancing.webp)
 
-Run `python examples/python/05_developer_features/showcase.py instances`. Sources: [README example](examples/python/05_developer_features/showcase.py), [original instancing example](examples/python/01_basic_primitives/use_instancing.py).
+Try the [instancing example](examples/python/01_basic_primitives/use_instancing.py).
 
 ### Picking and Gizmo events
 
@@ -123,7 +124,7 @@ viz.keep_running()
 
 ![Actual pointer picking and Gizmo dragging](docs/media/picking-gizmo.webp)
 
-Run `python examples/python/05_developer_features/showcase.py picking`. Also see [picking](examples/python/03_interaction/use_picking_demo.py) and [Gizmo configuration](examples/python/03_interaction/use_gizmo_config.py).
+Try the [Gizmo example](examples/python/03_interaction/use_gizmo.py) and [object or point picking](examples/python/03_interaction/use_picking.py).
 
 ### Shared scene, independent cameras
 
@@ -137,7 +138,7 @@ second.set_camera_pose(eye=(0.01, 0, 8), target=(0, 0, 0.4), up=(0, 1, 0))
 
 ![Shared object updates in perspective and top views](docs/media/multi-view.webp)
 
-Examples: [multiple views](examples/python/02_camera_views/use_multi_view_demo.py), [scene isolation](examples/python/02_camera_views/use_multi_view_isolation.py), [camera controls and fit](examples/python/02_camera_views/use_camera_controls_fit_object.py).
+Examples: [multiple views](examples/python/02_camera_views/use_multi_view.py) (use `--independent` for scene isolation), [camera controls and fit](examples/python/02_camera_views/use_camera_controls_fit_object.py).
 
 ### Model URLs and text labels
 
@@ -152,7 +153,7 @@ viz.add_text_2d("Status: ready", x=32, y=540, color="black")
 
 ![STL URL loading with world labels and screen text](docs/media/labels-model.webp)
 
-Run `python examples/python/05_developer_features/showcase.py labels --model-url http://127.0.0.1:8000/model.stl` with your own HTTP-served model. The clip uses a generated tetrahedron, not a third-party model.
+Try the [model and labels example](examples/python/01_basic_primitives/use_load_mesh_and_labels.py) with the bundled pyramid. See the [C++ command](examples/README.md#模型与文字).
 
 ### Vue controls → Python backend → 3D scene
 
@@ -184,15 +185,22 @@ Use an articulated robot model with the same viewer and object-pose APIs. This r
 
 ![SO-101 arm joint sliders and gripper control in FrameViz](docs/media/so101-joint-controls.webp)
 
-Model: [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101), fixed revision `98a70c569c4c1b6da467a20012f766ee1f8dc521`, [Apache-2.0 license](docs/media/LICENSE-so101-model.txt). **Model files are not included in this repository.** Only the recorded WebP and attribution are distributed. The short loop plays at 1.5× speed; this is not a rendering-rate measurement.
+Model: [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101), fixed revision `98a70c569c4c1b6da467a20012f766ee1f8dc521`, [Apache-2.0 license](docs/media/LICENSE-so101-model.txt). The [Python demo](examples/python/04_robotics/extra/README.md) downloads the pinned model into a local cache on first use. The repository includes the demo code, recording and attribution.
 
-The recording reuses the [joint panel](examples/apps/urdf_robot/src/components/ControlPanel.vue) with an external capture adapter: it reads the model's MJCF joint definitions and sends STL URLs and per-part poses to FrameViz. Its kinematics were compared with MuJoCo `mj_forward`; FrameViz renders the result. This media update does not add a built-in MJCF/URDF importer or a bundled SO-101 application. [Capture provenance](docs/media/README.md#so-101-external-model).
+The recording runs the [SO-101 teaching example](examples/python/04_robotics/extra/README.md) with its native joint controls.
 
 ## C++ and further examples
 
 C++ uses the same Host/protocol and object handles, with APIs such as `addMesh`, `updateInstances`, `setCameraPose`, and `attachGizmo`. See [C++ setup](packages/frameviz-cpp/README.md), [C++ examples](examples/cpp/README.md), and the [example index](examples/README.md). The media above was driven by Python, plus the actual Vue component; it is not a separate recording of every C++ example.
 
-Application examples include a [generated robot arm](examples/python/04_robotics/use_robot_arm.py), [dynamic occupancy boxes](examples/python/04_robotics/use_octomap_dynamic.py), and [standalone applications](examples/apps/README.md).
+Application examples include a [generated robot arm](examples/python/04_robotics/use_robot_arm.py), [instanced occupancy boxes](examples/python/01_basic_primitives/use_instancing.py), and [standalone applications](examples/apps/README.md).
+
+### Developer tutorials
+
+- [Draggable target and trajectory](examples/python/03_interaction/use_target_trajectory.py). Use a Gizmo event to redraw an application-computed path.
+
+
+See the [paired Python and C++ examples](examples/INVENTORY.md) for scene trees, controls, PNG, and offline HTML.
 
 ## Build from source
 
@@ -213,7 +221,7 @@ For source development, start `cargo run --manifest-path packages/frameviz-serve
 
 ## Scope and support
 
-All Host, SDK, viewer, and template components must use protocol **0.4.0**. Missing or different versions are rejected. Use App/SDK artifacts from the same preview; a version string alone does not identify a preview build.
+Host, SDK, viewer, and templates use the **0.5.x** protocol series. Versions outside this series are rejected. Use App/SDK artifacts from the same preview; a version string alone does not identify a preview build.
 
 The acceptance target is local single-user use. Remote multi-user authorization, shared-memory upload, persistence across Host restart, production load limits, and signed cross-platform installers remain outside this preview's acceptance. Software WebGL captures are not hardware GPU benchmarks.
 

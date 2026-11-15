@@ -55,6 +55,12 @@ def main() -> None:
     viz.set_camera_controls(zoom_enabled=False)
     wait_step("Step 5: 缩放已禁用。按 Enter 继续...")
     viz.set_camera_controls(zoom_enabled=True)
+    camera = viz.get_camera_view()
+    camera["projection"]["fov"] = 40  # Vertical field of view, in degrees.
+    viz.set_camera_view(camera)
+    viz.set_view_config(show_axes=False, show_grid=False)
+    print(viz.get_camera_view())
+    wait_step("Press Enter to exit.")
 
     viz.close()
 

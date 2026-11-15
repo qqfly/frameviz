@@ -75,12 +75,46 @@ def test_export_excludes_private_and_build_sentinels(tmp_path,monkeypatch):
 def test_setup_bundle_has_verifiable_installer_and_preserves_existing_prefix(tmp_path):
     import tarfile
     inputs=tmp_path/'inputs';inputs.mkdir();(inputs/'frameviz-cpp-sdk-macos-arm64.tar.gz').write_bytes(b'synthetic artifact')
-    out=tmp_path/'out';subprocess.run(['bash',str(ROOT/'scripts/release/build-setup-bundle.sh'),'v0.4.0',str(inputs),str(out)],check=True,capture_output=True)
+    version = json.loads((ROOT / 'version.json').read_text())['protocol_version']
+    out = tmp_path / 'out'
+    subprocess.run(['bash', str(ROOT / 'scripts/release/build-setup-bundle.sh'),
+                    f'v{version}', str(inputs), str(out)], check=True, capture_output=True)
     unpacked=tmp_path/'unpacked';unpacked.mkdir()
     with tarfile.open(next(out.glob('*.tar.gz'))) as archive: archive.extractall(unpacked,filter='data')
+    assert (unpacked/'data/models/pointcloud/synthetic_cloud.pcd').is_file()
+    assert (unpacked/'docs/PYTHON_DISTRIBUTION.md').is_file()
     target=tmp_path/'installed'
     subprocess.run(['bash',str(unpacked/'install.sh'),'--bundle',str(unpacked),'--prefix',str(target)],check=True,capture_output=True)
     assert (target/'portable_install.py').is_file()
     before=(target/'frameviz-manifest.json').read_bytes()
     result=subprocess.run(['bash',str(unpacked/'install.sh'),'--bundle',str(unpacked),'--prefix',str(target)],capture_output=True)
     assert result.returncode!=0 and (target/'frameviz-manifest.json').read_bytes()==before
+
+
+def test_examples_zip_contains_teaching_inputs_and_resolves_links(tmp_path):
+    import re
+    from pathlib import PurePosixPath
+    from zipfile import ZipFile
+
+    output = tmp_path / 'Examples with spaces.zip'
+    subprocess.run(['python3', str(ROOT/'scripts/release/build_examples_zip.py'),
+                    str(output), '--source-ref', 'synthetic-candidate'], check=True)
+    unpacked = tmp_path / 'Unpacked examples with spaces'
+    with ZipFile(output) as archive:
+        archive.extractall(unpacked)
+    manifest = json.loads((unpacked/'source-manifest.json').read_text())
+    assert manifest['documentation_ref'] == 'synthetic-candidate'
+    assert len(list((unpacked/'examples/cpp').glob('[0-9]*/*/main.cpp'))) == 24
+    assert (unpacked/'examples/python/04_robotics/extra/so101_model.py').is_file()
+    assert (unpacked/'data/models/pointcloud/synthetic_cloud.pcd').is_file()
+    assert not (unpacked/'examples/vue').exists()
+    assert not (unpacked/'examples/apps').exists()
+    for name, digest in manifest['files'].items():
+        path = unpacked / PurePosixPath(name)
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+        if path.suffix == '.md':
+            for url in re.findall(r'\]\(([^)\s]+)\)', path.read_text()):
+                if '://' not in url and not url.startswith(('#', 'mailto:')):
+                    assert (path.parent / url.split('#')[0]).exists(), (name, url)
+    index = (unpacked/'examples/INVENTORY.md').read_text()
+    assert '/blob/synthetic-candidate/examples/vue/README.md' in index

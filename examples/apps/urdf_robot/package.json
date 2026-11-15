@@ -1,6 +1,6 @@
 {
   "name": "urdf-robot-app",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
     "backend:py:install": "python3 -m pip install -r ./python/requirements.txt",
     "backend:py": "sh -c 'python3 ./python/backend_urdf.py --path \"${URDF_MODEL_PATH:?Set URDF_MODEL_PATH}\"'",
     "backend:cpp:build": "cmake -S ./cpp -B ./cpp/build && cmake --build ./cpp/build",
-    "backend:cpp": "sh -c './cpp/build/urdf_robot_backend --path \"${URDF_MODEL_PATH:?Set URDF_MODEL_PATH}\"'",
+    "backend:cpp": "sh -c './cpp/build/bin/urdf_robot_backend --path \"${URDF_MODEL_PATH:?Set URDF_MODEL_PATH}\"'",
     "backend:cpp:run": "pnpm backend:cpp"
   },
   "dependencies": {

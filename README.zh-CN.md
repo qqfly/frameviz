@@ -1,10 +1,10 @@
 # FrameViz
 
-[English](README.md) · [示例目录](examples/README.md) · [API 约定](docs/API_Definition.md)
+[English](README.md) · [示例目录](examples/README.md) · [API 约定](docs/API_Definition.md) · [更新日志](CHANGELOG.md)
 
 用 **Python 或 C++** 绘制并交互操作三维数据，显示在桌面窗口、浏览器或你的 **Vue** 应用里。FrameViz 提供对象句柄、NumPy/数组输入、实例化、相机控制、拾取事件和 Gizmo。Rust Host 在本地维护场景，Three.js Viewer 负责渲染。
 
-当前为 **0.4.0 私有预览版**。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+当前为 **0.5.0 开发候选版**。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
 ## 可以绘制什么？
 
@@ -25,18 +25,23 @@
 
 ## 快速开始
 
+请向维护者获取适合你平台的 **0.5.0 试用运行时和配套 SDK**，也可从当前源码构建。[Releases](https://github.com/qqfly/frameviz/releases) 上已有的 0.4 预览包请搭配 0.4 SDK。各平台文件和命令见[安装说明](docs/INSTALLATION.md)。
+
+各平台共用一份 Python／C++ 示例源码 ZIP。文件清单、运行命令和 SDK 要求见[示例包指引](examples/DOWNLOAD.md)。
+
 先安装一次运行环境，再在每个 Python 项目环境里安装配套 SDK：
 
 | 环境 | 运行环境 | 显示方式 |
 |---|---|---|
-| Apple 芯片 Mac | [私有 Releases](https://github.com/qqfly/frameviz/releases) 中的预览版 `FrameViz.app` | 默认原生窗口 |
+| Apple 芯片 Mac | 随配套试用 DMG 提供的 `FrameViz.app` | 默认原生窗口 |
+| Windows x64 桌面 | 配套 App 和 SDK，见 [Windows 试用指引](docs/INSTALLATION.md#windows-x64-trial) | 默认原生窗口 |
 | Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
 | 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.4.0-py3-none-any.whl
+python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
 ```
 
 在 IPython 或 Python 会话中运行：
@@ -47,7 +52,7 @@ viz = fv.open()
 viz.add_box()
 ```
 
-Python 会复用兼容的运行环境，或自动找到并启动已安装的程序，无需手填路径、端口或令牌。独立脚本末尾用 `viz.keep_running()` 保持运行，Ctrl+C 会关闭视图和连接。`fv.open(window_mode=1)` 强制使用浏览器，`window_mode=0` 留给应用自己管理页面。无 Linux 桌面时会自动打印私有链接。浏览器模式重复打开会复用页面，各场景仍独立；要同时保留多个页面，使用 `reuse_browser=False`。
+Python 会复用兼容的运行环境，也能自动启动已安装的 macOS 或 Linux 运行时。Windows 从 Python 冷启动时，在当前 PowerShell 用 `FRAMEVIZ_TAURI_APP` 指定已安装的可执行文件。C++ SDK 可以自动发现已安装的 Windows App。独立 Python 脚本用 `viz.keep_running()` 保持运行，Ctrl+C 关闭视图和连接。`fv.open(window_mode=1)` 使用浏览器，`window_mode=0` 由应用管理页面。无 Linux 桌面时会自动打印私有链接。浏览器模式复用页面，各场景仍独立。需要同时保留多个页面时，使用 `reuse_browser=False`。
 
 已有 Mac 预览版使用临时签名，**尚未经过 Apple 公证**。Ubuntu 构建/容器安装检查与原生桌面、显卡实机体验分开验收，具体以对应产物和测试记录为准。参见[安装与源码构建](docs/INSTALLATION.md)、[Mac 首次打开](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
 
@@ -72,7 +77,7 @@ viz.set_transform(box, pos=(0.4, 0, 0.65))
 
 ![对象外观和状态更新](docs/media/appearance.webp)
 
-对应示例：[颜色与透明度](examples/python/01_basic_primitives/use_colors_and_transparency.py)、[批量变换](examples/python/01_basic_primitives/use_batch_transforms_and_view_status.py)、[对象生命周期](examples/python/01_basic_primitives/use_resource_cleanup.py)。
+对应示例：[颜色与透明度](examples/python/01_basic_primitives/use_colors_and_transparency.py)、[批量变换](examples/python/05_scene/use_batch_transforms.py)、[对象生命周期](examples/python/05_scene/use_object_lifecycle.py)。
 
 ### 网格输入、顶点颜色与线框
 
@@ -86,26 +91,20 @@ viz.set_render_mode("wireframe")  # 整个视图的显示模式
 
 ![网格颜色和线框切换](docs/media/mesh-colors.webp)
 
-运行[固定输入示例](examples/python/05_developer_features/showcase.py)：
-
-```sh
-python examples/python/05_developer_features/showcase.py mesh
-```
-
-另见[网格颜色模式](examples/python/01_basic_primitives/use_mesh_color_modes.py)、[平滑着色](examples/python/01_basic_primitives/use_mesh_smooth_shading.py)。
+运行[网格颜色模式](examples/python/01_basic_primitives/use_mesh_color_modes.py)、[透明度和线框](examples/python/01_basic_primitives/use_mesh_transparency.py)或[平滑着色](examples/python/01_basic_primitives/use_mesh_smooth_shading.py)。
 
 ### 实例化与批量更新
 
-用一个句柄管理重复图元，一次更新位置与颜色；传入的数组整体替换对应数据。动图展示 **169 个盒子实例**，不代表吞吐量承诺。
+用一个句柄管理重复图元，一次更新位置与颜色；传入的数组整体替换对应数据，也可更改实例数量。
 
 ```python
 h = viz.add_instances("box", positions=positions, size=(0.22, 0.22, 0.22), colors=colors)
 viz.update_instances(h, positions=next_positions, colors=next_colors)
 ```
 
-![169 个彩色盒子实例的批量更新](docs/media/instancing.webp)
+![彩色盒子实例的批量更新](docs/media/instancing.webp)
 
-运行 `python examples/python/05_developer_features/showcase.py instances`。源码：[README 案例](examples/python/05_developer_features/showcase.py)、[原实例化示例](examples/python/01_basic_primitives/use_instancing.py)。
+运行[实例化案例](examples/python/01_basic_primitives/use_instancing.py)。
 
 ### 拾取与 Gizmo 事件
 
@@ -123,7 +122,7 @@ viz.keep_running()
 
 ![真实鼠标拾取及 Gizmo 拖拽](docs/media/picking-gizmo.webp)
 
-运行 `python examples/python/05_developer_features/showcase.py picking`。另见[拾取示例](examples/python/03_interaction/use_picking_demo.py)、[Gizmo 配置](examples/python/03_interaction/use_gizmo_config.py)。
+运行 [Gizmo 案例](examples/python/03_interaction/use_gizmo.py)或[物体与点云拾取案例](examples/python/03_interaction/use_picking.py)。
 
 ### 共享场景与独立相机
 
@@ -137,7 +136,7 @@ second.set_camera_pose(eye=(0.01, 0, 8), target=(0, 0, 0.4), up=(0, 1, 0))
 
 ![透视与俯视窗口中的共享对象更新](docs/media/multi-view.webp)
 
-对应示例：[多视图](examples/python/02_camera_views/use_multi_view_demo.py)、[场景隔离](examples/python/02_camera_views/use_multi_view_isolation.py)、[相机控制与适配对象](examples/python/02_camera_views/use_camera_controls_fit_object.py)。
+对应示例：[多视图](examples/python/02_camera_views/use_multi_view.py)（加 `--independent` 对照场景隔离）、[相机控制与适配对象](examples/python/02_camera_views/use_camera_controls_fit_object.py)。
 
 ### 模型 URL 与文字标注
 
@@ -152,7 +151,7 @@ viz.add_text_2d("Status: ready", x=32, y=540, color="black")
 
 ![STL URL 加载、三维标注与屏幕文字](docs/media/labels-model.webp)
 
-用你自己通过 HTTP 提供的模型运行 `python examples/python/05_developer_features/showcase.py labels --model-url http://127.0.0.1:8000/model.stl`。动图使用程序生成的四面体，不包含第三方模型。
+运行[模型与标注案例](examples/python/01_basic_primitives/use_load_mesh_and_labels.py)，默认加载内置四棱锥。[C++ 运行指令](examples/README.md#模型与文字)
 
 ### Vue 滑动条 → Python 后端 → 三维场景
 
@@ -184,15 +183,21 @@ python examples/apps/simple_slider/python/run_browser_demo.py
 
 ![FrameViz 中的 SO-101 关节滑条与夹爪控制](docs/media/so101-joint-controls.webp)
 
-模型来自 [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101)，固定版本 `98a70c569c4c1b6da467a20012f766ee1f8dc521`，采用 [Apache-2.0 许可](docs/media/LICENSE-so101-model.txt)。**模型文件不进入本仓库**，仅提供录制的 WebP 和来源声明。短循环采用 1.5 倍速回放，不代表渲染或更新速率。
+模型来自 [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/98a70c569c4c1b6da467a20012f766ee1f8dc521/robotstudio_so101)，固定版本 `98a70c569c4c1b6da467a20012f766ee1f8dc521`，采用 [Apache-2.0 许可](docs/media/LICENSE-so101-model.txt)。[Python 示例](examples/python/04_robotics/extra/README.md) 首次运行时将固定版本的模型下载到本地缓存。仓库收录示例代码、演示 WebP 和来源声明。
 
-采集复用现有[关节面板](examples/apps/urdf_robot/src/components/ControlPanel.vue)，由仓库外的适配器读取 MJCF 关节定义，向 FrameViz 提交 STL URL 与各部件位姿。适配器的运动学已与 MuJoCo `mj_forward` 对照，画面由 FrameViz 渲染。本次媒体更新不新增内置 MJCF/URDF 导入器或配套 SO-101 应用。[采集来源说明](docs/media/README.md#so-101-external-model)。
+动图运行 [SO-101 教学案例](examples/python/04_robotics/extra/README.md)，使用 FrameViz 原生关节控件。
 
 ## C++ 与更多案例
 
 C++ SDK 使用同一 Host/协议与对象句柄流程，API 采用 `addMesh`、`updateInstances`、`setCameraPose`、`attachGizmo` 等驼峰命名。参见 [C++ 安装](packages/frameviz-cpp/README.md)、[C++ 示例](examples/cpp/README.md)和[示例索引](examples/README.md)。上述动图由 Python 驱动，Vue 案例使用真实组件；并非逐项重新录制了 C++ 示例。
 
-应用场景还包括[合成机械臂](examples/python/04_robotics/use_robot_arm.py)、[动态占据盒](examples/python/04_robotics/use_octomap_dynamic.py)和[独立应用](examples/apps/README.md)。
+应用场景还包括[合成机械臂](examples/python/04_robotics/use_robot_arm.py)、[占据格实例](examples/python/01_basic_primitives/use_instancing.py)和[独立应用](examples/apps/README.md)。
+
+### 开发者教程
+
+- [拖动目标和轨迹](examples/python/03_interaction/use_target_trajectory.py)。用 Gizmo 事件更新应用计算的轨迹。
+
+[Python／C++ 案例清单](examples/INVENTORY.md)也提供场景树、控件、PNG 和离线 HTML 的运行入口。
 
 ## 从源码构建
 
@@ -213,7 +218,7 @@ Windows 将 `.venv/bin/python` 替换为 `.venv/Scripts/python.exe`。运行隔�
 
 ## 兼容范围与限制
 
-Host、SDK、Viewer 和模板必须使用 **0.4.0 协议**，缺失或不同版本会被拒绝。请使用同一预览版配套 App/SDK；相同版本号本身不能唯一标识预览构建。
+Host、SDK、Viewer 和模板使用 **0.5.x 协议系列**。其他系列的连接会被拒绝。请使用同一预览版配套 App/SDK；相同版本号本身不能唯一标识预览构建。
 
 当前验收目标为本地单用户使用。远程多用户授权、共享内存上传、Host 重启持久恢复、生产负载上限和签名跨平台安装包，仍不属于本预览版的已验收范围。浏览器采集使用软件 WebGL，不能据此判断硬件 GPU 性能。
 

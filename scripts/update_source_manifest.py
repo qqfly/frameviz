@@ -5,8 +5,10 @@ import hashlib,json,os
 ROOT=Path(__file__).resolve().parents[1]
 DENIED={'.git','.cache','.local','.venv','.validation','node_modules','target','build','dist','dist-acceptance','__pycache__','.pytest_cache','release-local','release-final','test_reports','logs','.frameviz','WixTools','gen'}
 EXT={'.py','.rs','.ts','.js','.mjs','.cjs','.vue','.cpp','.hpp','.h','.c','.m','.cmake','.in','.toml','.plist','.json','.yaml','.yml','.html','.css','.sh','.md','.txt','.lock','.command','.svg','.png','.webp','.ico','.icns','.stl','.dae','.pcd'}
+EXAMPLE_OUTPUTS={Path('scene.png'),Path('lesson.html')}
 def allowed(path):
- return (not any(p in DENIED or (p.startswith('.') and p not in {'.github','.gitignore','.clang-format','.style.yapf','.gitkeep'}) for p in path.parts)
+ return (path not in EXAMPLE_OUTPUTS
+  and not any(p in DENIED or (p.startswith('.') and p not in {'.github','.gitignore','.clang-format','.style.yapf','.gitkeep'}) for p in path.parts)
   and not path.name.startswith('.env') and (path.suffix in EXT or path.name in {'LICENSE','NOTICE','CMakeLists.txt','.gitignore','.clang-format','.style.yapf','.gitkeep'}))
 def source_files(root=ROOT):
  for directory,dirs,files in os.walk(root,followlinks=False):

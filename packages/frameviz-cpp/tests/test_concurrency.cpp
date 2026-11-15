@@ -219,7 +219,7 @@ TEST(ChunkGroupTest, DISABLED_ChunkedPointsGroupHandleOperations) {
 
   Handle handle = viz->addPoints(positions, Color{0.2f, 0.6f, 0.9f}, 2.0f);
   ASSERT_FALSE(handle.empty());
-  EXPECT_EQ(handle.rfind("chunk_group_", 0), 0u);
+  EXPECT_NE(handle.rfind("chunk_group_", 0), 0u);
   EXPECT_TRUE(viz->isObjectAlive(handle));
 
   viz->setTransform(handle, {1.0f, 2.0f, 3.0f}, {0.0f, 0.0f, 0.0f, 1.0f});

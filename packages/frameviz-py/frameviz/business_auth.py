@@ -1,14 +1,22 @@
 """Local example business-channel boundary (separate from Host authentication).
 
 Set FRAMEVIZ_BUSINESS_TOKEN to a random token of at least 32 characters.
-Browsers send it in the WebSocket subprotocol header as ``token.<value>``.
-It is never sent in a URL or copied from the Host discovery file.
+The first WebSocket frame authenticates browser examples. Legacy clients may
+also send ``token.<value>`` in the subprotocol header.
 """
 import asyncio
 import hmac
+import json
 import os
 import time
 from urllib.parse import urlsplit
+
+
+def select_business_subprotocol(connection, offered):
+    """Permit a first-frame handshake and preserve the existing token subprotocol."""
+    # websockets 11–13 call with (client offers, server choices).
+    proposals = connection if isinstance(connection, (list, tuple)) else offered
+    return "frameviz-business" if "frameviz-business" in proposals else None
 
 
 async def authorize_business_socket(ws):
@@ -21,13 +29,31 @@ async def authorize_business_socket(ws):
         parsed.hostname in ('localhost', '127.0.0.1', '::1', 'tauri.localhost') and
         not parsed.username and not parsed.password)
     expected = os.environ.get('FRAMEVIZ_BUSINESS_TOKEN', '')
-    tokens = [item.strip()[6:] for item in headers.get('Sec-WebSocket-Protocol', '').split(',')
-              if item.strip().startswith('token.')]
-    valid = len(expected) >= 32 and len(tokens) == 1 and hmac.compare_digest(tokens[0], expected)
-    if not allowed_origin or not valid:
-        await ws.close(code=1008, reason='Business authentication required')
-        return False
-    return True
+    protocols = headers.get('Sec-WebSocket-Protocol', '')
+
+    def matches(token):
+        return isinstance(token, str) and hmac.compare_digest(token.encode(), expected.encode())
+
+    if allowed_origin and len(expected) >= 32:
+        if protocols:
+            tokens = [item.strip()[6:] for item in protocols.split(',')
+                      if item.strip().startswith('token.')]
+            if len(tokens) == 1 and matches(tokens[0]):
+                return True
+        else:
+            try:
+                raw = await asyncio.wait_for(ws.recv(), 3)
+                auth = json.loads(raw) if isinstance(raw, str) and len(raw) <= 65536 else None
+                if isinstance(auth, dict) and auth.get('type') == 'auth' and matches(auth.get('token')):
+                    await ws.send('{"type":"auth_ok"}')
+                    return True
+            except (ValueError, asyncio.TimeoutError):
+                pass
+            except Exception:
+                # A client may close while authentication is pending.
+                return False
+    await ws.close(code=1008, reason='Business authentication required')
+    return False
 
 
 async def business_messages(ws):

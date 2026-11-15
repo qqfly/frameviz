@@ -10,6 +10,7 @@ import time
 
 import pytest
 from test_macos_app import observer, ping
+from test_open_runtime import exercise_shared_runtime
 
 pytestmark = pytest.mark.skipif(sys.platform != 'darwin', reason='macOS desktop required')
 
@@ -19,6 +20,7 @@ import frameviz as fv
 import frameviz.viz as implementation
 from frameviz.discovery import read_discovery_file
 from frameviz.host import find_host_executable
+from frameviz import host
 home=pathlib.Path.home()
 assert pathlib.Path(fv.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve())
 for key in ['FRAMEVIZ_TAURI_APP','FRAMEVIZ_HOST_PATH','FRAMEVIZ_WS_SERVER_CMD']:
@@ -34,10 +36,14 @@ try:
     pid=read_discovery_file()['pid']
     windows=json.loads(subprocess.check_output([sys.argv[1],str(pid)],text=True))
     assert len(windows)==1,windows
+    first.enable_keyboard_shortcuts(False)
+    first.enable_keyboard_shortcuts(True)
     second=fv.open(title='Same installed Host')
     second.add_sphere()
     assert read_discovery_file()['pid']==pid
-    owned=[p for p in implementation._AUTO_TAURI_PROCS if p.poll() is None]
+    candidates=[host._started_host_proc,*implementation._AUTO_TAURI_PROCS]
+    owned={p.pid for p in candidates if p is not None and p.poll() is None}
+    assert not owned or owned == {pid}, owned
     expected=int(sys.argv[2])
     assert len(owned)==expected,(len(owned),expected)
     assert not (home/'state/preferences.json').exists(),'SDK start consumed manual welcome'
@@ -115,3 +121,11 @@ def test_python_reuses_a_manually_started_app_and_leaves_it_running(installed, o
             if process.poll() is None:
                 process.terminate()
             process.wait(timeout=10)
+
+
+def test_installed_host_survives_starting_python_process_exit(installed):
+    home, _, python, env, _ = installed
+    exercise_shared_runtime(home, python, env)
+    for role in ('owner', 'peer'):
+        record = json.loads((home / f'{role}-ready.json').read_text())
+        assert pathlib.Path(record['sdk']).resolve().is_relative_to(python.parent.parent.resolve())

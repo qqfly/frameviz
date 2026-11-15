@@ -46,13 +46,21 @@ struct ServerState {
 /// Returns the actual port the server is listening on.
 pub async fn start_http_server(
     config: HttpServerConfig,
+    shutdown_rx: watch::Receiver<bool>,
+) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
+    start_http_server_at([127, 0, 0, 1].into(), config, shutdown_rx).await
+}
+
+pub async fn start_http_server_at(
+    address: std::net::IpAddr,
+    config: HttpServerConfig,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    let addr = SocketAddr::new(address, config.port);
     let listener = TcpListener::bind(addr).await?;
     let actual_port = listener.local_addr()?.port();
 
-    println!("[HTTP] Static file server listening on http://127.0.0.1:{}", actual_port);
+    println!("[HTTP] Static file server listening on http://{}", listener.local_addr()?);
 
     let state = Arc::new(ServerState {
         assets_dir: config.assets_dir,

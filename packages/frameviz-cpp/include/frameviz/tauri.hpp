@@ -44,8 +44,7 @@ int32_t getTauriControlPort();
  * @param scene_id Optional scene_id to bind to.
  * @param performance_mode Optional performance mode ("performance", "balanced", "quality").
  * @param decorations Optional window decorations flag (true = show title bar, false = frameless).
- * @return true if the window was successfully opened or requested.
- * @return false if the Tauri control server is not available.
+ * @return true if the Tauri control server confirms success.
  */
 bool tryOpenTauriWindow(
     const std::string &view_id,
@@ -64,7 +63,7 @@ bool tryOpenTauriWindow(
  * @brief Try to close a Tauri window by view ID.
  *
  * @param view_id The view ID whose window should be closed.
- * @return true if the command was sent successfully.
+ * @return true if the Tauri control server confirms success.
  */
 bool tryCloseTauriWindow(const std::string &view_id);
 

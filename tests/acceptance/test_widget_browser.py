@@ -1,0 +1,167 @@
+"""Physical mouse and keyboard checks against the bundled Viewer."""
+import os
+
+import pytest
+from test_python_scene_tree import standalone, tree_viz
+
+
+@pytest.fixture
+def widget_pages(tree_viz):
+    from playwright.sync_api import sync_playwright
+
+    viz, info = tree_viz
+    client = viz._client
+    second = client.send_command("create_view", {"scene_id": viz.scene_id})["view_id"]
+    with sync_playwright() as pw:
+        launch = {"args": ["--use-gl=angle", "--use-angle=swiftshader",
+                           "--enable-unsafe-swiftshader"]}
+        if os.environ.get("FRAMEVIZ_TEST_CHROME"):
+            launch["executable_path"] = os.environ["FRAMEVIZ_TEST_CHROME"]
+        browser = pw.chromium.launch(**launch)
+        try:
+            pages = [browser.new_page(viewport={"width": 900, "height": 640}) for _ in range(2)]
+            for page, view in zip(pages, (viz.view_id, second)):
+                page.goto(f"{info['viewer_url']}?view_id={view}&ws_port={info['port']}#token={info['token']}")
+                page.locator("#status.connected").wait_for(timeout=5000)
+            yield viz, second, pages
+        finally:
+            browser.close()
+
+
+def test_precision_input_and_cross_view_sync(widget_pages):
+    from playwright.sync_api import expect
+
+    viz, second, (first_page, second_page) = widget_pages
+    client = viz._client
+    scene = {"scene_id": viz.scene_id}
+    group = client.send_command("add_widget", {
+        **scene, "kind": "group", "label": "<b>Robot</b>",
+    })["widget"]["id"]
+    widget = client.send_command("add_widget", {
+        **scene, "kind": "number", "label": "Offset", "value": 0,
+        "minimum": -1, "maximum": 1, "step": .1, "parent": group,
+    })["widget"]["id"]
+    first = first_page.get_by_role("spinbutton", name="Offset")
+    second_input = second_page.get_by_role("spinbutton", name="Offset")
+    expect(first).to_be_visible(timeout=5000)
+    expect(first_page.locator("summary")).to_have_text("<b>Robot</b>")
+    first.fill("0.123456")
+    first.press("Enter")
+    event = client.wait_for_event("widget_changed", timeout=3)
+    assert event["widget_id"] == widget and event["source"] == "user"
+    assert event["value"] == pytest.approx(.123456)
+    expect(second_input).to_have_value("0.123456")
+    assert client.wait_for_event("widget_changed", timeout=.15) is None
+
+    client.send_command("set_view_config", {"view_id": second, "config": {"show_widgets": False}})
+    expect(second_input).to_be_hidden()
+    client.send_command("set_widget_value", {**scene, "widget_id": widget, "value": -.23456})
+    expect(first).to_have_value("-0.23456")
+    second_page.reload()
+    expect(second_input).to_be_hidden()
+    client.send_command("set_view_config", {"view_id": second, "config": {"show_widgets": True}})
+    expect(second_input).to_have_value("-0.23456")
+    expect(second_input).to_be_visible()
+    assert client.wait_for_event("widget_changed", timeout=.15) is None
+
+    client.send_command("remove_widget", {**scene, "widget_id": group})
+    expect(first).to_have_count(0)
+    expect(second_input).to_have_count(0)
+
+
+def test_widget_panel_fields_and_buttons_align(widget_pages):
+    viz, _, (page, _) = widget_pages
+    group = viz.add_widget("group", "Box settings")
+    viz.add_widget("number", "X", 0, parent=group, minimum=-2, maximum=2)
+    viz.add_widget("select", "Color", "Blue", parent=group, choices=["Blue", "Orange"])
+    viz.add_widget("text_input", "Name", "Box", parent=group)
+    viz.add_widget("button", "Apply", parent=group)
+    viz.add_widget("button", "Set X from code", parent=group)
+    fields = [page.get_by_role("spinbutton", name="X"), page.get_by_role("combobox", name="Color"),
+              page.get_by_role("textbox", name="Name")]
+    for field in fields:
+        field.wait_for()
+    bounds = [field.bounding_box() for field in fields]
+    assert all(rect["x"] == pytest.approx(bounds[0]["x"], abs=1) for rect in bounds)
+    assert all(rect["width"] == pytest.approx(bounds[0]["width"], abs=1) for rect in bounds)
+    assert all(rect["height"] == pytest.approx(bounds[0]["height"], abs=1) for rect in bounds)
+    first = page.get_by_role("button", name="Apply").bounding_box()
+    second = page.get_by_role("button", name="Set X from code").bounding_box()
+    assert first["width"] == pytest.approx(second["width"], abs=1)
+    assert first["y"] + first["height"] < second["y"]
+
+
+def test_real_button_resets_object_and_widget_in_two_views(widget_pages):
+    from queue import Empty, Queue
+    from playwright.sync_api import expect
+    from test_scene_tree_browser import world
+
+    viz, _, (first, second) = widget_pages
+    box = viz.add_box()
+    number = viz.add_widget("number", "Position", 0)
+    button = viz.add_widget("button", "Reset")
+    calls = Queue()
+
+    def move(event):
+        viz.set_transform(box, position=[event["value"], 0, 0])
+        calls.put(("move", event["value"]))
+
+    def reset(event):
+        viz.set_widget_value(number, 0)
+        viz.set_transform(box, position=[0, 0, 0])
+        calls.put(("reset", event["source"]))
+
+    viz.on_widget_change(number, move)
+    viz.on_widget_change(button, reset)
+    field = first.get_by_role("spinbutton", name="Position")
+    field.fill("1.25")
+    field.press("Enter")
+    assert calls.get(timeout=2) == ("move", 1.25)
+    first.get_by_role("button", name="Reset").click(click_count=2)
+    assert [calls.get(timeout=2) for _ in range(2)] == [("reset", "user")] * 2
+    for page in (first, second):
+        expect(page.get_by_role("spinbutton", name="Position")).to_have_value("0")
+        page.wait_for_function("h => window.__FRAMEVIZ_CORE__.objects.get(h)?.position.x === 0", arg=box)
+        assert world(page, box) == [0, 0, 0]
+    with pytest.raises(Empty):
+        calls.get(timeout=.2)
+
+
+@pytest.mark.parametrize("mode", ["continuous", "commit"])
+def test_slider_drag_delivers_final_value_and_obeys_update_mode(widget_pages, mode):
+    from queue import Empty, Queue
+    from playwright.sync_api import expect
+
+    viz, _, (first, second) = widget_pages
+    widget = viz.add_widget("number", "Angle", 0, minimum=0, maximum=100,
+                            step=1, update_mode=mode)
+    calls = Queue()
+    viz.on_widget_change(widget, calls.put)
+    slider = first.get_by_role("slider", name="Angle slider")
+    expect(slider).to_be_visible()
+    box = slider.bounding_box()
+    y = box["y"] + box["height"] / 2
+    first.mouse.move(box["x"] + 8, y)
+    first.mouse.down()
+    first.mouse.move(box["x"] + box["width"] * .6, y, steps=12)
+    if mode == "continuous":
+        during = calls.get(timeout=2)
+        assert during["phase"] == "input"
+        assert during["source"] == "user"
+        assert during["value"] > 0
+    else:
+        with pytest.raises(Empty):
+            calls.get(timeout=.25)
+        assert viz.get_widget_value(widget) == 0
+    first.mouse.move(box["x"] + box["width"] * .78, y, steps=4)
+    final = float(slider.input_value())
+    first.mouse.up()
+    received = []
+    while not received or received[-1]["phase"] != "commit":
+        received.append(calls.get(timeout=2))
+    assert received[-1]["value"] == final and final > 65
+    if mode == "commit":
+        assert len(received) == 1
+    expect(second.get_by_role("spinbutton", name="Angle")).to_have_value(str(int(final)))
+    with pytest.raises(Empty):
+        calls.get(timeout=.15)

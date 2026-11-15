@@ -1,8 +1,13 @@
 """Repeated public open calls present independent views in one actual page."""
+import json
 import os
+import selectors
+import signal
+import subprocess
+import sys
 import threading
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 import frameviz as fv
@@ -177,3 +182,151 @@ def test_navigating_away_replaces_page_and_back_restores_original_scene(browser_
     finally:
         if second: second.close()
         first.close()
+
+
+def test_reload_preserves_live_binding_and_closed_tab_clears_widgets(browser_runtime, monkeypatch):
+    _, opened, errors = browser_runtime
+    first = fv.open(window_mode=1, timeout=3)
+    replacement = None
+    closed = False
+    try:
+        handle = first.add_box()
+        first.add_widget("number", "Test joint", .25, minimum=-1, maximum=1)
+        page = opened[0]
+        control = page.get_by_role("spinbutton", name="Test joint")
+        control.wait_for(timeout=3000)
+        expected = f"🟢 {first.view_id} → {first.scene_id}"
+        assert page.locator("#status").inner_text() == expected
+        url = page.url
+
+        page.reload()
+        control.wait_for(timeout=3000)
+        assert control.input_value() == "0.25"
+        assert page.evaluate('h=>window.__FRAMEVIZ_CORE__.objects.has(h)', handle)
+        assert page.locator("#status").inner_text() == expected
+        assert page.url == url
+
+        acknowledgements = []
+        wait = first._client.wait_for_event
+
+        def record_ack(name, **kwargs):
+            result = wait(name, **kwargs)
+            if name == "view_destroyed":
+                acknowledgements.append(result)
+            return result
+
+        monkeypatch.setattr(first._client, "wait_for_event", record_ack)
+        first.close()
+        closed = True
+        control.wait_for(state="hidden", timeout=2000)
+        assert acknowledgements and acknowledgements[0]["view_id"] == first.view_id
+        assert page.evaluate("window.__FRAMEVIZ_CORE__.getObjectCount()") == 0
+        assert "View closed" in page.locator("#status").inner_text()
+
+        page.reload()
+        page.get_by_text("View unavailable").wait_for(timeout=3000)
+        assert page.url == url
+        assert control.count() == 0
+
+        replacement = fv.open(window_mode=1, timeout=3)
+        assert len(opened) == 1
+        expected = f"🟢 {replacement.view_id} → {replacement.scene_id}"
+        assert page.locator("#status").inner_text() == expected
+        assert not errors
+    finally:
+        if replacement:
+            replacement.close()
+        if not closed:
+            first.close()
+
+
+def test_browser_pins_the_initial_view_in_a_link_without_a_view_id(browser_runtime):
+    context, opened, _ = browser_runtime
+    viz = fv.open(window_mode=1, timeout=3)
+    try:
+        parts = urlsplit(opened[0].url)
+        query = parse_qs(parts.query)
+        del query["view_id"]
+        del query["browser_session"]
+        bare = context.new_page()
+        bare.goto(parts._replace(query=urlencode(query, doseq=True)).geturl())
+        expected = f"🟢 {viz.view_id} → {viz.scene_id}"
+        bare.get_by_text(expected).wait_for(timeout=3000)
+        assert parse_qs(urlsplit(bare.url).query)["view_id"] == [viz.view_id]
+        bare.reload()
+        bare.get_by_text(expected).wait_for(timeout=3000)
+    finally:
+        viz.close()
+
+
+def test_browser_ctrl_c_cleans_up_only_the_exiting_script(browser_runtime, tmp_path):
+    context, _, _ = browser_runtime
+    other = fv.open(window_mode=0, timeout=3)
+    process = None
+    try:
+        other_handle = other.add_box()
+        script = tmp_path / "viewer_script.py"
+        script.write_text("""import json
+import frameviz as fv
+import frameviz.host as host
+import frameviz.viz as implementation
+
+# Let the parent open the SDK's actual URL in its isolated test browser.
+host._desktop_available = lambda: True
+implementation.webbrowser.open = lambda url: print(json.dumps({"url": url}), flush=True) or True
+viz = fv.open(window_mode=1, timeout=5)
+viz.add_box()
+viz.add_widget("number", "Script joint", .25, minimum=-1, maximum=1)
+print(json.dumps({"view_id": viz.view_id, "scene_id": viz.scene_id}), flush=True)
+viz.keep_running()
+""")
+        env = dict(os.environ, HOME=str(tmp_path), CFFIXED_USER_HOME=str(tmp_path))
+        process = subprocess.Popen(
+            [sys.executable, str(script)], env=env, cwd=tmp_path, text=True,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+
+        def read_record():
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                assert selector.select(timeout=10), "Script did not report its Viewer"
+            line = process.stdout.readline()
+            assert line, "Script exited before reporting its Viewer"
+            return json.loads(line)
+
+        url = read_record()["url"]
+        page = context.new_page()
+        page.goto(url)
+        view = read_record()
+        expected = f"🟢 {view['view_id']} → {view['scene_id']}"
+        joint = page.get_by_role("spinbutton", name="Script joint")
+        joint.wait_for(timeout=3000)
+        page.reload()
+        joint.wait_for(timeout=3000)
+        assert page.locator("#status").inner_text() == expected
+        assert joint.input_value() == "0.25"
+
+        process.send_signal(signal.SIGINT)
+        _, stderr = process.communicate(timeout=10)
+        assert process.returncode == 0, stderr
+        joint.wait_for(state="hidden", timeout=3000)
+        page.get_by_text("View closed").wait_for(timeout=3000)
+        assert page.evaluate("window.__FRAMEVIZ_CORE__.getObjectCount()") == 0
+        assert other.is_object_alive(other_handle)
+        assert view["view_id"] not in {
+            item["view_id"] for item in other._client.send_command("list_views", {})["views"]
+        }
+
+        page.reload()
+        page.get_by_text("View unavailable").wait_for(timeout=3000)
+        assert parse_qs(urlsplit(page.url).query)["view_id"] == [view["view_id"]]
+        assert other.is_object_alive(other_handle)
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
+        other.close()

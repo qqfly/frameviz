@@ -9,6 +9,7 @@
 )]
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use tauri::Manager;
@@ -88,6 +89,7 @@ impl Drop for AppState {
 fn start_websocket_server(
     control_port: u16,
     preferred_port: u16,
+    managed_exit: mpsc::Sender<()>,
 ) -> (u16, bool, Option<watch::Sender<bool>>) {
     let enabled = std::env::var("FRAMEVIZ_USE_RUST_WS")
         .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false")))
@@ -126,6 +128,7 @@ fn start_websocket_server(
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let restart_port = port;
+    let owner_release = websocket::sdk_owner_release();
 
     thread::spawn(move || {
         loop {
@@ -135,22 +138,32 @@ fn start_websocket_server(
                 break;
             }
 
-            let diagnostics = websocket::build_diagnostics(restart_port);
+            let diagnostics = websocket::build_diagnostics(restart_port)
+                .with_owner_release(owner_release.clone());
             let shutdown_local = shutdown_rx.clone();
             let shutdown_check = shutdown_rx.clone();
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
-                    if let Err(e) = websocket::run_server(restart_port, diagnostics, shutdown_local).await {
-                        eprintln!("[FrameViz] WebSocket server error: {:?}", e);
+                    match websocket::run_server(restart_port, diagnostics, shutdown_local).await {
+                        Ok(()) => true,
+                        Err(e) => {
+                            eprintln!("[FrameViz] WebSocket server error: {:?}", e);
+                            false
+                        }
                     }
-                });
+                })
             }));
 
             // Check shutdown after server exits - if true, we should exit cleanly
             if *shutdown_check.borrow() {
                 println!("[FrameViz] WebSocket server shutdown completed");
+                break;
+            }
+
+            if matches!(result, Ok(true)) && owner_release.as_ref().is_some_and(|release| *release.borrow()) {
+                let _ = managed_exit.send(());
                 break;
             }
 
@@ -384,7 +397,8 @@ fn main() {
     // Start WebSocket server before Tauri
     // (cleanup_stale_discovery is called inside start_websocket_server)
     let control_port = control::control_port_from_env();
-    let (ws_port, ws_enabled, ws_shutdown_tx) = start_websocket_server(control_port, args.ws_port);
+    let (managed_exit, exit_requested) = mpsc::channel();
+    let (ws_port, ws_enabled, ws_shutdown_tx) = start_websocket_server(control_port, args.ws_port, managed_exit);
     let view_id = parse_view_id();
 
     // Start HTTP server for browser mode support
@@ -403,6 +417,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![get_ws_port])
         .setup(move |app| {
             control::start_control_server(app.handle().clone(), control_port);
+            let handle = app.handle().clone();
+            thread::spawn(move || {
+                if exit_requested.recv().is_ok() {
+                    handle.exit(0);
+                }
+            });
 
             let menu = tauri::menu::Menu::default(app.handle())?;
             let guide = tauri::menu::MenuItem::with_id(app.handle(), "show_welcome", "使用指南", true, None::<&str>)?;

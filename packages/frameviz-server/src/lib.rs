@@ -15,6 +15,7 @@
 //! ```
 
 mod host;
+mod widgets;
 mod registry;
 pub mod version;
 mod server;
@@ -34,7 +35,7 @@ pub use websocket::{
     update_discovery_http_port,
     ServerDiagnostics,
 };
-pub use http_server::{start_http_server, select_http_port, HttpServerConfig};
+pub use http_server::{start_http_server, start_http_server_at, select_http_port, HttpServerConfig};
 
 /// Start a FrameViz server on the specified port (background task).
 pub fn start(port: u16) -> ServerHandle {

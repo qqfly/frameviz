@@ -21,6 +21,9 @@ export interface PickInfo {
   point_index: number | null;
 }
 
+type Drawable = THREE.Mesh | THREE.Points | THREE.Line;
+type Highlight = { object: Drawable; original: THREE.Material | THREE.Material[] };
+
 export interface PickingManagerOptions {
   scene: THREE.Scene;
   camera: THREE.Camera;
@@ -58,8 +61,7 @@ export class PickingManager {
   private config: Required<PickConfig> = { ...DEFAULT_PICK_CONFIG };
 
   private selectedHandle: string | null = null;
-  private selectedOriginalMaterial: THREE.Material | THREE.Material[] | null = null;
-  private selectedHighlightMaterial: THREE.Material | THREE.Material[] | null = null;
+  private highlights: Highlight[] = [];
   private pickPointMarker: THREE.Object3D | null = null;
 
   private lastPickInfo: PickInfo = {
@@ -116,17 +118,20 @@ export class PickingManager {
     return { ...this.lastPickInfo };
   }
 
+  suspendObjectHighlight(handle = this.selectedHandle): (() => void) | undefined {
+    if (handle === null || this.selectedHandle !== handle) return;
+    // Appearance commands must update the base material that deselection restores.
+    this.clearHighlight();
+    return () => this.highlightObject(handle);
+  }
+
   clearHighlight(): void {
-    if (this.selectedHandle && this.selectedOriginalMaterial) {
-      const obj = this.objects.get(this.selectedHandle) as THREE.Mesh | undefined;
-      if (obj && (obj as any).material) {
-        (obj as any).material = this.selectedOriginalMaterial;
-      }
+    for (const { object, original } of this.highlights) {
+      this.disposeMaterial(object.material);
+      object.material = original;
     }
-    this.disposeMaterial(this.selectedHighlightMaterial);
+    this.highlights = [];
     this.selectedHandle = null;
-    this.selectedOriginalMaterial = null;
-    this.selectedHighlightMaterial = null;
 
     this.disposePickPointMarker();
   }
@@ -151,28 +156,17 @@ export class PickingManager {
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    const meshObjects: THREE.Object3D[] = [];
-    const pointObjects: THREE.Points[] = [];
-    const lineObjects: THREE.Line[] = [];
-    for (const obj of this.objects.values()) {
-      if (!obj.visible) continue;
-      if (obj instanceof THREE.Points) {
-        pointObjects.push(obj);
-      } else if (obj instanceof THREE.Line) {
-        lineObjects.push(obj);
-      } else {
-        meshObjects.push(obj);
+    const visible = (object: THREE.Object3D): boolean => {
+      for (let current: THREE.Object3D | null = object; current; current = current.parent) {
+        if (!current.visible) return false;
       }
-    }
-
-    const meshIntersects = this.raycaster.intersectObjects(meshObjects, true);
+      return true;
+    };
+    this.scene.updateMatrixWorld(true);
     this.raycaster.params.Points.threshold = this.config.point_threshold;
-    const pointIntersects = this.raycaster.intersectObjects(pointObjects, false);
     this.raycaster.params.Line.threshold = this.config.line_threshold;
-    const lineIntersects = this.raycaster.intersectObjects(lineObjects, false);
-
-    const allIntersects = [...meshIntersects, ...pointIntersects, ...lineIntersects];
-    allIntersects.sort((a, b) => a.distance - b.distance);
+    const drawables = [...this.objects.values()].filter(visible);
+    const allIntersects = this.raycaster.intersectObjects(drawables, true).filter(hit => visible(hit.object));
 
     const modifiers = {
       ctrl: event.ctrlKey,
@@ -205,7 +199,7 @@ export class PickingManager {
     }
 
     const handle = obj.userData?.handle ?? null;
-    const isPointCloud = obj instanceof THREE.Points;
+    const isPointCloud = hit.object instanceof THREE.Points;
     const isLine = obj instanceof THREE.Line;
 
     let hitType: PickInfo["hit_type"] = "object";
@@ -217,11 +211,11 @@ export class PickingManager {
     let pointIndex: number | null = null;
 
     if (isPointCloud && hit.index !== undefined) {
-      const positions = (obj as THREE.Points).geometry.attributes.position;
+      const positions = (hit.object as THREE.Points).geometry.attributes.position;
       pointWorld = new THREE.Vector3(
         positions.getX(hit.index), positions.getY(hit.index), positions.getZ(hit.index)
       ).applyMatrix4(hit.object.matrixWorld).toArray();
-      pointIndex = hit.index;
+      pointIndex = hit.index + (hit.object.userData.pointOffset ?? 0);
     } else if (isLine && hit.index !== undefined) {
       pointWorld = hit.point.toArray();
       pointIndex = hit.index;
@@ -260,44 +254,30 @@ export class PickingManager {
 
   private highlightObject(handle: string): void {
     this.clearHighlight();
-    const obj = this.objects.get(handle) as THREE.Mesh | THREE.Line | THREE.Points | undefined;
-    if (!obj || !(obj as any).material) return;
-
-    this.selectedHandle = handle;
-    this.selectedOriginalMaterial = (obj as any).material;
-
-    const hc = this.config.highlight_color;
-    const highlightColor = new THREE.Color(hc[0], hc[1], hc[2]);
-
-    if (obj instanceof THREE.Points) {
-      const material = (obj.material as THREE.PointsMaterial).clone();
-      material.size = (material.size || 0.01) * 1.5;
-      if (!material.vertexColors) {
-        material.color = highlightColor;
-      }
-      obj.material = material;
-      this.selectedHighlightMaterial = material;
-    } else if (obj instanceof THREE.Line) {
-      const material = (obj.material as THREE.LineBasicMaterial).clone();
-      material.linewidth = (material.linewidth || 1) * 2;
-      const origColor = material.color.clone();
-      material.color = origColor.lerp(highlightColor, 0.5);
-      obj.material = material;
-      this.selectedHighlightMaterial = material;
-    } else {
-      const materialValue = (obj as THREE.Mesh).material;
-      const materials = Array.isArray(materialValue) ? materialValue : [materialValue];
-      const cloned = materials.map((mat) => {
-        const next = mat.clone() as THREE.MeshStandardMaterial;
-        if ((next as any).emissive) {
-          next.emissive = new THREE.Color(hc[0] * 0.3, hc[1] * 0.3, hc[2] * 0.3);
-          next.emissiveIntensity = 1.0;
+    const root = this.objects.get(handle);
+    if (!root) return;
+    const color = new THREE.Color(...this.config.highlight_color);
+    root.traverse((child) => {
+      if (!(child instanceof THREE.Mesh || child instanceof THREE.Points || child instanceof THREE.Line)) return;
+      const original = child.material;
+      const highlight = (material: THREE.Material): THREE.Material => {
+        const copy = material.clone();
+        if (copy instanceof THREE.PointsMaterial) {
+          copy.size *= 1.5;
+          if (!copy.vertexColors) copy.color.copy(color);
+        } else if (copy instanceof THREE.LineBasicMaterial) {
+          copy.linewidth *= 2;
+          copy.color.lerp(color, 0.5);
+        } else if (copy instanceof THREE.MeshStandardMaterial || copy instanceof THREE.MeshPhongMaterial) {
+          copy.emissive.copy(color).multiplyScalar(0.3);
+          copy.emissiveIntensity = 1;
         }
-        return next;
-      });
-      (obj as THREE.Mesh).material = Array.isArray(materialValue) ? cloned : cloned[0];
-      this.selectedHighlightMaterial = Array.isArray(materialValue) ? cloned : cloned[0];
-    }
+        return copy;
+      };
+      child.material = Array.isArray(original) ? original.map(highlight) : highlight(original);
+      this.highlights.push({ object: child, original });
+    });
+    if (this.highlights.length) this.selectedHandle = handle;
   }
 
   private showPickPointMarker(point: number[], normal: number[], isPointCloud: boolean): void {

@@ -1,6 +1,6 @@
 [package]
 name = "frameviz"
-version = "0.4.0"
+version = "0.5.0"
 description = "FrameViz - Lightweight 3D Visualization Server"
 authors = ["qqfly"]
 edition = "2021"

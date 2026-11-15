@@ -63,7 +63,10 @@ def main() -> None:
         dtype=np.uint32,
     )
 
-    viz.add_mesh(vertices, faces)
+    viz.add_mesh(vertices, faces, position=[-0.65, 0, 0])
+    # In polygon format, counts gives the number of vertices in each face.
+    quad = {"counts": [4], "indices": [1, 2, 3, 4]}
+    viz.add_mesh(vertices, quad, faces_format="poly", position=[0.65, 0, 0], color="orange")
     print("    ✓ 金字塔网格")
 
     # 设置相机

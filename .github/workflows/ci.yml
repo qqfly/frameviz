@@ -1,9 +1,13 @@
 name: CI
 on:
   workflow_call:
-  push:
-    branches: [main]
+  workflow_dispatch:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
@@ -11,31 +15,43 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        # Direct PRs use the existing Ubuntu check name. Manual and reusable
+        # invocations retain the full platform matrix.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-15"]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - uses: pnpm/action-setup@v4
         with:
           version: '10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: packages/frameviz-py/pyproject.toml
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-contracts-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/frameviz-server/Cargo.lock') }}
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install -e 'packages/frameviz-py[dev]' build playwright websockets
       - run: node scripts/sync-version.mjs --check
       - run: python scripts/check_source.py
       - run: python scripts/api_inventory.py && git diff --exit-code -- docs/API_SUPPORT.md
-      - run: node scripts/prepare_web_viewer_dist.mjs && pnpm --filter @frameviz/vue build
+      - run: node scripts/prepare_web_viewer_dist.mjs && pnpm --filter @frameviz/vue build && pnpm --filter simple-slider-app build
       - run: pnpm test
       - run: cargo build --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: python -m playwright install --with-deps chromium
-      - run: python -m pytest tests/acceptance/test_standalone_viewer.py tests/acceptance/test_protocol_compatibility.py tests/acceptance/test_startup_runtime.py tests/acceptance/test_open_runtime.py tests/acceptance/test_forced_browser.py tests/acceptance/test_auto_events.py tests/acceptance/test_callback_stress.py tests/acceptance/test_callback_errors.py tests/acceptance/test_keep_running.py tests/acceptance/test_browser_reuse.py tests/acceptance/test_presentation_contracts.py tests/acceptance/test_interactive_examples.py -q -ra
-      - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py tests/acceptance/test_signed_build.py tests/acceptance/test_readme_media.py tests/acceptance/test_example_business_handshake.py -q -ra
+      - run: python -m pytest tests/acceptance/test_standalone_viewer.py tests/acceptance/test_protocol_compatibility.py tests/acceptance/test_startup_runtime.py tests/acceptance/test_open_runtime.py tests/acceptance/test_host_selection.py tests/acceptance/test_forced_browser.py tests/acceptance/test_auto_events.py tests/acceptance/test_callback_stress.py tests/acceptance/test_callback_errors.py tests/acceptance/test_keep_running.py tests/acceptance/test_browser_reuse.py tests/acceptance/test_presentation_contracts.py tests/acceptance/test_interactive_examples.py tests/acceptance/test_scene_tree_browser.py tests/acceptance/test_python_scene_tree.py tests/acceptance/test_three_link_example.py tests/acceptance/test_widget_browser.py tests/acceptance/test_vue_widget_panel.py tests/acceptance/test_simple_slider_launcher.py tests/acceptance/test_display_state.py tests/acceptance/test_screenshot.py tests/acceptance/test_offline_tutorial.py tests/acceptance/test_lan_viewer.py -q -ra
+      - run: python -m pytest packages/frameviz-py/tests tests/acceptance/test_portable.py tests/acceptance/test_standalone.py tests/acceptance/test_host_contracts.py tests/acceptance/test_host_boundaries.py tests/acceptance/test_widget_contracts.py tests/acceptance/test_python_widgets.py tests/acceptance/test_developer_tutorials.py tests/acceptance/test_maintenance.py tests/acceptance/test_macos_licenses.py tests/acceptance/test_signed_build.py tests/acceptance/test_readme_media.py tests/acceptance/test_example_business_handshake.py -q -ra
       - run: cargo test --locked --manifest-path packages/frameviz-server/Cargo.toml
       - run: cmake -S packages/frameviz-cpp -B .cache/cpp-release -DCMAKE_BUILD_TYPE=Release -DFRAMEVIZ_BUILD_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
       - run: cmake --build .cache/cpp-release -j 4
@@ -43,4 +59,8 @@ jobs:
       - run: cmake --install .cache/cpp-release --prefix "$PWD/.cache/sdk"
       - run: cmake -S tests/acceptance/cpp -B .cache/installed-consumer -DCMAKE_PREFIX_PATH="$PWD/.cache/sdk"
       - run: cmake --build .cache/installed-consumer -j 2
-      - run: FRAMEVIZ_ASSET_TEST_BINARY="$PWD/.cache/installed-consumer/asset_harness" FRAMEVIZ_CPP_FIND_HOST="$PWD/.cache/installed-consumer/find_host" FRAMEVIZ_CPP_VERSION_CONNECT="$PWD/.cache/installed-consumer/version_connect" FRAMEVIZ_CPP_PRESENT_VIEW="$PWD/.cache/installed-consumer/present_view" python -m pytest tests/acceptance/test_cpp_assets.py tests/acceptance/test_cpp_root.py tests/acceptance/test_cpp_version.py tests/acceptance/test_cpp_presentation.py -q
+      - run: cmake -S examples/cpp -B .cache/cpp-examples -DCMAKE_PREFIX_PATH="$PWD/.cache/sdk"
+      - run: cmake --build .cache/cpp-examples -j 4
+      - run: FRAMEVIZ_CPP_CAPTURE="$PWD/.cache/installed-consumer/capture" python -m pytest tests/acceptance/test_cpp_capture.py -q
+      - run: FRAMEVIZ_CPP_TAURI_CONTROL="$PWD/.cache/installed-consumer/tauri_control" python -m pytest tests/acceptance/test_cpp_tauri_control.py -q
+      - run: FRAMEVIZ_ASSET_TEST_BINARY="$PWD/.cache/installed-consumer/asset_harness" FRAMEVIZ_CPP_FIND_HOST="$PWD/.cache/installed-consumer/find_host" FRAMEVIZ_CPP_VERSION_CONNECT="$PWD/.cache/installed-consumer/version_connect" FRAMEVIZ_CPP_PRESENT_VIEW="$PWD/.cache/installed-consumer/present_view" FRAMEVIZ_CPP_SCENE_TREE="$PWD/.cache/installed-consumer/scene_tree" FRAMEVIZ_CPP_WIDGETS="$PWD/.cache/installed-consumer/widgets_and_queries" python -m pytest tests/acceptance/test_cpp_assets.py tests/acceptance/test_cpp_root.py tests/acceptance/test_cpp_version.py tests/acceptance/test_cpp_presentation.py tests/acceptance/test_cpp_scene_tree.py tests/acceptance/test_cpp_widgets_and_queries.py -q

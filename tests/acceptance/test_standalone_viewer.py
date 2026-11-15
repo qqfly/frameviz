@@ -1,4 +1,5 @@
 """The shipped standalone binary serves its own Viewer, without a desktop."""
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -24,8 +25,8 @@ def free_port():
         return sock.getsockname()[1]
 
 
-@pytest.fixture
-def standalone(tmp_path):
+@contextmanager
+def standalone_runtime(tmp_path):
     port = free_port()
     env = {k: v for k, v in os.environ.items() if not k.startswith('FRAMEVIZ_')}
     env.pop('DISPLAY', None)
@@ -62,11 +63,17 @@ def standalone(tmp_path):
                 process.wait(timeout=5)
 
 
+@pytest.fixture
+def standalone(tmp_path):
+    with standalone_runtime(tmp_path) as runtime:
+        yield runtime
+
+
 def test_embedded_viewer_and_authenticated_url_without_source_or_display(standalone):
     info, _, log, discovery = standalone
     assert info['host'] == '127.0.0.1'
     assert info['http_port'] != info['port']
-    assert info['version'] == '0.4.0'
+    assert info['version'] == '0.5.0'
     assert not (discovery.stat().st_mode & 0o077)
     with urlopen(info['viewer_url'], timeout=3) as response:
         html = response.read().decode()
@@ -201,3 +208,87 @@ def test_graceful_shutdown_removes_discovery(standalone):
     process.send_signal(signal.SIGINT)
     assert process.wait(timeout=5) == 0
     assert not discovery.exists()
+
+
+def check_keyboard_shortcuts(info):
+    from playwright.sync_api import sync_playwright
+
+    client = FrameVizClient(info['ws_url'], token=info['token'])
+    client.connect()
+    try:
+        def create_view():
+            created = client.send_command('create_view', {})
+            return Viz(client, created['scene_id'], created['view_id'], owns_view=False)
+
+        disabled, other = create_view(), create_view()
+        widget = disabled.add_widget('number', 'Offset', 0, minimum=-1, maximum=1)
+        disabled.enable_keyboard_shortcuts(False)
+
+        with sync_playwright() as pw:
+            options = {'headless': True, 'args': ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']}
+            if os.environ.get('FRAMEVIZ_TEST_CHROME'):
+                options['executable_path'] = os.environ['FRAMEVIZ_TEST_CHROME']
+            with pw.chromium.launch(**options) as browser:
+                def open_view(viz):
+                    page = browser.new_page()
+                    page.goto(info['viewer_url'] + f"?view_id={viz.view_id}&ws_port={info['port']}#token={info['token']}")
+                    page.wait_for_function("document.documentElement.dataset.sceneReady === 'true'")
+                    return page
+
+                first, second = open_view(disabled), open_view(other)
+                hint = first.locator('#shortcuts-hint')
+                panel = first.locator('#shortcuts')
+                assert not hint.is_visible()
+                first.keyboard.press('h')
+                first.keyboard.press('w')
+                for key in ('h', 'w'):
+                    assert client.wait_for_event(
+                        'key_down', timeout=3,
+                        filter_fn=lambda data: data['view_id'] == disabled.view_id and data['key'] == key,
+                    )
+                assert not panel.is_visible()
+                assert first.locator('#render-mode').inner_text().endswith('solid')
+
+                second.keyboard.press('h')
+                assert second.locator('#shortcuts').is_visible()
+                second.keyboard.press('w')
+                second.wait_for_function("document.querySelector('#render-mode').textContent.includes('wireframe')")
+
+                value = first.locator('input[type=number]')
+                value.fill('0.25')
+                value.press('Enter')
+                assert client.wait_for_event('widget_changed', timeout=3)
+                assert disabled.get_widget_value(widget) == .25
+
+                disabled.enable_keyboard_shortcuts(True)
+                hint.wait_for(state='visible')
+                first.keyboard.press('h')
+                panel.wait_for(state='visible')
+                disabled.enable_keyboard_shortcuts(False)
+                hint.wait_for(state='hidden')
+                assert not panel.is_visible()
+
+                first.reload()
+                first.wait_for_function("document.documentElement.dataset.sceneReady === 'true'")
+                assert hint.count() == 1 and not hint.is_visible()
+                first.keyboard.press('h')
+                assert not panel.is_visible()
+                assert second.locator('#shortcuts').is_visible()
+
+                disabled.enable_keyboard_shortcuts(True)
+                hint.wait_for(state='visible')
+                first.reload()
+                first.wait_for_function("document.documentElement.dataset.sceneReady === 'true'")
+                first.keyboard.press('h')
+                panel.wait_for(state='visible')
+                # Direct Core consumers use the same gate as the default Viewer.
+                first.evaluate('window.__FRAMEVIZ_CORE__.setKeyboardShortcutsEnabled(false)')
+                assert not hint.is_visible() and not panel.is_visible()
+                first.keyboard.press('h')
+                assert not panel.is_visible()
+    finally:
+        client.close()
+
+
+def test_keyboard_shortcuts_follow_view_setting(standalone):
+    check_keyboard_shortcuts(standalone[0])

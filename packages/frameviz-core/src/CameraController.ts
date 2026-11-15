@@ -33,7 +33,10 @@ export interface CameraControllerOptions {
  * Provides smooth camera animations and zoom-to-cursor functionality.
  */
 export class CameraController {
-  readonly controls: OrbitControls;
+  private orbit: OrbitControls;
+  private animationFrame: number | undefined;
+
+  get controls(): OrbitControls { return this.orbit; }
   private camera: THREE.PerspectiveCamera;
   private domElement: HTMLElement;
   private initialDistance: number;
@@ -67,7 +70,7 @@ export class CameraController {
     // (TrackballControls, ArcballControls) remove this restriction but lose the
     // fixed up-direction, which is undesirable for Z-up robotics/industrial scenes.
     // Decision: keep current behavior. See docs/INTERACTION.md
-    this.controls = new OrbitControls(this.camera, this.domElement);
+    this.orbit = new OrbitControls(this.camera, this.domElement);
     this.controls.enableDamping = false;  // P1-1: Default off for precise control
     this.controls.enableZoom = false;
     this.controls.enableRotate = true;
@@ -86,6 +89,40 @@ export class CameraController {
     // Setup wheel event handler
     this.wheelHandler = this.handleZoom.bind(this);
     this.domElement.addEventListener('wheel', this.wheelHandler, { passive: false });
+  }
+
+  setPose(eye: number[], target: number[], up?: number[]): boolean {
+    this.cancelAnimation();
+    const previous = this.controls;
+    const axis = up && new THREE.Vector3().fromArray(up);
+    const rebind = !!axis && !axis.clone().normalize().equals(this.camera.up.clone().normalize());
+
+    if (rebind) {
+      // OrbitControls captures camera.up at construction.
+      this.camera.up.copy(axis.clone().normalize());
+      previous.dispose();
+      this.orbit = new OrbitControls(this.camera, this.domElement);
+      const { enabled, enableDamping, dampingFactor, enableRotate, enablePan, enableZoom,
+        rotateSpeed, panSpeed, zoomSpeed, mouseButtons, touches } = previous;
+      Object.assign(this.orbit, { enabled, enableDamping, dampingFactor, enableRotate, enablePan,
+        enableZoom, rotateSpeed, panSpeed, zoomSpeed, mouseButtons, touches });
+    } else if (previous.enableDamping) {
+      // Consume pending input before replacing position and target.
+      previous.enableDamping = false;
+      previous.update();
+      previous.enableDamping = true;
+    }
+
+    if (axis) this.camera.up.copy(axis);
+    this.camera.position.fromArray(eye);
+    this.controls.target.fromArray(target);
+    this.controls.update();
+    return rebind;
+  }
+
+  private cancelAnimation(): void {
+    if (this.animationFrame !== undefined) cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = undefined;
   }
 
   /**
@@ -148,6 +185,7 @@ export class CameraController {
     endTarget: THREE.Vector3,
     duration: number = 300
   ): void {
+    this.cancelAnimation();
     const startTime = Date.now();
 
     const animate = () => {
@@ -159,9 +197,7 @@ export class CameraController {
       this.controls.target.lerpVectors(startTarget, endTarget, eased);
       this.controls.update();
 
-      if (t < 1) {
-        requestAnimationFrame(animate);
-      }
+      this.animationFrame = t < 1 ? requestAnimationFrame(animate) : undefined;
     };
 
     animate();
@@ -414,8 +450,10 @@ export class CameraController {
    * P1-3: Set camera field of view.
    */
   setFov(fov: number): void {
-    const clampedFov = Math.max(10, Math.min(120, fov));
-    this.camera.fov = clampedFov;
+    if (!Number.isFinite(fov) || fov < 10 || fov > 120) {
+      throw new RangeError('Camera fov must be between 10 and 120 degrees');
+    }
+    this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
   }
 
@@ -555,6 +593,7 @@ export class CameraController {
    * Dispose of resources.
    */
   dispose(): void {
+    this.cancelAnimation();
     this.domElement.removeEventListener('wheel', this.wheelHandler);
     this.controls.dispose();
   }

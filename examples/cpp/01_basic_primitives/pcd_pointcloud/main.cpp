@@ -5,12 +5,14 @@
  */
 
 #include <frameviz/viz.hpp>
+#include "example_interrupt.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
 #include <string>
 #include <cstring>
+#include <algorithm>
 
 using namespace frameviz;
 
@@ -23,7 +25,7 @@ static void decodePackedRgb(uint32_t packed, uint8_t &r, uint8_t &g, uint8_t &b)
 
 int main(int argc, char **argv)
 {
-    std::string path;
+    std::string path = "data/models/pointcloud/synthetic_cloud.pcd";
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--path" && i + 1 < argc) {
@@ -157,13 +159,31 @@ int main(int argc, char **argv)
             decodePackedRgb(packed, r, g, b);
         }
 
-        // Scale from mm to meters (typical PCD files are in mm)
-        positions.push_back(x * 0.001f);
-        positions.push_back(y * 0.001f);
-        positions.push_back(z * 0.001f);
+        // Use the sample coordinates as-is; scale here if your input uses millimeters.
+        positions.push_back(x);
+        positions.push_back(y);
+        positions.push_back(z);
         colors.push_back({r / 255.0f, g / 255.0f, b / 255.0f});
     }
 
+    if (positions.empty()) {
+        std::cerr << "No points found in " << path << '\n';
+        return 1;
+    }
+    if (idx_r < 0 && idx_rgb < 0 && idx_rgba < 0) {
+        // The sample has only xyz. Map its Z range from blue to red.
+        float minimum = positions[2], maximum = positions[2];
+        for (size_t i = 2; i < positions.size(); i += 3) {
+            minimum = std::min(minimum, positions[i]);
+            maximum = std::max(maximum, positions[i]);
+        }
+        const float span = maximum > minimum ? maximum - minimum : 1;
+        for (size_t i = 0; i < colors.size(); ++i) {
+            const float t = (positions[3 * i + 2] - minimum) / span;
+            colors[i] = {t, 0, 1 - t};
+        }
+    }
+    const frameviz::example::Interrupt interrupt;
     auto viz = Viz::open();
     auto handle = viz->addPoints(positions, colors, 2.0f);
     viz->addAxes(0.5f);
@@ -174,7 +194,7 @@ int main(int argc, char **argv)
 
     std::cout << "Loaded points: " << positions.size() / 3
               << " handle=" << handle << std::endl;
-    std::cin.get();
+    if (!interrupt.waitForEnter(*viz)) return 130;
 
     viz->close();
     return 0;

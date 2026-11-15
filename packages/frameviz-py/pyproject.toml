@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frameviz"
-version = "0.4.0"
+version = "0.5.0"
 description = "FrameViz Python client"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES/*.txt"]
@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+capture = ["playwright>=1.46"]
 dev = [
   "pytest>=7.0",
   "pytest-asyncio>=0.21",

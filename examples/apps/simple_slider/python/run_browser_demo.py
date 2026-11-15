@@ -4,20 +4,22 @@ Build from the repo root: pnpm --filter simple-slider-app build
 Run with the matching Python SDK and installed App/Host available.
 """
 import argparse
+from contextlib import redirect_stdout
 import functools
 import http.server
+import io
 import os
 from pathlib import Path
 import secrets
-import socket
 import subprocess
 import sys
+import tempfile
 import threading
-from urllib.parse import urlencode
+import time
+from urllib.parse import urlencode, urlsplit
 import webbrowser
 
 import frameviz as fv
-from frameviz.discovery import read_discovery_file
 
 
 def main():
@@ -27,13 +29,6 @@ def main():
     ui_dir = args.ui_dir.resolve()
     if not (ui_dir / "index.html").is_file():
         parser.error("Build the UI first: pnpm --filter simple-slider-app build")
-    # Match the application's default business endpoint. Never reuse another backend.
-    try:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 9621))
-    except OSError:
-        parser.error("Port 9621 is in use; stop your own previous demo before retrying")
-
     class Handler(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -43,16 +38,32 @@ def main():
     thread.start()
     viz = backend = None
     try:
-        viz = fv.open(title="Vue slider application", window_mode=0)
-        info = read_discovery_file()
-        if not info or not info.get("token") or not info.get("port"):
-            raise RuntimeError("No local Host discovery record")
+        # The launcher supplies both credentials directly to the browser.
+        with redirect_stdout(io.StringIO()):
+            viz = fv.open(title="Vue slider application", window_mode=0)
+        token = viz._client._auth_token
+        ws_port = urlsplit(viz._client.url).port
+        if not token or not ws_port:
+            raise RuntimeError("No authenticated local FrameViz Host")
         business_token = secrets.token_urlsafe(32)
         env = dict(os.environ, FRAMEVIZ_BUSINESS_TOKEN=business_token,
-                   SIMPLE_SLIDER_WS_HOST="127.0.0.1", SIMPLE_SLIDER_WS_PORT="9621")
-        backend = subprocess.Popen([sys.executable, "-u", str(Path(__file__).with_name("backend_simple_slider.py"))], env=env)
-        url = f"http://127.0.0.1:{server.server_port}/?" + urlencode({"view_id": viz.view_id, "ws_port": info["port"]})
-        url += "#" + urlencode({"token": info["token"], "business_token": business_token})
+                   SIMPLE_SLIDER_WS_HOST="127.0.0.1", SIMPLE_SLIDER_WS_PORT="0")
+        with tempfile.TemporaryDirectory(prefix="frameviz-slider-") as temporary:
+            ready = Path(temporary) / "business-port"
+            backend = subprocess.Popen([
+                sys.executable, "-u", str(Path(__file__).with_name("backend_simple_slider.py")),
+                "--ready-file", str(ready),
+            ], env=env)
+            deadline = time.monotonic() + 10
+            while not ready.exists() and backend.poll() is None and time.monotonic() < deadline:
+                time.sleep(.025)
+            if not ready.is_file():
+                raise RuntimeError("Simple Slider business backend did not start")
+            business_port = int(ready.read_text(encoding="utf-8"))
+        url = f"http://127.0.0.1:{server.server_port}/?" + urlencode({
+            "view_id": viz.view_id, "ws_port": ws_port, "business_port": business_port,
+        })
+        url += "#" + urlencode({"token": token, "business_token": business_token})
         webbrowser.open(url)
         print("Opened Simple Slider. Keep its temporary session URL private.")
         input("Move the sliders; press Enter to stop this demo... ")

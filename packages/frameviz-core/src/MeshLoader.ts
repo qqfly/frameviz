@@ -7,23 +7,25 @@ export interface MeshLoadOptions {
 }
 
 export class MeshLoader {
-  private collada = new ColladaLoader();
-  private stl = new STLLoader();
-
   load(url: string, options: MeshLoadOptions = {}): Promise<THREE.Object3D> {
-    const ext = url.split(".").pop()?.toLowerCase();
-    if (ext === "dae") {
-      return this.loadCollada(url, options);
+    const ext = new URL(url, document.baseURI).pathname.split(".").pop()?.toLowerCase();
+    if (ext !== "dae" && ext !== "stl") {
+      return Promise.reject(new Error(`Unsupported mesh format: ${ext}`));
     }
-    if (ext === "stl") {
-      return this.loadStl(url, options);
-    }
-    return Promise.reject(new Error(`Unsupported mesh format: ${ext}`));
+    const manager = new THREE.LoadingManager();
+    const resources = new Promise<void>((resolve, reject) => {
+      manager.onLoad = resolve;
+      manager.onError = () => reject(new Error("A model resource failed to load"));
+    });
+    const model = ext === "dae" ? this.loadCollada(url, options, manager)
+                               : this.loadStl(url, options, manager);
+    return Promise.all([model, resources]).then(([object]) => object);
   }
 
-  private loadCollada(url: string, options: MeshLoadOptions): Promise<THREE.Object3D> {
+  private loadCollada(url: string, options: MeshLoadOptions,
+                      manager: THREE.LoadingManager): Promise<THREE.Object3D> {
     return new Promise((resolve, reject) => {
-      this.collada.load(
+      new ColladaLoader(manager).load(
         url,
         (collada) => {
           const model = collada.scene;
@@ -70,9 +72,10 @@ export class MeshLoader {
     });
   }
 
-  private loadStl(url: string, options: MeshLoadOptions): Promise<THREE.Object3D> {
+  private loadStl(url: string, options: MeshLoadOptions,
+                  manager: THREE.LoadingManager): Promise<THREE.Object3D> {
     return new Promise((resolve, reject) => {
-      this.stl.load(
+      new STLLoader(manager).load(
         url,
         (geometry) => {
           const c = options.color ?? [0.7, 0.7, 0.7];

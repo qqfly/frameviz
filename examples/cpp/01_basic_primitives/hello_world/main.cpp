@@ -7,6 +7,7 @@
  */
 
 #include <frameviz/viz.hpp>
+#include "example_interrupt.hpp"
 #include <iostream>
 
 using namespace frameviz;
@@ -17,6 +18,7 @@ int main() {
 
         // 1. 连接到 FrameViz Host
         std::cout << "[1] Connecting to FrameViz..." << std::endl;
+        const frameviz::example::Interrupt interrupt;
         auto viz = Viz::open();
         std::cout << "    ✓ Connected! scene=" << viz->sceneId()
                   << ", view=" << viz->viewId() << "\n" << std::endl;
@@ -42,6 +44,7 @@ int main() {
 
         // 添加箭头 (黄色)
         viz->addArrow({1, 2, 0}, {1, 2, 1.5f}, 0.05f, {1, 1, 0});
+        viz->addCone(0.35f, 0.8f, {-1.8f, 1.5f, 0.4f}, {0, 0, 0, 1}, {1, 0.65f, 0});
 
         std::cout << "    ✓ Primitives created\n" << std::endl;
 
@@ -59,7 +62,7 @@ int main() {
         std::cout << std::string(60, '=') << std::endl;
 
         // 等待用户按键
-        std::cin.get();
+        if (!interrupt.waitForEnter(*viz)) return 130;
 
         viz->close();
         std::cout << "\n✓ Goodbye!" << std::endl;

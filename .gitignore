@@ -99,3 +99,7 @@ release-local/
 
 # Built acceptance frontend
 dist-acceptance/
+
+# Output from examples run at the repository root
+/scene.png
+/lesson.html

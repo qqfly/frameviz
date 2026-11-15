@@ -117,6 +117,46 @@ describe('FrameVizCore cleanup', () => {
     expect(core.getObjectCount()).toBe(1);
   });
 
+  it('uses the parent rigid frame independently from its nonuniform geometry scale', () => {
+    core.handleCommand('add_primitive', {
+      type: 'box', pose: { pos: [1, 0, 0], quat: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      geometry_scale: [5, 2, 3],
+    }, { handle: 'parent' });
+    core.handleCommand('add_primitive', {
+      type: 'box', parent: 'parent', pose: { pos: [2, 0, 0], quat: [0, 0, 0, 1] },
+    }, { handle: 'child' });
+    const child = (core as any).objects.get('child');
+    const parent = (core as any).objects.get('parent');
+    expect(parent.scale.toArray()).toEqual([5, 2, 3]);
+    expect(child.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([
+      expect.closeTo(1), expect.closeTo(2), 0,
+    ]);
+    core.handleCommand('set_visible', { handle: 'parent', visible: false });
+    expect(child.visible).toBe(true);
+    expect(child.parent.visible).toBe(false);
+    core.handleCommand('set_parent', { handle: 'child', parent: null }, {
+      pose: { pos: [1, 2, 0], quat: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      parent: null,
+    });
+    expect(child.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([1, 2, 0]);
+    expect(child.parent.visible).toBe(true);
+  });
+
+  it('cancels an async parent and its children without resurrecting either drawable', async () => {
+    core.handleCommand('load_mesh', { url: '/model.stl', pose: { pos: [2, 0, 0] } }, { handle: 'parent' });
+    core.handleCommand('add_primitive', {
+      type: 'box', parent: 'parent', pose: { pos: [3, 0, 0] },
+    }, { handle: 'child' });
+    const child = (core as any).objects.get('child');
+    expect(child.getWorldPosition(new THREE.Vector3()).x).toBe(5);
+    core.handleCommand('remove_object', { handle: 'parent' }, { removed: ['parent', 'child'] });
+    resolveLoad!(new THREE.Object3D());
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((core as any).objects.has('parent')).toBe(false);
+    expect((core as any).objects.has('child')).toBe(false);
+  });
+
   it('keeps clone material and geometry independent', () => {
     core.handleCommand('add_primitive', { type: 'box', color: [1, 0, 0] }, { handle: 'a' });
     core.handleCommand('clone_object', { handle: 'a' }, { handle: 'b' });
@@ -126,6 +166,43 @@ describe('FrameVizCore cleanup', () => {
     expect(b.geometry).not.toBe(a.geometry);
     core.handleCommand('set_color', { handle: 'b', rgba: [0, 1, 0, 1] });
     expect(a.material.color.r).toBe(1);
+  });
+
+  it('keeps color and opacity changes after a picked object is deselected', () => {
+    core.handleCommand('add_primitive', { type: 'box', color: [1, 0, 0] }, { handle: 'picked' });
+    const object = (core as any).objects.get('picked');
+    const original = object.material;
+    (core as any).pickingManager.highlightObject('picked');
+    expect(object.material).not.toBe(original);
+    core.handleCommand('set_color', { handle: 'picked', rgba: [0, 1, 0, 1] });
+    core.handleCommand('set_alpha', { handle: 'picked', alpha: 0.4 });
+    expect(object.material).not.toBe(original);
+    expect(object.material.color.toArray()).toEqual([0, 1, 0]);
+    expect(object.material.opacity).toBe(0.4);
+    core.handleCommand('clear_pick_highlight', {});
+    expect(object.material).toBe(original);
+    expect(object.material.color.toArray()).toEqual([0, 1, 0]);
+    expect(object.material.opacity).toBe(0.4);
+  });
+
+  it('preserves wireframe when removing an object selection', () => {
+    core.handleCommand('add_primitive', { type: 'box' }, { handle: 'source' });
+    const source = (core as any).objects.get('source');
+    (core as any).pickingManager.highlightObject('source');
+    core.handleCommand('set_render_mode', { mode: 'wireframe' });
+    core.handleCommand('clear_pick_highlight', {});
+    expect(source.material.wireframe).toBe(true);
+  });
+
+  it('does not clone temporary selection materials', () => {
+    core.handleCommand('add_primitive', { type: 'box' }, { handle: 'source' });
+    const source = (core as any).objects.get('source');
+    const original = source.material.emissive.getHex();
+    (core as any).pickingManager.highlightObject('source');
+    expect(source.material.emissive.getHex()).not.toBe(original);
+    core.handleCommand('clone_object', { handle: 'source' }, { handle: 'clone' });
+    expect((core as any).objects.get('clone').material.emissive.getHex()).toBe(original);
+    expect(source.material.emissive.getHex()).not.toBe(original);
   });
 
   it('replays mutations made while a model is loading', async () => {

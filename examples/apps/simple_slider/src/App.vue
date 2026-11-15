@@ -62,12 +62,17 @@ const backendConnected = ref(false)
 let backendSocket: WebSocket | null = null
 let shouldReconnect = true
 
-const BACKEND_WS_URL = import.meta.env.VITE_SIMPLE_SLIDER_BACKEND_WS_URL || DEFAULT_BACKEND_WS_URL
+const launcherPort = Number(new URLSearchParams(window.location.search).get('business_port'))
+const BACKEND_WS_URL = Number.isInteger(launcherPort) && launcherPort > 0 && launcherPort <= 65535
+  ? `ws://127.0.0.1:${launcherPort}`
+  : import.meta.env.VITE_SIMPLE_SLIDER_BACKEND_WS_URL || DEFAULT_BACKEND_WS_URL
 
 type SliderStateUpdate = {
   type: 'state_update'
   box_handle?: string
 }
+
+type BackendAuth = { type: 'auth_ok' }
 
 type BackendError = {
   type: 'error'
@@ -114,11 +119,10 @@ function connectBackend() {
 
   const businessToken = new URLSearchParams(window.location.hash.slice(1)).get('business_token')
   if (!businessToken) { console.error('[App] business_token is required in the URL fragment'); return }
-  backendSocket = new WebSocket(BACKEND_WS_URL, ['frameviz-business', `token.${businessToken}`])
+  backendSocket = new WebSocket(BACKEND_WS_URL)
 
   backendSocket.onopen = () => {
-    backendConnected.value = true
-    sendViewerBinding()
+    backendSocket?.send(JSON.stringify({ type: 'auth', token: businessToken }))
   }
 
   backendSocket.onclose = () => {
@@ -135,8 +139,11 @@ function connectBackend() {
 
   backendSocket.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data) as SliderStateUpdate | BackendError
-      if (msg.type === 'state_update') {
+      const msg = JSON.parse(event.data) as SliderStateUpdate | BackendError | BackendAuth
+      if (msg.type === 'auth_ok') {
+        backendConnected.value = true
+        sendViewerBinding()
+      } else if (msg.type === 'state_update') {
         boxHandle.value = msg.box_handle || ''
       } else if (msg.type === 'error') {
         console.error('[App] Backend error:', msg.message || 'unknown error')
@@ -148,7 +155,7 @@ function connectBackend() {
 }
 
 function sendBackendCommand(name: string, args: Record<string, unknown> = {}) {
-  if (!backendSocket || backendSocket.readyState !== WebSocket.OPEN) return
+  if (!backendConnected.value || !backendSocket || backendSocket.readyState !== WebSocket.OPEN) return
   backendSocket.send(JSON.stringify({ name, args }))
 }
 

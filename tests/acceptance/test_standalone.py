@@ -56,22 +56,33 @@ def test_default_state_does_not_use_a_legacy_directory(tmp_path,monkeypatch):
  monkeypatch.delenv('FRAMEVIZ_DISCOVERY_PATH',raising=False);monkeypatch.delenv('FRAMEVIZ_HOME',raising=False);monkeypatch.setenv('HOME',str(tmp_path))
  if os.name!='nt':assert get_discovery_path()==tmp_path/'.local/share/qqfly/frameviz/host.json'
 
-def test_autostart_does_not_select_an_unrelated_path_command(tmp_path,monkeypatch):
+@pytest.fixture
+def without_installed_hosts(monkeypatch):
  import frameviz.host as host
+ for name in ('FRAMEVIZ_HOST_PATH', 'FRAMEVIZ_TAURI_APP'):
+  monkeypatch.delenv(name, raising=False)
+ monkeypatch.setattr(host, '_get_repo_root', lambda: None)
+ for name in ('_get_tauri_app_candidates', '_get_tauri_exec_candidates',
+              '_get_appimage_candidates', '_standalone_candidates'):
+  monkeypatch.setattr(host, name, lambda _: [])
+ return host
+
+
+def test_autostart_does_not_select_an_unrelated_path_command(tmp_path, monkeypatch, without_installed_hosts):
  binary=tmp_path/'frameviz';binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o755)
- monkeypatch.setenv('PATH',str(tmp_path));monkeypatch.delenv('FRAMEVIZ_HOST_PATH',raising=False)
- monkeypatch.setattr(host,'_get_repo_root',lambda:None)
- monkeypatch.setattr(host,'_get_tauri_app_candidates',lambda root:[])
- assert host.find_host_executable() is None
+ monkeypatch.setenv('PATH',str(tmp_path))
+ assert without_installed_hosts.find_host_executable() is None
 
 
-def test_no_unconfigured_application_name_launch(monkeypatch):
+def test_no_unconfigured_application_name_launch(monkeypatch, without_installed_hosts):
  import frameviz.viz as viz
- monkeypatch.setattr(viz.sys,'platform','darwin');monkeypatch.delenv('FRAMEVIZ_TAURI_APP',raising=False)
- monkeypatch.setattr(viz,'_get_repo_root',lambda:None)
- monkeypatch.setattr(viz,'_get_tauri_app_candidates',lambda root:[])
+ monkeypatch.setattr(viz.sys,'platform','darwin')
+ monkeypatch.setattr(viz,'_AUTO_TAURI_PROCS',[])
+ monkeypatch.setattr(without_installed_hosts,'_started_host_proc',None)
  monkeypatch.setattr(viz,'_launch_macos_app',lambda *args:pytest.fail('Unexpected global app-name launch'))
+ monkeypatch.setattr(viz,'_run_process',lambda *args:pytest.fail('Unexpected runtime launch'))
  assert not viz._try_open_tauri()
+
 
 def test_unauthenticated_relay_is_disabled():
  result=subprocess.run(['node',str(ROOT/'packages/frameviz-web-viewer/bridge.mjs')],capture_output=True,text=True)
@@ -99,8 +110,8 @@ def test_repo_detection_requires_standalone_identity(tmp_path):
  (tmp_path/'pnpm-workspace.yaml').write_text('packages: []')
  (tmp_path/'packages/frameviz-host-tauri').mkdir(parents=True)
  assert not _looks_like_repo_root(tmp_path)
- for manifest in [ {'protocol_version':'0.4.0'}, {'project_id':'other.frameviz','protocol_version':'0.4.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.3.4'} ]:
+ for manifest in [ {'protocol_version':'0.5.0'}, {'project_id':'other.frameviz','protocol_version':'0.5.0'}, {'project_id':'qqfly.frameviz','protocol_version':'0.3.4'} ]:
   (tmp_path/'version.json').write_text(json.dumps(manifest))
   assert not _looks_like_repo_root(tmp_path)
- (tmp_path/'version.json').write_text(json.dumps({'project_id':'qqfly.frameviz','protocol_version':'0.4.0'}))
+ (tmp_path/'version.json').write_text(json.dumps({'project_id':'qqfly.frameviz','protocol_version':'0.5.0'}))
  assert _looks_like_repo_root(tmp_path)

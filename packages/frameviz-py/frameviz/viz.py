@@ -8,7 +8,6 @@ buffer management, camera control, and event handling.
 from __future__ import annotations
 
 import builtins
-import atexit
 import hashlib
 import logging
 import json
@@ -19,13 +18,13 @@ import socket
 import struct
 import subprocess
 import sys
-import signal
 import tempfile
 import time
 import threading
 import uuid
 import webbrowser
 from collections import deque
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -33,17 +32,11 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import numpy as np
 
 from .client import DEFAULT_WS_URL, FrameVizClient, PROTOCOL_VERSION
+from ._scene_tree import components, node_arguments, rigid_pose
 from .discovery import get_discovery_path, get_viewer_url_from_discovery
 from .exceptions import ConnectionError as FrameVizConnectionError, TimeoutError as FrameVizTimeoutError, ProtocolError
 from ._internal import (
-    _AUTO_WS_LOG_HANDLE,
-    _AUTO_WS_LOG_PATH,
-    _AUTO_WS_PROCESS,
     _get_repo_root,
-    _get_macos_app_executable,
-    _get_tauri_app_candidates,
-    _get_tauri_exec_candidates,
-    _get_appimage_candidates,
     _get_ws_port_from_url,
     _get_ws_startup_timeout,
     _is_port_open,
@@ -51,6 +44,7 @@ from ._internal import (
     _read_ws_log_tail,
     _resolve_discovery_port,
     _resolve_ws_url,
+    _sdk_host_stdio,
     _should_auto_start_ws,
     _wait_for_discovery_port,
     _wait_for_ws_ready,
@@ -62,46 +56,6 @@ from ._internal import (
 DEFAULT_VIEWER_URL = "http://localhost:8080/"
 DEFAULT_TAURI_CONTROL_PORT = 9528
 _AUTO_TAURI_PROCS: List[subprocess.Popen] = []
-_AUTO_TAURI_ATEXIT_REGISTERED = False
-
-
-def _stop_auto_tauri_processes() -> None:
-    global _AUTO_TAURI_PROCS
-    procs = _AUTO_TAURI_PROCS
-    _AUTO_TAURI_PROCS = []
-    for proc in procs:
-        if proc.poll() is not None:
-            continue
-        sent_group_signal = False
-        if os.name == "posix":
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                sent_group_signal = True
-            except OSError:
-                pass
-        try:
-            if not sent_group_signal:
-                proc.terminate()
-            proc.wait(timeout=3)
-        except (OSError, subprocess.TimeoutExpired):
-            if os.name == "posix":
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except OSError:
-                    pass
-            else:
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
-
-
-def _register_auto_tauri_atexit() -> None:
-    global _AUTO_TAURI_ATEXIT_REGISTERED
-    if _AUTO_TAURI_ATEXIT_REGISTERED:
-        return
-    _AUTO_TAURI_ATEXIT_REGISTERED = True
-    atexit.register(_stop_auto_tauri_processes)
 
 
 def _get_viewer_url(expected_ws_url: Optional[str] = None) -> Optional[str]:
@@ -284,7 +238,7 @@ class Viz:
         return self._view_id
 
     def wait_for_viewer(self, timeout: float = 10.0) -> bool:
-        """Wait for viewer_ready event for this view."""
+        """Wait until this view has a connected Viewer."""
         return _wait_for_viewer(self._client, self._view_id, timeout=timeout)
 
     @classmethod
@@ -331,9 +285,10 @@ class Viz:
     def add_box(
         self,
         size: Vec3 = (1, 1, 1),
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
         color: Color = "white",
+        **node_options: Any,
     ) -> str:
         """Add a box primitive and return its handle."""
         validated_size = _validate_positive_vec3(size, "size")
@@ -343,14 +298,16 @@ class Viz:
             pos=pos,
             quat=quat,
             color=color,
+            **node_options,
         )
 
     def add_sphere(
         self,
         radius: float = 0.5,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
         color: Color = "white",
+        **node_options: Any,
     ) -> str:
         """Add a sphere primitive and return its handle."""
         _validate_positive(radius, "radius")
@@ -360,15 +317,17 @@ class Viz:
             pos=pos,
             quat=quat,
             color=color,
+            **node_options,
         )
 
     def add_cylinder(
         self,
         radius: float = 0.5,
         height: float = 1.0,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
         color: Color = "white",
+        **node_options: Any,
     ) -> str:
         """Add a cylinder primitive and return its handle."""
         _validate_positive(radius, "radius")
@@ -379,15 +338,17 @@ class Viz:
             pos=pos,
             quat=quat,
             color=color,
+            **node_options,
         )
 
     def add_cone(
         self,
         radius: float = 0.5,
         height: float = 1.0,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
         color: Color = "white",
+        **node_options: Any,
     ) -> str:
         """Add a cone primitive and return its handle."""
         _validate_positive(radius, "radius")
@@ -398,6 +359,7 @@ class Viz:
             pos=pos,
             quat=quat,
             color=color,
+            **node_options,
         )
 
     def add_arrow(
@@ -406,6 +368,7 @@ class Viz:
         end: Vec3 = (0, 0, 1),
         radius: float = 0.05,
         color: Color = "white",
+        **node_options: Any,
     ) -> str:
         """
         Add an arrow primitive from start to end.
@@ -423,15 +386,16 @@ class Viz:
             "end": _to_list(end),
         }
         return self._add_primitive(
-            "arrow", params=params, pos=(0, 0, 0), quat=(0, 0, 0, 1), color=color
+            "arrow", params=params, pos=None, quat=None, color=color, **node_options
         )
 
     def add_axes(
         self,
         length: float = 1.0,
         radius: float = 0.02,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
+        **node_options: Any,
     ) -> str:
         """Add an axes indicator (X=red, Y=green, Z=blue)."""
         _validate_positive(length, "length")
@@ -442,15 +406,17 @@ class Viz:
             pos=pos,
             quat=quat,
             color="white",
+            **node_options,
         )
 
     def add_plane(
         self,
         width: float = 1.0,
         height: float = 1.0,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
         color: Color = "gray",
+        **node_options: Any,
     ) -> str:
         """Add a plane primitive."""
         return self._add_primitive(
@@ -459,15 +425,17 @@ class Viz:
             pos=pos,
             quat=quat,
             color=color,
+            **node_options,
         )
 
     def _add_primitive(
         self,
         ptype: str,
         params: Dict[str, Any],
-        pos: Vec3,
-        quat: Quat,
+        pos: Optional[Vec3],
+        quat: Optional[Quat],
         color: Color,
+        **node_options: Any,
     ) -> str:
         """Internal helper to add a primitive."""
         # Normalize color - _normalize_color already handles RGBA correctly
@@ -478,7 +446,7 @@ class Viz:
             {
                 "scene_id": self._scene_id,
                 "type": ptype,
-                "pose": {"pos": _to_list(pos), "quat": _normalize_quat(quat)},
+                **node_arguments(node_options, pos=pos, quat=quat, default_pose=True),
                 "color": color_val,
                 "params": params,
             },
@@ -495,6 +463,7 @@ class Viz:
         colors: Optional[np.ndarray] = None,
         size: float = 1.0,
         color: Optional[Color] = None,
+        **node_options: Any,
     ) -> str:
         """
         Add a point cloud.
@@ -505,9 +474,11 @@ class Viz:
                 treated as a uniform color.
         color: optional uniform color (RGB/RGBA in [0, 1]), mutually exclusive with colors
         size: point size in pixels
-        Note: automatically chunks when point count is large.
+        Large point clouds retain a single ID. Scene keywords include parent, name, tags and pose.
         """
         positions = np.ascontiguousarray(positions, dtype=np.float32)
+        if positions.ndim != 2 or positions.shape[1] != 3:
+            raise ValueError("positions must have shape (N, 3)")
         n_points = positions.shape[0]
         if colors is not None and color is not None:
             raise ValueError("color and colors are mutually exclusive for add_points")
@@ -539,94 +510,27 @@ class Viz:
         if colors_u8 is not None and colors_u8.shape[0] != n_points:
             raise ValueError("colors must match point count")
 
-        if n_points > 500_000:
-            return self._add_points_chunked(
-                positions,
-                colors=colors_u8,
-                size=size,
-                chunk_size=500_000,
-                color=uniform_color,
-            )
+        args = {"scene_id": self._scene_id, "size": size, **node_arguments(node_options)}
+        if uniform_color is not None:
+            args["color"] = uniform_color
 
-        return self._add_points_direct(
-            positions, colors=colors_u8, size=size, color=uniform_color
-        )
+        with self._geometry_uploads() as upload:
+            def upload_part(start: int, end: int) -> Dict[str, Any]:
+                shape = [end - start, 3]
+                part = {"positions": upload(positions[start:end], "f32", shape)}
+                if colors_u8 is not None:
+                    part["colors"] = upload(colors_u8[start:end], "u8", shape)
+                return part
 
-    def _add_points_direct(
-        self,
-        positions: np.ndarray,
-        colors: Optional[np.ndarray] = None,
-        size: float = 1.0,
-        color: Optional[Color] = None,
-        group_id: Optional[str] = None,
-    ) -> str:
-        n_points = positions.shape[0]
-        pos_buffer = self._upload_buffer(positions, "f32", [n_points, 3])
-
-        args: Dict[str, Any] = {
-            "scene_id": self._scene_id,
-            "positions": pos_buffer,
-            "size": size,
-        }
-        if group_id:
-            args["group_id"] = group_id
-
-        if colors is not None:
-            colors = np.ascontiguousarray(colors, dtype=np.uint8)
-            args["colors"] = self._upload_buffer(colors, "u8", [n_points, 3])
-        elif color is not None:
-            args["color"] = _normalize_color(color)
-
-        result = self._client.send_command("add_points", args)
-        return result.get("handle", "")
-
-    def _add_points_chunked(
-        self,
-        positions: np.ndarray,
-        colors: Optional[np.ndarray] = None,
-        size: float = 3.0,
-        chunk_size: int = 500_000,
-        color: Optional[Color] = None,
-    ) -> str:
-        """
-        Add a large point cloud in chunks for better performance.
-
-        This is recommended for point clouds with > 5 million points to
-        avoid memory spikes and improve rendering responsiveness.
-
-        Args:
-            positions: numpy array of shape (N, 3)
-            colors: optional numpy array of shape (N, 3), dtype uint8 (internal)
-            size: point size in pixels
-            chunk_size: number of points per chunk (default 500K)
-
-        Returns:
-            A single group handle that references all chunks.
-            Use remove() with this handle to remove all chunks at once.
-        """
-        n_points = positions.shape[0]
-        self._chunk_counter += 1
-        import uuid
-        group_handle = f"chunk_group_{uuid.uuid4().hex}"
-        chunk_handles: List[str] = []
-
-        for start in range(0, n_points, chunk_size):
-            end = min(start + chunk_size, n_points)
-            chunk_positions = positions[start:end]
-            chunk_colors = colors[start:end] if colors is not None else None
-            handle = self._add_points_direct(
-                chunk_positions,
-                colors=chunk_colors,
-                size=size,
-                color=color,
-                group_id=group_handle,
-            )
-            chunk_handles.append(handle)
-            self._chunk_offsets[handle] = int(start)
-
-        self._register_chunk_group(group_handle, chunk_handles)
-
-        return group_handle
+            chunk_size = 500_000
+            if n_points > chunk_size:
+                args["chunks"] = [
+                    upload_part(start, min(start + chunk_size, n_points))
+                    for start in range(0, n_points, chunk_size)
+                ]
+            else:
+                args.update(upload_part(0, n_points))
+            return self._client.send_command("add_points", args)["handle"]
 
     def _register_chunk_group(self, group_handle: str, chunk_handles: List[str]) -> None:
         self._chunk_groups[group_handle] = chunk_handles
@@ -700,6 +604,7 @@ class Viz:
         indices: Optional[np.ndarray] = None,
         width: float = 1.0,
         color: Color = "white",
+        **node_options: Any,
     ) -> str:
         """
         Add lines to the scene.
@@ -707,24 +612,27 @@ class Viz:
         positions: numpy array of shape (N, 3), dtype float32
         indices: optional numpy array of shape (M, 2), dtype uint32
         """
-        positions = np.ascontiguousarray(positions, dtype=np.float32)
-        n_verts = positions.shape[0]
-        pos_buffer = self._upload_buffer(positions, "f32", [n_verts, 3])
+        scene_node = node_arguments(node_options)
+        with self._geometry_uploads() as upload:
+            positions = np.ascontiguousarray(positions, dtype=np.float32)
+            n_verts = positions.shape[0]
+            pos_buffer = upload(positions, "f32", [n_verts, 3])
 
-        args: Dict[str, Any] = {
-            "scene_id": self._scene_id,
-            "positions": pos_buffer,
-            "width": width,
-            "color": _normalize_color(color),
-        }
+            args: Dict[str, Any] = {
+                "scene_id": self._scene_id,
+                "positions": pos_buffer,
+                "width": width,
+                "color": _normalize_color(color),
+            }
 
-        if indices is not None:
-            indices = np.ascontiguousarray(indices, dtype=np.uint32)
-            m = indices.shape[0]
-            args["indices"] = self._upload_buffer(indices, "u32", [m, 2])
+            if indices is not None:
+                indices = np.ascontiguousarray(indices, dtype=np.uint32)
+                m = indices.shape[0]
+                args["indices"] = upload(indices, "u32", [m, 2])
 
-        result = self._client.send_command("add_lines", args)
-        return result.get("handle", "")
+            args.update(scene_node)
+            result = self._client.send_command("add_lines", args)
+            return result.get("handle", "")
 
     def add_mesh(
         self,
@@ -737,6 +645,7 @@ class Viz:
         alpha: Optional[float] = None,
         wireframe: bool = False,
         smooth_shading: bool = True,
+        **node_options: Any,
     ) -> str:
         """
         Add a mesh (triangle or polygon faces).
@@ -767,110 +676,114 @@ class Viz:
             - If color is RGBA and alpha is not provided, color[3] is used as alpha.
             - If alpha is provided, it always takes precedence over color[3].
         """
-        vertices = np.ascontiguousarray(vertices, dtype=np.float32)
-        v_count = vertices.shape[0]
-        face_count = 0
+        scene_node = node_arguments(node_options)
+        with self._geometry_uploads() as upload:
+            vertices = np.ascontiguousarray(vertices, dtype=np.float32)
+            v_count = vertices.shape[0]
+            face_count = 0
 
-        args: Dict[str, Any] = {
-            "scene_id": self._scene_id,
-            "vertices": self._upload_buffer(vertices, "f32", [v_count, 3]),
-        }
-        faces_format = faces_format.lower().strip()
-        if faces_format == "tri":
-            faces = np.ascontiguousarray(faces, dtype=np.uint32)
-            f_count = faces.shape[0]
-            face_count = f_count
-            args["faces"] = self._upload_buffer(faces, "u32", [f_count, 3])
-        elif faces_format == "poly":
-            if not isinstance(faces, dict) or "counts" not in faces or "indices" not in faces:
-                raise ValueError("faces must be a dict with 'counts' and 'indices' for faces_format='poly'")
-            counts = np.ascontiguousarray(faces["counts"], dtype=np.uint32)
-            indices = np.ascontiguousarray(faces["indices"], dtype=np.uint32)
-            face_count = counts.shape[0]
-            args["faces"] = {
-                "counts": self._upload_buffer(counts, "u32", [counts.shape[0]]),
-                "indices": self._upload_buffer(indices, "u32", [indices.shape[0]]),
+            args: Dict[str, Any] = {
+                "scene_id": self._scene_id,
+                "vertices": upload(vertices, "f32", [v_count, 3]),
             }
-            args["faces_format"] = "poly"
-        else:
-            raise ValueError("faces_format must be 'tri' or 'poly'")
-
-        if normals is not None:
-            normals = np.ascontiguousarray(normals, dtype=np.float32)
-            args["normals"] = self._upload_buffer(normals, "f32", [v_count, 3])
-
-        # Check mutual exclusivity of color and colors
-        if colors is not None and color is not None:
-            raise ValueError(
-                "color and colors parameters are mutually exclusive. "
-                "Use color for uniform color or colors for per-vertex/per-face colors."
-            )
-
-        # Handle uniform color parameter
-        color_alpha: Optional[float] = None
-        if color is not None:
-            normalized = _normalize_color(color)
-            # Only pass RGB, alpha is handled by the separate alpha parameter
-            args["color"] = normalized[:3]
-            if len(normalized) == 4:
-                color_alpha = float(normalized[3])
-
-        if colors is not None:
-            colors = np.ascontiguousarray(colors)
-            if colors.ndim != 2 or colors.shape[1] != 3:
-                raise ValueError("colors must be a (N, 3) array")
-            if not np.issubdtype(colors.dtype, np.floating):
-                raise ValueError("colors must be float values in [0, 1]")
-            if colors.size:
-                min_val = float(np.min(colors))
-                max_val = float(np.max(colors))
-                if min_val < 0.0 or max_val > 1.0:
-                    raise ValueError("colors must be in [0, 1]")
-            colors_u8 = np.rint(np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
-            color_count = colors_u8.shape[0]
-            if color_count == v_count:
-                color_shape = [v_count, 3]
-            elif face_count > 0 and color_count == face_count:
-                color_shape = [face_count, 3]
+            faces_format = faces_format.lower().strip()
+            if faces_format == "tri":
+                faces = np.ascontiguousarray(faces, dtype=np.uint32)
+                f_count = faces.shape[0]
+                face_count = f_count
+                args["faces"] = upload(faces, "u32", [f_count, 3])
+            elif faces_format == "poly":
+                if not isinstance(faces, dict) or "counts" not in faces or "indices" not in faces:
+                    raise ValueError("faces must be a dict with 'counts' and 'indices' for faces_format='poly'")
+                counts = np.ascontiguousarray(faces["counts"], dtype=np.uint32)
+                indices = np.ascontiguousarray(faces["indices"], dtype=np.uint32)
+                face_count = counts.shape[0]
+                args["faces"] = {
+                    "counts": upload(counts, "u32", [counts.shape[0]]),
+                    "indices": upload(indices, "u32", [indices.shape[0]]),
+                }
+                args["faces_format"] = "poly"
             else:
-                raise ValueError("colors must match vertex count or face count")
-            args["colors"] = self._upload_buffer(colors_u8, "u8", color_shape)
+                raise ValueError("faces_format must be 'tri' or 'poly'")
 
-        # Add alpha parameter (alpha argument has priority over color[3])
-        alpha_param: Optional[float] = None
-        if alpha is not None:
-            if not isinstance(alpha, (int, float)):
-                raise TypeError("alpha must be a number")
-            if not 0.0 <= alpha <= 1.0:
-                raise ValueError("alpha must be in [0.0, 1.0]")
-            alpha_param = float(alpha)
-        elif color_alpha is not None:
-            alpha_param = float(color_alpha)
-        if alpha_param is not None:
-            args["alpha"] = alpha_param
+            if normals is not None:
+                normals = np.ascontiguousarray(normals, dtype=np.float32)
+                args["normals"] = upload(normals, "f32", [v_count, 3])
 
-        # Add wireframe parameter (only send if True to reduce bandwidth)
-        if wireframe:
-            args["wireframe"] = wireframe
+            # Check mutual exclusivity of color and colors
+            if colors is not None and color is not None:
+                raise ValueError(
+                    "color and colors parameters are mutually exclusive. "
+                    "Use color for uniform color or colors for per-vertex/per-face colors."
+                )
 
-        if isinstance(smooth_shading, np.bool_):
-            smooth_shading = bool(smooth_shading)
-        elif not isinstance(smooth_shading, bool):
-            raise TypeError("smooth_shading must be a boolean")
-        # Core defaults to smooth shading; only send when explicitly disabling.
-        if not smooth_shading:
-            args["smooth_shading"] = smooth_shading
+            # Handle uniform color parameter
+            color_alpha: Optional[float] = None
+            if color is not None:
+                normalized = _normalize_color(color)
+                # Only pass RGB, alpha is handled by the separate alpha parameter
+                args["color"] = normalized[:3]
+                if len(normalized) == 4:
+                    color_alpha = float(normalized[3])
 
-        result = self._client.send_command("add_mesh", args)
-        return result.get("handle", "")
+            if colors is not None:
+                colors = np.ascontiguousarray(colors)
+                if colors.ndim != 2 or colors.shape[1] != 3:
+                    raise ValueError("colors must be a (N, 3) array")
+                if not np.issubdtype(colors.dtype, np.floating):
+                    raise ValueError("colors must be float values in [0, 1]")
+                if colors.size:
+                    min_val = float(np.min(colors))
+                    max_val = float(np.max(colors))
+                    if min_val < 0.0 or max_val > 1.0:
+                        raise ValueError("colors must be in [0, 1]")
+                colors_u8 = np.rint(np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
+                color_count = colors_u8.shape[0]
+                if color_count == v_count:
+                    color_shape = [v_count, 3]
+                elif face_count > 0 and color_count == face_count:
+                    color_shape = [face_count, 3]
+                else:
+                    raise ValueError("colors must match vertex count or face count")
+                args["colors"] = upload(colors_u8, "u8", color_shape)
+
+            # Add alpha parameter (alpha argument has priority over color[3])
+            alpha_param: Optional[float] = None
+            if alpha is not None:
+                if not isinstance(alpha, (int, float)):
+                    raise TypeError("alpha must be a number")
+                if not 0.0 <= alpha <= 1.0:
+                    raise ValueError("alpha must be in [0.0, 1.0]")
+                alpha_param = float(alpha)
+            elif color_alpha is not None:
+                alpha_param = float(color_alpha)
+            if alpha_param is not None:
+                args["alpha"] = alpha_param
+
+            # Add wireframe parameter (only send if True to reduce bandwidth)
+            if wireframe:
+                args["wireframe"] = wireframe
+
+            if isinstance(smooth_shading, np.bool_):
+                smooth_shading = bool(smooth_shading)
+            elif not isinstance(smooth_shading, bool):
+                raise TypeError("smooth_shading must be a boolean")
+            # Core defaults to smooth shading; only send when explicitly disabling.
+            if not smooth_shading:
+                args["smooth_shading"] = smooth_shading
+
+            args.update(scene_node)
+            result = self._client.send_command("add_mesh", args)
+            return result.get("handle", "")
 
     def load_mesh(
         self,
         url: str,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
-        scale: Vec3 = (1, 1, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
+        scale: Optional[Vec3] = None,
         color: Optional[Color] = None,
+        **node_options: Any,
     ) -> str:
         """
         Load a mesh from a URL (DAE or STL file).
@@ -891,8 +804,7 @@ class Viz:
         args: Dict[str, Any] = {
             "scene_id": self._scene_id,
             "url": url,
-            "pose": {"pos": _to_list(pos), "quat": _normalize_quat(quat)},
-            "scale": _to_list(scale),
+            **node_arguments(node_options, pos=pos, quat=quat, scale=scale, default_pose=True),
         }
         if color is not None:
             normalized = _normalize_color(color)
@@ -912,6 +824,7 @@ class Viz:
         alpha: Optional[float] = None,
         size: Optional[Vec3] = None,
         params: Optional[Dict[str, Any]] = None,
+        **node_options: Any,
     ) -> str:
         """
         Add instanced primitives for large batches (e.g., Octomap).
@@ -935,44 +848,47 @@ class Viz:
             - color and colors are mutually exclusive.
             - Alpha is a global transparency; per-instance alpha is not supported.
         """
-        positions = np.ascontiguousarray(positions, dtype=np.float32)
-        n = positions.shape[0]
-        if colors is not None and color is not None:
-            raise ValueError("color and colors are mutually exclusive for add_instances")
-        args: Dict[str, Any] = {
-            "scene_id": self._scene_id,
-            "type": type,
-            "positions": self._upload_buffer(positions, "f32", [n, 3]),
-            "params": params or {},
-        }
-        if size is not None:
-            args["params"].setdefault("size", _to_list(size))
-        if quats is not None:
-            quats = np.ascontiguousarray(quats, dtype=np.float32)
-            args["quats"] = self._upload_buffer(quats, "f32", [n, 4])
-        if scales is not None:
-            scales = np.ascontiguousarray(scales, dtype=np.float32)
-            args["scales"] = self._upload_buffer(scales, "f32", [n, 3])
-        if colors is not None:
-            colors = np.asarray(colors, dtype=np.float32)
-            if colors.ndim != 2 or colors.shape[1] != 3:
-                raise ValueError("colors must be a (N, 3) array")
-            if colors.shape[0] != n:
-                raise ValueError("colors must match instance count")
-            if colors.size:
-                min_val = float(colors.min())
-                max_val = float(colors.max())
-                if min_val < 0.0 or max_val > 1.0:
-                    raise ValueError("colors must be in [0, 1]")
-            colors_u8 = np.rint(np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
-            args["colors"] = self._upload_buffer(colors_u8, "u8", [n, 3])
-        if color is not None:
-            normalized = _normalize_color(color)
-            args["color"] = normalized[:3]
-        if alpha is not None:
-            args["alpha"] = float(alpha)
-        result = self._client.send_command("add_instances", args)
-        return result.get("handle", "")
+        scene_node = node_arguments(node_options)
+        with self._geometry_uploads() as upload:
+            positions = np.ascontiguousarray(positions, dtype=np.float32)
+            n = positions.shape[0]
+            if colors is not None and color is not None:
+                raise ValueError("color and colors are mutually exclusive for add_instances")
+            args: Dict[str, Any] = {
+                "scene_id": self._scene_id,
+                "type": type,
+                "positions": upload(positions, "f32", [n, 3]),
+                "params": params or {},
+            }
+            if size is not None:
+                args["params"].setdefault("size", _to_list(size))
+            if quats is not None:
+                quats = np.ascontiguousarray(quats, dtype=np.float32)
+                args["quats"] = upload(quats, "f32", [n, 4])
+            if scales is not None:
+                scales = np.ascontiguousarray(scales, dtype=np.float32)
+                args["scales"] = upload(scales, "f32", [n, 3])
+            if colors is not None:
+                colors = np.asarray(colors, dtype=np.float32)
+                if colors.ndim != 2 or colors.shape[1] != 3:
+                    raise ValueError("colors must be a (N, 3) array")
+                if colors.shape[0] != n:
+                    raise ValueError("colors must match instance count")
+                if colors.size:
+                    min_val = float(colors.min())
+                    max_val = float(colors.max())
+                    if min_val < 0.0 or max_val > 1.0:
+                        raise ValueError("colors must be in [0, 1]")
+                colors_u8 = np.rint(np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
+                args["colors"] = upload(colors_u8, "u8", [n, 3])
+            if color is not None:
+                normalized = _normalize_color(color)
+                args["color"] = normalized[:3]
+            if alpha is not None:
+                args["alpha"] = float(alpha)
+            args.update(scene_node)
+            result = self._client.send_command("add_instances", args)
+            return result.get("handle", "")
 
     def update_instances(
         self,
@@ -1131,24 +1047,47 @@ class Viz:
 
         # 2. Upload in chunks (16MB per chunk to stay under WebSocket limits)
         CHUNK_SIZE = 16 * 1024 * 1024  # 16MB
-        offset = 0
-        while offset < size_bytes:
-            chunk_end = min(offset + CHUNK_SIZE, size_bytes)
-            chunk_bytes = chunk_end - offset
-            chunk_data = raw_bytes[offset:chunk_end]
+        try:
+            offset = 0
+            while offset < size_bytes:
+                chunk_end = min(offset + CHUNK_SIZE, size_bytes)
+                chunk_bytes = chunk_end - offset
+                chunk_data = raw_bytes[offset:chunk_end]
 
-            self._client.send_command_with_binary(
-                "upload_buffer_chunk",
-                {
-                    "buffer_id": buffer_id,
-                    "offset_bytes": offset,
-                    "chunk_bytes": chunk_bytes,
-                },
-                chunk_data,
-            )
-            offset = chunk_end
+                self._client.send_command_with_binary(
+                    "upload_buffer_chunk",
+                    {
+                        "buffer_id": buffer_id,
+                        "offset_bytes": offset,
+                        "chunk_bytes": chunk_bytes,
+                    },
+                    chunk_data,
+                )
+                offset = chunk_end
+
+        except BaseException:
+            with suppress(Exception):
+                self._free_buffer(buffer_id)
+            raise
 
         return {"buffer_id": buffer_id, "dtype": dtype, "shape": shape}
+
+    @contextmanager
+    def _geometry_uploads(self):
+        allocated = []
+
+        def upload(array, dtype, shape):
+            ref = self._upload_buffer(array, dtype, shape)
+            allocated.append(ref["buffer_id"])
+            return ref
+
+        try:
+            yield upload
+        except BaseException:
+            for buffer_id in allocated:
+                with suppress(Exception):
+                    self._free_buffer(buffer_id)
+            raise
 
     def _free_buffer(self, buffer_id: str) -> None:
         """Free a buffer on the Host side."""
@@ -1158,79 +1097,130 @@ class Viz:
     # Object manipulation
     # ─────────────────────────────────────────────────────────────────────────
 
+    def add_widget(
+        self, kind: str, label: str, value: Any = None, *,
+        parent: Optional[str] = None,
+        minimum: Optional[float] = None, maximum: Optional[float] = None,
+        step: Optional[float] = None, choices: Optional[Sequence[str]] = None,
+        update_mode: str = "commit",
+    ) -> str:
+        """Add a scene control. A number with both bounds also has a slider."""
+        args: Dict[str, Any] = {
+            "scene_id": self._scene_id, "kind": kind, "label": label,
+            "value": value, "update_mode": update_mode,
+        }
+        args.update({key: val for key, val in (
+            ("parent", parent), ("minimum", minimum), ("maximum", maximum),
+            ("step", step), ("choices", list(choices) if choices is not None else None),
+        ) if val is not None})
+        return self._client.send_command("add_widget", args)["widget"]["id"]
+
+    def list_widgets(self) -> List[Dict[str, Any]]:
+        """Return scene controls in creation order, including their current values."""
+        return self._client.send_command("list_widgets", {"scene_id": self._scene_id})["widgets"]
+
+    def get_widget(self, widget_id: str) -> Dict[str, Any]:
+        """Return a control's definition and current value."""
+        return self._client.send_command("get_widget", {
+            "scene_id": self._scene_id, "widget_id": widget_id,
+        })["widget"]
+
+    def get_widget_value(self, widget_id: str) -> Any:
+        return self.get_widget(widget_id)["value"]
+
+    def set_widget_value(self, widget_id: str, value: Any, *, emit: bool = False) -> None:
+        """Synchronize all views. Use emit=True to dispatch a program event."""
+        self._client.send_command("set_widget_value", {
+            "scene_id": self._scene_id, "widget_id": widget_id, "value": value, "emit": emit,
+        })
+
+    def remove_widget(self, widget_id: str) -> None:
+        """Remove a control and any controls within its group."""
+        result = self._client.send_command("remove_widget", {
+            "scene_id": self._scene_id, "widget_id": widget_id,
+        })
+        for removed in result["removed"]:
+            self._client._off_widget_change(self._scene_id, removed)
+
+    def on_widget_change(self, widget_id: str, handler: EventHandler, *, append: bool = False) -> None:
+        """Register a handler for this client. Repeated calls replace it by default."""
+        self._client._on_widget_change(self._scene_id, widget_id, handler, append=append)
+
+    def off_widget_change(self, widget_id: str) -> None:
+        """Remove this client's handlers for the control."""
+        self._client._off_widget_change(self._scene_id, widget_id)
+
+    def add_node(
+        self, *, parent=None, name=None, tags=None, position=None, quaternion=None, pose=None
+    ) -> str:
+        """Create a rigid scene node without drawable geometry."""
+        args = node_arguments({
+            "parent": parent, "name": name, "tags": tags,
+            "position": position, "quaternion": quaternion, "pose": pose,
+        })
+        return self._client.send_command("add_node", {"scene_id": self._scene_id, **args})["handle"]
+
+    def set_parent(self, handle: str, parent: Optional[str], *, local_transform=None) -> None:
+        """Reparent a node. The default preserves its current world pose."""
+        args = {"handle": handle, "parent": parent, "scene_id": self._scene_id}
+        if local_transform is not None:
+            args["local_transform"] = rigid_pose(local_transform)
+        self._client.send_command("set_parent", args)
+
+    def set_object_metadata(self, handle: str, *, name=None, tags=None) -> None:
+        """Update the display name and tags supplied by the application."""
+        args = node_arguments({"name": name, "tags": tags})
+        self._client.send_command("set_object_metadata", {"handle": handle, "scene_id": self._scene_id, **args})
+
+    def set_geometry_scale(self, handle: str, scale: Vec3) -> None:
+        """Resize this object's own geometry in its node coordinates."""
+        self._client.send_command("set_geometry_scale", {
+            "handle": handle, "scene_id": self._scene_id, "geometry_scale": components(scale, 3, "scale"),
+        })
+
     def set_transform(
         self,
         handle: str,
-        pos: Vec3 = (0, 0, 0),
-        quat: Quat = (0, 0, 0, 1),
+        pos: Optional[Vec3] = None,
+        quat: Optional[Quat] = None,
         scale: Optional[Vec3] = None,
+        *,
+        position: Optional[Vec3] = None,
+        quaternion: Optional[Quat] = None,
+        pose=None,
+        geometry_scale: Optional[Vec3] = None,
     ) -> None:
-        """Set the transform of an object. Quaternion is auto-normalized.
-
-        Args:
-            handle: Object handle.
-            pos: Position [x, y, z].
-            quat: Quaternion [qx, qy, qz, qw].
-            scale: Optional scale [sx, sy, sz]. If None, scale is unchanged.
-        """
-        pose = {
-            "pos": _to_list(pos),
-            "quat": _normalize_quat(quat),
-        }
-        if scale is not None:
-            pose["scale"] = _to_list(scale)
-
-        if handle in self._chunk_groups:
-            items = []
-            for chunk_handle in self._chunk_groups.get(handle, []):
-                items.append({"handle": chunk_handle, "pose": pose})
-            if items:
-                self._client.send_command(
-                    "set_object_transforms",
-                    {"items": items, "scene_id": self._scene_id},
-                )
-            return
-
-        self._client.send_command(
-            "set_transform",
-            {"handle": handle, "pose": pose, "scene_id": self._scene_id},
+        """Set a local rigid pose. The legacy scale argument resizes only the drawable."""
+        fields = node_arguments(
+            {"position": position, "quaternion": quaternion, "pose": pose, "geometry_scale": geometry_scale},
+            pos=pos, quat=quat, scale=scale, default_pose=True,
         )
+        if handle in self._chunk_groups:
+            items = [{"handle": chunk, **fields} for chunk in self._chunk_groups[handle]]
+            if items:
+                self._client.send_command("set_object_transforms", {"items": items, "scene_id": self._scene_id})
+            return
+        self._client.send_command("set_transform", {"handle": handle, "scene_id": self._scene_id, **fields})
 
     def set_object_transforms(self, items: List[Dict[str, Any]]) -> None:
-        """
-        Set transforms for multiple objects in a single call.
-
-        Each item should be:
-            {
-              "handle": "h_1",
-              "pose": { "pos": [x,y,z], "quat": [qx,qy,qz,qw], "scale": [sx,sy,sz] }
-            }
-        """
-        payload: List[Dict[str, Any]] = []
+        """Apply a batch of local rigid poses together. Each item contains a handle and pose."""
+        payload = []
         for item in items:
             handle = item.get("handle")
-            pose = item.get("pose", {})
-            if not handle:
-                continue
-            pos = pose.get("pos", (0, 0, 0))
-            quat = pose.get("quat", (0, 0, 0, 1))
-            scale = pose.get("scale")
-            normalized_pose: Dict[str, Any] = {
-                "pos": _to_list(pos),
-                "quat": _normalize_quat(quat),
-            }
-            if scale is not None:
-                normalized_pose["scale"] = _to_list(scale)
-            if handle in self._chunk_groups:
-                for chunk_handle in self._chunk_groups.get(handle, []):
-                    payload.append(
-                        {"handle": chunk_handle, "pose": normalized_pose}
-                    )
-            else:
-                payload.append({"handle": handle, "pose": normalized_pose})
-        if not payload:
-            return
-        self._client.send_command("set_object_transforms", {"items": payload})
+            if not isinstance(handle, str) or not handle:
+                raise ValueError("Each transform requires a handle")
+            pose = item.get("pose")
+            scale = None
+            if isinstance(pose, dict):
+                pose = dict(pose)
+                scale = pose.pop("scale", None)
+            fields = node_arguments({
+                "pose": pose, "position": item.get("position"), "quaternion": item.get("quaternion"),
+                "geometry_scale": item.get("geometry_scale"),
+            }, scale=scale, default_pose=True)
+            payload.extend({"handle": target, **fields} for target in self._chunk_groups.get(handle, [handle]))
+        if payload:
+            self._client.send_command("set_object_transforms", {"items": payload, "scene_id": self._scene_id})
 
     def set_color(self, handle: str, color: Color) -> None:
         """Set the color of an object (supports RGBA for transparency).
@@ -1434,18 +1424,20 @@ class Viz:
     # Get functions
     # ─────────────────────────────────────────────────────────────────────────
 
-    def get_transform(self, handle: str) -> Dict[str, Any]:
-        """Get the transform (position and quaternion) of an object.
+    def get_transform(self, handle: str, space: str = "local", *, matrix: bool = False) -> Dict[str, Any]:
+        """Get the local or world rigid pose and optional column-major matrix.
 
-        Returns:
-            dict with 'pos' [x, y, z] and 'quat' [qx, qy, qz, qw]
+        position and quaternion have compatibility aliases pos and quat.
+        geometry_scale describes the object's own drawable size.
         """
+        if space not in {"local", "world"}:
+            raise ValueError("space must be local or world")
         target = self._resolve_group_target(handle)
         if not target:
             raise RuntimeError(f"Object not found: {handle}")
         result = self._client.send_command(
             "get_transform",
-            {"handle": target},
+            {"handle": target, "scene_id": self._scene_id, "space": space, "matrix": matrix},
         )
         pose = result.get("pose", {"pos": [0, 0, 0], "quat": [0, 0, 0, 1]})
         if not isinstance(pose, dict):
@@ -1462,7 +1454,7 @@ class Viz:
             raise RuntimeError(
                 "Invalid get_transform response: quat must have 4 components."
             ) from exc
-        result_pose: Dict[str, Any] = {"pos": pos, "quat": quat}
+        result_pose: Dict[str, Any] = {"position": pos, "quaternion": quat, "pos": pos, "quat": quat}
         if "scale" in pose and pose["scale"] is not None:
             try:
                 result_pose["scale"] = _to_list(pose["scale"])
@@ -1470,6 +1462,10 @@ class Viz:
                 raise RuntimeError(
                     "Invalid get_transform response: scale must have 3 components."
                 ) from exc
+        if result.get("geometry_scale") is not None:
+            result_pose["geometry_scale"] = components(result["geometry_scale"], 3, "geometry_scale")
+        if matrix:
+            result_pose["matrix"] = components(result.get("matrix"), 16, "matrix")
         return result_pose
 
     def get_color(self, handle: str) -> Optional[List[float]]:
@@ -1586,6 +1582,60 @@ class Viz:
                 "up": _to_list(up),
             },
         )
+
+    def get_lan_view_link(self) -> str:
+        """Get the current View's read-only link from an explicitly LAN-enabled Host."""
+        return self._client.send_command("get_lan_view_link", {"view_id": self._view_id})["url"]
+
+    def get_camera_view(self) -> Dict[str, Any]:
+        """Get this View's camera pose and projection, including with no window."""
+        return self._client.send_command("get_camera_view", {"view_id": self._view_id})
+
+    def set_camera_view(self, camera_view: Dict[str, Any]) -> None:
+        """Set this View's camera pose and projection together."""
+        self._client.send_command("set_camera_view", {
+            "view_id": self._view_id, "camera_view": camera_view,
+        })
+
+    def get_display_state(self, *, include_bounds: bool = False) -> Dict[str, Any]:
+        """Query the view and scene. Request conservative world-space geometry bounds."""
+        return self._client.send_command("get_display_state", {
+            "view_id": self._view_id, "include_bounds": include_bounds,
+        })
+
+    def describe_scene(self) -> str:
+        """Format display state and available geometry bounds as readable text."""
+        state = self.get_display_state(include_bounds=True)
+        lines = [f"Scene {state['scene_id']} · View {state['view_id']}",
+                 "Camera View " + json.dumps(state["camera_view"], ensure_ascii=False)]
+        depths: Dict[str, int] = {}
+        for obj in state["objects"]:
+            parent = obj["parent"]
+            depth = 0 if parent is None else depths[parent] + 1
+            depths[obj["handle"]] = depth
+            name = json.dumps(obj["name"], ensure_ascii=False)
+            tags = json.dumps(obj["tags"], ensure_ascii=False)
+            bounds = obj["bounds_status"]
+            if obj["world_bounds"] is not None:
+                bounds = json.dumps(obj["world_bounds"])
+            lines.append(
+                f"{'  ' * depth}{obj['handle']} {obj['type']} {name} "
+                f"visible={obj['visible']} effective_visible={obj['effective_visible']} "
+                f"tags={tags} local={json.dumps(obj['local_transform'])} "
+                f"world={json.dumps(obj['world_transform'])} color={json.dumps(obj['color'])} "
+                f"geometry_scale={json.dumps(obj['geometry_scale'])} bounds={bounds}"
+            )
+        return "\n".join(lines)
+
+    def screenshot(self, path=None, *, camera_view=None, width=None, height=None) -> bytes:
+        """Render PNG bytes in the background and optionally save them to path."""
+        from ._capture import screenshot
+        return screenshot(self, path, camera_view=camera_view, width=width, height=height)
+
+    def export_html(self, path, *, animation=None) -> None:
+        """Write a self-contained lesson with optional precomputed local pose tracks."""
+        from ._tutorial import export_html
+        export_html(self, path, animation=animation)
 
     def get_camera_pose(self) -> Dict[str, Any]:
         """Get the current camera pose (viewer-side).
@@ -1706,6 +1756,7 @@ class Viz:
         axes_radius: Optional[float] = None,
         axes_size: Optional[float] = None,
         background: Optional[Color] = None,
+        *, show_widgets: Optional[bool] = None,
     ) -> None:
         """
         Configure view helpers (grid/axes/background).
@@ -1736,6 +1787,8 @@ class Viz:
             config["axes_length"] = axes_size
         if background is not None:
             config["background"] = _normalize_color(background)
+        if show_widgets is not None:
+            config["show_widgets"] = show_widgets
         if not config:
             return
         self._client.send_command(
@@ -1843,7 +1896,10 @@ class Viz:
 
     def enable_keyboard_shortcuts(self, enabled: bool = True) -> None:
         """
-        Enable or disable built-in keyboard shortcuts for this viewer.
+        Enable or disable built-in keyboard shortcuts for this View.
+
+        The setting survives Viewer reconnection. Application key events and
+        normal input in controls remain available.
 
         Args:
             enabled: True to enable (default), False to disable.
@@ -1865,18 +1921,19 @@ class Viz:
     def add_text_3d(
         self,
         text: str,
-        pos: Vec3 = (0, 0, 0),
+        pos: Optional[Vec3] = None,
         font_size: int = 14,
         color: Color = "white",
         background_color: Optional[str] = None,
+        **node_options: Any,
     ) -> str:
-        """Add a 3D text label at a world position.
+        """Add a 3D text label in its parent frame.
 
         The text will always face the camera (billboard style).
 
         Args:
             text: The text content.
-            pos: World position [x, y, z].
+            pos: Local position [x, y, z].
             font_size: Font size in pixels.
             color: Text color.
             background_color: CSS color for background (e.g., 'rgba(0,0,0,0.6)').
@@ -1884,10 +1941,13 @@ class Viz:
         Returns:
             Handle to the text object.
         """
+        node = node_arguments(node_options, pos=pos, default_pose=True)
+        pose = node["pose"]
         args: Dict[str, Any] = {
+            **node,
             "scene_id": self._scene_id,
             "text": text,
-            "pos": _to_list(pos),
+            "pos": pose.get("position", pose.get("pos")),
             "font_size": font_size,
             "color": _normalize_color(color),
         }
@@ -2506,7 +2566,9 @@ def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool, a
     parsed=urlparse(resolved)
     local=parsed.hostname in ('127.0.0.1','localhost')
     unconfigured=url is None and not os.environ.get('FRAMEVIZ_HOST')
-    info=read_discovery_file() if local and (unconfigured or parsed.port in (None,9527)) else None
+    info=read_discovery_file() if local else None
+    if info and info.get("port") != (parsed.port or 9527):
+        info = None
     live=False
     if info and isinstance(info.get('pid'),int) and isinstance(info.get('port'),int):
         live=host._pid_is_running(info['pid']) and host._is_port_open('127.0.0.1',info['port'])
@@ -2528,7 +2590,8 @@ def _connect_runtime(url: Optional[str], timeout: float, prefer_browser: bool, a
         client.close()
         if not local or host._is_port_open(parsed.hostname,parsed.port or 9527):raise
         if not _should_auto_start_ws():raise RuntimeError('FrameViz automatic startup is disabled (FRAMEVIZ_AUTO_START_WS=0)')
-        resolved=host.start_host(ws_url=resolved,timeout=timeout,headless=True,prefer_browser=prefer_browser)
+        resolved=host.start_host(ws_url=resolved, ws_port=None if unconfigured else parsed.port or 9527,
+                                 timeout=timeout, headless=True, prefer_browser=prefer_browser)
         client=FrameVizClient(url=resolved,timeout=timeout,**({} if auto_events else {'auto_events':False}))
         client.connect()
         return client,resolved
@@ -2606,6 +2669,24 @@ def _resolve_connect_target(
     )
 
 
+def list_hosts() -> List[Dict[str, Any]]:
+    """List live local runtimes in the selected state directory without credentials."""
+    from .discovery import local_host_records
+
+    results = []
+    for record in local_host_records():
+        client = FrameVizClient(url=record["ws_url"], token=record["token"], timeout=.5, auto_events=False)
+        try:
+            client.connect()
+            client.send_command("list_views", {})
+        except Exception:
+            continue
+        finally:
+            client.close()
+        results.append({key: record[key] for key in ("pid", "port", "ws_url", "version", "started_at_ms")})
+    return sorted(results, key=lambda item: (item["started_at_ms"], item["port"]), reverse=True)
+
+
 def _resolve_connection_url(url: Optional[str]) -> str:
     """
     Resolve connection URL for connect flows.
@@ -2616,11 +2697,16 @@ def _resolve_connection_url(url: Optional[str]) -> str:
     3. Default localhost URL
     Then apply discovery-based port resolution for localhost defaults.
     """
-    if url is None:
-        url = os.environ.get("FRAMEVIZ_HOST")
-    if url is None:
-        url = DEFAULT_WS_URL
-    return _resolve_ws_url(url, allow_discovery=True)
+    if url is not None:
+        return url
+    configured = os.environ.get("FRAMEVIZ_HOST")
+    if configured:
+        return configured
+    discovered = _resolve_ws_url(DEFAULT_WS_URL, allow_discovery=True)
+    if discovered != DEFAULT_WS_URL:
+        return discovered
+    hosts = list_hosts()
+    return hosts[0]["ws_url"] if hosts else discovered
 
 
 def connect(
@@ -2759,23 +2845,16 @@ def _viewer_link(viewer_url: str, view_id: str, ws_port=None, performance_mode=N
 def _wait_for_viewer(
     client: FrameVizClient, view_id: str, timeout: float = 10.0
 ) -> bool:
-    """
-    Wait for the viewer with the specified view_id to connect.
+    """Poll the live binding without consuming notifications from the event queue."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if client.send_command("get_viewer_status", {"view_id": view_id})["ready"]:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(.05, remaining))
 
-    Args:
-        client: The FrameViz client instance
-        view_id: The view ID to wait for
-        timeout: Maximum time to wait in seconds
-
-    Returns:
-        True if viewer connected, False if timeout
-    """
-    event = client.wait_for_event(
-        "viewer_ready",
-        timeout=timeout,
-        filter_fn=lambda data: data.get("view_id") == view_id,
-    )
-    return event is not None
 
 
 def _try_open_tauri(view_id: Optional[str] = None) -> bool:
@@ -2799,34 +2878,8 @@ def _try_open_tauri(view_id: Optional[str] = None) -> bool:
     if view_id:
         args = ["--view-id", view_id]
 
-    env_app = os.environ.get("FRAMEVIZ_TAURI_APP")
-    if env_app:
-        if _launch_tauri_path(Path(env_app).expanduser(), args):
-            return True
-
-    repo_root = _get_repo_root()
-
-    if sys.platform == "darwin":
-        for app_path in _get_tauri_app_candidates(repo_root):
-            if _launch_tauri_path(app_path, args):
-                return True
-
-        for bin_path in _get_tauri_exec_candidates(repo_root):
-            if _launch_exec(bin_path, args):
-                return True
-
-        return False
-
-    if sys.platform.startswith("win"):
-        for path in _get_tauri_exec_candidates(repo_root):
-            if _launch_exec(path, args):
-                return True
-        return False
-
-    for path in _get_tauri_exec_candidates(repo_root) + _get_appimage_candidates(repo_root):
-        if _launch_exec(path, args):
-            return True
-    return False
+    binary = host.find_host_executable(native_only=True)
+    return binary is not None and _launch_exec(binary, args)
 
 
 def _try_open_tauri_window(
@@ -3010,15 +3063,6 @@ def _get_tauri_control_port() -> int:
     return DEFAULT_TAURI_CONTROL_PORT
 
 
-def _launch_tauri_path(path: Path, args: List[str]) -> bool:
-    if not path.exists():
-        return False
-    if sys.platform == "darwin" and path.suffix == ".app":
-        inner_bin = _get_macos_app_executable(path)
-        return inner_bin is not None and _launch_exec(inner_bin, args)
-    return _launch_exec(path, args)
-
-
 def _launch_macos_app(app: str, args: List[str]) -> bool:
     cmd = ["open", "-a", app]
     if args:
@@ -3038,7 +3082,7 @@ def _run_process(cmd: List[str]) -> bool:
         kwargs: Dict[str, Any] = {
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
-            "stdin": subprocess.DEVNULL,
+            **_sdk_host_stdio(),
             "close_fds": True,
         }
         if os.name == "posix":
@@ -3048,7 +3092,6 @@ def _run_process(cmd: List[str]) -> bool:
             **kwargs,
         )
         _AUTO_TAURI_PROCS.append(proc)
-        _register_auto_tauri_atexit()
     except OSError:
         return False
     return True

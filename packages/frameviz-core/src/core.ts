@@ -1,3 +1,4 @@
+import { WidgetPanel, type WidgetDefinition } from './WidgetPanel.js';
 import { restoreSceneObject } from './snapshot.js';
 import * as THREE from "three";
 import { GeometryFactory, type Pose, type ColorArray } from "./GeometryFactory.js";
@@ -43,18 +44,27 @@ export class FrameVizCore {
   private labelManager?: LabelManager;
   private renderModeManager?: RenderModeManager;
   private cameraController?: CameraController;
+  private cameraViewDirty = false;
   private gizmoManager?: GizmoManager;
   private pickingManager?: PickingManager;
   private meshLoader?: MeshLoader;
+  private widgetPanel?: WidgetPanel;
+  private widgetPanelEnabled = false;
+  private widgetPanelViewEnabled = true;
+  private environmentVisibility: { showGrid?: boolean; showAxes?: boolean } = {};
+  private environmentOverride: { showGrid?: boolean; showAxes?: boolean } = {};
   private keyboardShortcutsEnabled = true;
+  private viewKeyboardShortcutsEnabled = true;
   private keydownHandler?: (event: KeyboardEvent) => void;
 
   private objects = new Map<string, THREE.Object3D>();
+  private frames = new Map<string, THREE.Group>();
   private overlays2d = new Map<string, HTMLElement>();
   private buffers = new Map<string, BufferEntry>();
   private pendingRenders: PendingRender[] = [];
   private deferredMutations = new Map<string, Array<[string, Record<string, unknown>]>>();
   private pendingLoads = new Map<string, number>();
+  private failedModels = new Set<string>();
   private loadTokenCounter = 0;
 
   constructor(options: FrameVizCoreOptions = {}) {
@@ -64,12 +74,19 @@ export class FrameVizCore {
     this.keyboardShortcutsEnabled = options.keyboardShortcuts !== false;
 
     if (options.container) {
+      this.widgetPanelEnabled = options.showWidgetPanel === true;
+      this.widgetPanel = new WidgetPanel(options.container, (widget_id, value, phase) => {
+        this.options.onCommand?.("set_widget_value", { widget_id, value, phase });
+      });
+      this.setWidgetPanelEnabled(this.widgetPanelEnabled);
       this.sceneManager = new SceneManager({
         container: options.container,
         canvas: options.canvas,
         performanceMode: options.performanceMode,
         background: options.background,
       });
+      const { showGrid, showAxes } = this.sceneManager.getEnvironment();
+      this.environmentVisibility = { showGrid, showAxes };
       this.geometryFactory = new GeometryFactory();
       this.labelManager = new LabelManager();
       this.renderModeManager = new RenderModeManager();
@@ -78,63 +95,14 @@ export class FrameVizCore {
         domElement: this.sceneManager.renderer.domElement,
       });
       this.cameraController.setObjectsProvider(() => this.objects);
+      this.watchCameraView();
       this.gizmoManager = new GizmoManager(
         this.sceneManager.camera,
         this.sceneManager.renderer.domElement,
         this.cameraController.controls,
         this.sceneManager.scene
       );
-      this.gizmoManager.setTransformChangeCallback((handle, pose) => {
-        const obj = this.objects.get(handle);
-        if (!obj) {
-          return;
-        }
-        const normalizedPose: Pose = {
-          pos: [pose.pos[0], pose.pos[1], pose.pos[2]],
-          quat: [pose.quat[0], pose.quat[1], pose.quat[2], pose.quat[3]],
-          scale: [pose.scale[0], pose.scale[1], pose.scale[2]],
-        };
-        const groupId = obj.userData?.group_id as string | undefined;
-        const targets: string[] = [];
-        if (groupId) {
-          for (const [objHandle, objEntry] of this.objects) {
-            if ((objEntry?.userData?.group_id as string | undefined) === groupId) {
-              targets.push(objHandle);
-            }
-          }
-        } else {
-          targets.push(handle);
-        }
-        if (targets.length > 1) {
-          const items = [];
-          for (const target of targets) {
-            const targetObj = this.objects.get(target);
-            if (targetObj) {
-              this.geometryFactory?.applyPose(targetObj, normalizedPose);
-            }
-            items.push({ handle: target, pose: normalizedPose });
-          }
-          this.emitCommand("set_object_transforms", { items });
-        } else {
-          const target = targets[0];
-          const targetObj = this.objects.get(target);
-          if (targetObj) {
-            this.geometryFactory?.applyPose(targetObj, normalizedPose);
-          }
-          const sceneId = targetObj?.userData?.scene_id as string | undefined;
-          this.emitCommand("set_transform", {
-            handle: target,
-            scene_id: sceneId,
-            pose: normalizedPose,
-          });
-        }
-        this.emitEvent("transformed", {
-          view_id: this.viewId,
-          handle: groupId ?? handle,
-          pose: { pos: normalizedPose.pos, quat: normalizedPose.quat },
-          scale: normalizedPose.scale,
-        });
-      });
+      this.gizmoManager.setTransformChangeCallback((handle, pose) => this.onGizmoTransform(handle, pose));
       this.pickingManager = new PickingManager({
         scene: this.sceneManager.scene,
         camera: this.sceneManager.camera,
@@ -148,6 +116,18 @@ export class FrameVizCore {
     if (this.keyboardShortcutsEnabled) {
       this.enableKeyboardShortcuts();
     }
+  }
+
+  setEnvironmentVisibilityOverride(override: { showGrid?: boolean; showAxes?: boolean }): void {
+    this.environmentOverride = override;
+    this.applyEnvironmentVisibility();
+  }
+
+  private applyEnvironmentVisibility(): void {
+    this.sceneManager?.setEnvironment({
+      showGrid: this.environmentOverride.showGrid ?? this.environmentVisibility.showGrid,
+      showAxes: this.environmentOverride.showAxes ?? this.environmentVisibility.showAxes,
+    });
   }
 
   acceptRevision(revision: unknown): boolean {
@@ -188,14 +168,12 @@ export class FrameVizCore {
   }
 
   getObjectCount(options: { grouped?: boolean } = {}): number {
+    const emptyNodes = [...this.frames.values()].filter(frame => frame.userData.emptyNode).length;
     if (!options.grouped) {
-      return this.objects.size;
-    }
-    if (this.objects.size === 0) {
-      return 0;
+      return this.objects.size + emptyNodes;
     }
     const groupIds = new Set<string>();
-    let count = 0;
+    let count = emptyNodes;
     for (const obj of this.objects.values()) {
       const groupId = obj.userData?.group_id as string | undefined;
       if (groupId) {
@@ -209,6 +187,15 @@ export class FrameVizCore {
 
   resize(width?: number, height?: number): void {
     this.sceneManager?.resize(width, height);
+  }
+
+  setWidgetPanelEnabled(enabled: boolean): void {
+    this.widgetPanelEnabled = enabled;
+    this.widgetPanel?.setVisible(this.widgetPanelEnabled && this.widgetPanelViewEnabled);
+  }
+
+  restoreWidgets(widgets: WidgetDefinition[]): void {
+    this.widgetPanel?.reset(widgets);
   }
 
   clearBuffers(): void {
@@ -243,23 +230,37 @@ export class FrameVizCore {
     this.gizmoManager = undefined;
     this.pickingManager = undefined;
     this.meshLoader = undefined;
+    this.widgetPanel?.dispose();
+    this.widgetPanel = undefined;
   }
 
+  /** Local viewer preference. A Host View can also disable its built-ins. */
   setKeyboardShortcutsEnabled(enabled: boolean): void {
-    if (this.keyboardShortcutsEnabled === enabled) return;
+    const wasEnabled = this.areKeyboardShortcutsEnabled();
     this.keyboardShortcutsEnabled = enabled;
+    this.updateKeyboardShortcuts(wasEnabled);
+  }
+
+  areKeyboardShortcutsEnabled(): boolean {
+    return this.keyboardShortcutsEnabled && this.viewKeyboardShortcutsEnabled;
+  }
+
+  private updateKeyboardShortcuts(wasEnabled: boolean): void {
+    const enabled = this.areKeyboardShortcutsEnabled();
+    if (enabled === wasEnabled) return;
     if (enabled) {
       this.enableKeyboardShortcuts();
     } else {
       this.disableKeyboardShortcuts();
     }
+    this.options.onKeyboardShortcutsChange?.(enabled);
   }
 
   private enableKeyboardShortcuts(): void {
     if (this.keydownHandler || typeof window === "undefined") return;
     this.keydownHandler = (event: KeyboardEvent) => {
       if (!this.sceneManager || !this.cameraController) return;
-      if (!this.keyboardShortcutsEnabled) return;
+      if (!this.areKeyboardShortcutsEnabled()) return;
 
       const target = event.target as HTMLElement | null;
       if (target?.isContentEditable) return;
@@ -278,7 +279,11 @@ export class FrameVizCore {
           event.preventDefault();
           this.cameraController.resetView(this.objects);
         } else if (key === "w") {
-          this.renderModeManager?.cycleRenderMode(this.objects);
+          const mode = this.renderModeManager?.getNextMode();
+          if (mode) {
+            this.handleCommand("set_render_mode", { mode });
+            this.options.onCommand?.("set_render_mode", { mode });
+          }
         }
         return;
       }
@@ -314,7 +319,7 @@ export class FrameVizCore {
     const deferredHandle = args.handle as string;
     if (deferredHandle && !this.objects.has(deferredHandle) &&
         (this.pendingLoads.has(deferredHandle) || this.pendingRenders.some(p => p.handle === deferredHandle)) &&
-        ['set_transform', 'set_color', 'set_alpha', 'set_visible'].includes(name)) {
+        ['set_color', 'set_alpha'].includes(name)) {
       const changes = this.deferredMutations.get(deferredHandle) ?? [];
       // Only the latest value of each property matters while loading.
       this.deferredMutations.set(deferredHandle, [...changes.filter(([n]) => n !== name), [name, args]]);
@@ -328,7 +333,19 @@ export class FrameVizCore {
       return;
     }
 
+    const created = result.handle as string | undefined;
+    if (created && [
+      "add_node", "add_primitive", "add_points", "add_lines", "add_mesh",
+      "add_instances", "load_mesh", "add_text_3d",
+    ].includes(name)) {
+      this.createFrame(created, args, name === "add_node");
+    }
+
     switch (name) {
+      case "add_node":
+      case "set_object_metadata":
+        // Metadata is authoritative on Host and accompanies interaction events.
+        return;
       case "create_buffer": {
         const bufferId = (result as { buffer_id?: string }).buffer_id ?? (args.buffer_id as string);
         if (!bufferId) return;
@@ -368,49 +385,45 @@ export class FrameVizCore {
             color: cssColor,
             fontSize: height,
           });
-          this.geometryFactory.applyPose(label, (args.pose as Pose) || {});
           label.userData.handle = handle;
           label.userData.scene_id = args.scene_id;
-          this.sceneManager.addObject(handle, label);
-          this.objects.set(handle, label);
+          this.putDrawable(handle, label);
           return;
         }
-        const obj = this.geometryFactory.createPrimitive(ptype as any, params, color);
-        const arrowHasStartEnd = ptype === "arrow" && params.start && params.end;
-        if (!arrowHasStartEnd) {
-          this.geometryFactory.applyPose(obj, (args.pose as Pose) || {});
-        }
+        const shape = this.geometryFactory.createPrimitive(ptype as any, params, color);
+        const obj = ptype === "arrow" && params.start && params.end ? new THREE.Group().add(shape) : shape;
         obj.userData.handle = handle;
         obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-        this.sceneManager.addObject(handle, obj);
-        this.objects.set(handle, obj);
+        this.putDrawable(handle, obj);
         return;
       }
       case "add_points": {
-        const handle = (result as { handle?: string }).handle;
+        const handle = result.handle as string;
         if (!handle) return;
-        const posRef = args.positions as BufferRef;
-        const colRef = args.colors as BufferRef | undefined;
-        const color = this.toColorArray(args.color as number[] | undefined);
+        const chunks = args.chunks as Array<{ positions: BufferRef; colors?: BufferRef }> | undefined;
+        const parts = chunks ?? [{ positions: args.positions as BufferRef, colors: args.colors as BufferRef | undefined }];
         const size = (args.size as number) ?? 1;
-        const groupId = args.group_id as string | undefined;
-        this.enqueueIfMissingBuffers(handle, [posRef, colRef].filter(Boolean) as BufferRef[], () => {
-          const positions = this.getBufferTypedArray(posRef) as Float32Array;
-          const colors = colRef ? (this.getBufferTypedArray(colRef) as Uint8Array) : undefined;
-          const obj = this.geometryFactory!.createPoints(positions, colors, size, colors ? undefined : color);
-          obj.userData.colorBufferId = colRef?.buffer_id;
+        const color = this.toColorArray(args.color as number[] | undefined);
+        const refs = parts.flatMap(part => part.colors ? [part.positions, part.colors] : [part.positions]);
+        this.enqueueIfMissingBuffers(handle, refs, () => {
+          let offset = 0;
+          const points = parts.map(part => {
+            const positions = this.getBufferTypedArray(part.positions) as Float32Array;
+            const colors = part.colors ? this.getBufferTypedArray(part.colors) as Uint8Array : undefined;
+            const points = this.geometryFactory!.createPoints(positions, colors, size, colors ? undefined : color);
+            points.userData.pointOffset = offset;
+            points.userData.hasVertexColors = Boolean(colors);
+            offset += points.geometry.attributes.position.count;
+            return points;
+          });
+          const obj = chunks ? new THREE.Group().add(...points) : points[0];
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
-          if (args.group_id) obj.userData.group_id = args.group_id;
-          if (groupId) {
-            obj.userData.group_id = groupId;
-          }
-          if (colors) {
-            obj.userData.hasVertexColors = true;
-          }
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          obj.userData.group_id = args.group_id;
+          obj.userData.colorBufferIds = parts.flatMap(part => part.colors ? [part.colors.buffer_id] : []);
+          obj.userData.hasVertexColors = parts.some(part => part.colors);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -428,8 +441,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -484,8 +496,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
             obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-            this.sceneManager!.addObject(handle, obj);
-            this.objects.set(handle, obj);
+            this.putDrawable(handle, obj);
             return;
           } else {
             faces = this.getBufferTypedArray(faceRef as BufferRef) as Uint32Array;
@@ -509,8 +520,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -543,8 +553,7 @@ export class FrameVizCore {
           obj.userData.handle = handle;
           obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-          this.sceneManager!.addObject(handle, obj);
-          this.objects.set(handle, obj);
+          this.putDrawable(handle, obj);
         });
         return;
       }
@@ -582,8 +591,7 @@ export class FrameVizCore {
           next.userData = { ...previous.userData, instanceArgs: merged, colorBufferId: merged.colors?.buffer_id };
           this.sceneManager!.removeObject(handle);
           this.disposeObject(previous);
-          this.sceneManager!.addObject(handle, next);
-          this.objects.set(handle, next);
+          this.putDrawable(handle, next);
           if (this.gizmoManager?.getAttachedHandle() === handle) this.gizmoManager.attach(next, handle);
           this.pickingManager?.clearHighlight();
           this.renderModeManager?.cleanupHelpers(this.objects);
@@ -596,16 +604,18 @@ export class FrameVizCore {
         if (!handle) return;
         if (this.objects.has(handle)) return;
         const url = args.url as string;
-        const pose = (args.pose as Pose) || { pos: [0, 0, 0], quat: [0, 0, 0, 1] };
-        const scale = (args.scale as number[]) || [1, 1, 1];
+
         const color = args.color as number[] | undefined;
         if (!this.meshLoader) {
           this.meshLoader = new MeshLoader();
         }
         const token = ++this.loadTokenCounter;
         this.pendingLoads.set(handle, token);
-        this.meshLoader
-          .load(url, { color: color ? [color[0], color[1], color[2]] : undefined })
+        this.failedModels.delete(handle);
+        const model = args.baked_model
+          ? new THREE.ObjectLoader().parseAsync(args.baked_model)
+          : this.meshLoader.load(url, { color: color ? [color[0], color[1], color[2]] : undefined });
+        model
           .then((obj) => {
             if (this.pendingLoads.get(handle) !== token) {
               this.disposeObject(obj);
@@ -616,10 +626,7 @@ export class FrameVizCore {
             obj.userData.handle = handle;
             obj.userData.scene_id = args.scene_id;
           if (args.group_id) obj.userData.group_id = args.group_id;
-            obj.scale.set(scale[0], scale[1], scale[2]);
-            this.geometryFactory?.applyPose(obj, pose);
-            this.sceneManager?.addObject(handle, obj);
-            this.objects.set(handle, obj);
+            this.putDrawable(handle, obj);
             this.replayDeferred(handle);
             this.emitEvent('object_ready', { handle, view_id: this.viewId });
           })
@@ -628,25 +635,35 @@ export class FrameVizCore {
             if (this.pendingLoads.get(handle) === token) {
               this.pendingLoads.delete(handle);
               this.deferredMutations.delete(handle);
+              this.failedModels.add(handle);
               this.emitEvent('object_failed', { handle, view_id: this.viewId, message: String(err) });
             }
           });
         return;
       }
       case "set_transform": {
+        this.setFramePose(args.handle as string, args);
+        return;
+      }
+      case "set_geometry_scale": {
+        this.setFramePose(args.handle as string, args);
+        return;
+      }
+      case "set_parent": {
         const handle = args.handle as string;
-        const obj = this.objects.get(handle);
-        if (obj) {
-          this.geometryFactory.applyPose(obj, (args.pose as Pose) || {});
-        }
+        const frame = this.frames.get(handle);
+        const parent = this.frameParent(result.parent ?? args.parent);
+        if (!frame || !parent || parent === frame) return;
+        parent.add(frame);
+        const drawable = this.objects.get(handle);
+        if (drawable) parent.add(drawable);
+        this.setFramePose(handle, { pose: result.pose ?? args.local_transform });
         return;
       }
       case "set_object_transforms": {
-        const items = args.items as Array<{ handle: string; pose: Pose }>;
+        const items = args.items as Array<Record<string, unknown>>;
         if (Array.isArray(items)) {
-          for (const item of items) {
-            this.handleCommand('set_transform', { handle: item.handle, pose: item.pose });
-          }
+          for (const item of items) this.setFramePose(item.handle as string, item);
         }
         return;
       }
@@ -695,46 +712,11 @@ export class FrameVizCore {
         }
         const obj = this.objects.get(handle);
         if (obj) {
-          const instanceArgs = obj.userData.instanceArgs;
-          if (instanceArgs) {
-            obj.userData.instanceArgs = { ...instanceArgs, color: rgba, alpha: rgba[3] ?? 1 };
-            delete obj.userData.instanceArgs.colors;
-            obj.traverse(child => { if ((child as THREE.InstancedMesh).isInstancedMesh) (child as THREE.InstancedMesh).instanceColor = null; });
-
-          }
-          const removedColor = obj.userData.colorBufferId;
-          if (removedColor) {
-            const ids: string[] = [...(obj.userData.bufferIds ?? [])];
-            const index = ids.lastIndexOf(removedColor);
-            if (index >= 0) ids.splice(index, 1);
-            obj.userData.bufferIds = ids;
-            delete obj.userData.colorBufferId;
-            this.releaseUnusedBuffers([removedColor]);
-          }
-          const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
-          const div = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLDivElement | undefined;
-          if (cssLabel.isCSS2DObject || div) {
-            if (div) {
-              const r = Math.round(rgba[0] * 255);
-              const g = Math.round(rgba[1] * 255);
-              const b = Math.round(rgba[2] * 255);
-              const a = rgba.length >= 4 ? rgba[3] ?? 1 : 1;
-              div.style.color = a < 1 ? `rgba(${r},${g},${b},${a})` : `rgb(${r},${g},${b})`;
-            }
-            return;
-          }
-          // Convert vertex-colored geometry to uniform color when needed
-          if (obj.userData.hasVertexColors === true) {
-            if (obj instanceof THREE.Mesh) {
-              this.convertMeshToUniformColor(obj, rgba);
-            } else if (obj instanceof THREE.Points) {
-              this.convertPointsToUniformColor(obj, rgba);
-            } else {
-              this.applyColor(obj, rgba);
-            }
-            obj.userData.hasVertexColors = false;
-          } else {
-            this.applyColor(obj, rgba);
+          const restoreHighlight = this.pickingManager?.suspendObjectHighlight(handle);
+          try {
+            this.setDrawableColor(obj, rgba);
+          } finally {
+            restoreHighlight?.();
           }
         }
         return;
@@ -745,8 +727,13 @@ export class FrameVizCore {
         if (typeof alpha !== "number" || isNaN(alpha) || alpha < 0 || alpha > 1) return;
         const obj = this.objects.get(handle);
         if (obj) {
-          this.applyAlpha(obj, alpha);
-          if (obj.userData.instanceArgs) obj.userData.instanceArgs.alpha = alpha;
+          const restoreHighlight = this.pickingManager?.suspendObjectHighlight(handle);
+          try {
+            this.applyAlpha(obj, alpha);
+            if (obj.userData.instanceArgs) obj.userData.instanceArgs.alpha = alpha;
+          } finally {
+            restoreHighlight?.();
+          }
         }
         return;
       }
@@ -784,8 +771,10 @@ export class FrameVizCore {
           }
           return;
         }
+        const visible = Boolean(args.visible);
+        const frame = this.frames.get(handle);
+        if (frame) frame.visible = visible;
         if (obj) {
-          const visible = Boolean(args.visible);
           obj.visible = visible;
           (obj as THREE.Object3D & { userData: { userVisible?: boolean } }).userData.userVisible = visible;
           // Re-apply current render mode so points helpers respect visibility.
@@ -816,7 +805,12 @@ export class FrameVizCore {
       }
       case "set_render_mode": {
         const mode = (args.mode as string) || "solid";
-        this.renderModeManager?.setRenderMode(mode as any, this.objects);
+        const resumeHighlight = this.pickingManager?.suspendObjectHighlight();
+        try {
+          this.renderModeManager?.setRenderMode(mode as any, this.objects);
+        } finally {
+          resumeHighlight?.();
+        }
         return;
       }
       case "set_performance_mode": {
@@ -845,6 +839,7 @@ export class FrameVizCore {
             domElement: newCanvas,
           });
           this.cameraController.setObjectsProvider(() => this.objects);
+          this.watchCameraView();
 
           // Restore camera state
           if (savedCameraState) {
@@ -865,17 +860,7 @@ export class FrameVizCore {
             this.cameraController!.controls,
             this.sceneManager.scene
           );
-          this.gizmoManager.setTransformChangeCallback((handle, pose) => {
-            const obj = this.objects.get(handle);
-            const sceneId = obj?.userData?.scene_id as string | undefined;
-            this.emitCommand("set_transform", { handle, scene_id: sceneId, pose });
-            this.emitEvent("transformed", {
-              view_id: this.viewId,
-              handle,
-              pose: { pos: pose.pos, quat: pose.quat },
-              scale: pose.scale,
-            });
-          });
+          this.gizmoManager.setTransformChangeCallback((handle, pose) => this.onGizmoTransform(handle, pose));
         }
 
         // Rebind PickingManager to new canvas
@@ -893,18 +878,25 @@ export class FrameVizCore {
 
         return;
       }
+      case "set_camera_view": {
+        const camera = args.camera_view as Record<string, unknown> | undefined;
+        if (camera) {
+          this.handleCommand("set_camera_pose", camera);
+          const projection = camera.projection as Record<string, unknown> | undefined;
+          if (projection) this.handleCommand("set_camera_controls", projection);
+        }
+        return;
+      }
       case "set_camera_pose": {
         const eye = args.eye as number[] | undefined;
         const target = args.target as number[] | undefined;
         const up = args.up as number[] | undefined;
         if (this.cameraController && eye && target) {
-          const camera = this.cameraController.controls.object;
-          camera.position.set(eye[0], eye[1], eye[2]);
-          if (up && up.length >= 3) {
-            camera.up.set(up[0], up[1], up[2]);
+          if (this.cameraController.setPose(eye, target, up)) {
+            this.watchCameraView();
+            this.gizmoManager?.setOrbitControls(this.cameraController.controls);
           }
-          this.cameraController.controls.target.set(target[0], target[1], target[2]);
-          this.cameraController.controls.update();
+          this.cameraViewDirty = false;
         }
         return;
       }
@@ -958,15 +950,16 @@ export class FrameVizCore {
         return;
       }
       case "set_keyboard_shortcuts": {
-        const enabled = args.enabled as boolean | undefined;
-        if (enabled !== undefined) {
-          this.setKeyboardShortcutsEnabled(Boolean(enabled));
+        if (typeof args.enabled === "boolean") {
+          const wasEnabled = this.areKeyboardShortcutsEnabled();
+          this.viewKeyboardShortcutsEnabled = args.enabled;
+          this.updateKeyboardShortcuts(wasEnabled);
         }
         return;
       }
       case "attach_gizmo": {
         const handle = args.handle as string;
-        const obj = this.objects.get(handle);
+        const obj = this.objects.get(handle) ?? this.frames.get(handle);
         if (!obj || !this.gizmoManager) return;
         this.gizmoManager.attach(obj, handle, {
           size: args.size as number | undefined,
@@ -1046,16 +1039,30 @@ export class FrameVizCore {
         }
         return;
       }
+      case "add_widget":
+        if (result.widget) this.widgetPanel?.add(result.widget as WidgetDefinition);
+        return;
+      case "set_widget_value":
+        if (result.widget) this.widgetPanel?.update(result.widget as WidgetDefinition);
+        return;
+      case "remove_widget":
+        if (Array.isArray(result.removed)) this.widgetPanel?.remove(result.removed);
+        return;
       case "set_view_config": {
         if (!this.sceneManager) return;
         const config = args.config as Record<string, unknown> | undefined;
         if (config) {
+          if (typeof config.show_widgets === "boolean") {
+            this.widgetPanelViewEnabled = config.show_widgets;
+            this.setWidgetPanelEnabled(this.widgetPanelEnabled);
+          }
           const axesLength = (config.axes_length ?? config.axes_size) as number | undefined;
           const axesRadius = config.axes_radius as number | undefined;
+          const showGrid = config.show_grid ?? config.show_ground;
+          if (typeof showGrid === "boolean") this.environmentVisibility.showGrid = showGrid;
+          if (typeof config.show_axes === "boolean") this.environmentVisibility.showAxes = config.show_axes;
+          this.applyEnvironmentVisibility();
           this.sceneManager.setEnvironment({
-            showGrid: config.show_grid as boolean | undefined,
-            showGround: config.show_ground as boolean | undefined,
-            showAxes: config.show_axes as boolean | undefined,
             gridColor: config.grid_color as number[] | undefined,
             gridSubColor: config.grid_sub_color as number[] | undefined,
             axesLength,
@@ -1094,45 +1101,12 @@ export class FrameVizCore {
         }
         return;
       }
-      case "remove_object": {
-        const handle = args.handle as string;
-        const bufferIds = this.objects.get(handle)?.userData.bufferIds ?? [];
-        this.deferredMutations.delete(handle);
-        const obj = this.objects.get(handle);
-        if (obj && this.sceneManager) {
-          const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
-          const labelDiv = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLElement | undefined;
-          if ((cssLabel.isCSS2DObject || labelDiv) && this.labelManager) {
-            this.labelManager.removeLabel(obj as any);
-          }
-          this.disposeObject(obj);
-          this.sceneManager.removeObject(handle);
-          this.objects.delete(handle);
-        }
-        this.removePendingRendersForHandle(handle);
-        this.pendingLoads.delete(handle);
-        if (this.gizmoManager?.getAttachedHandle() === handle) {
-          this.gizmoManager.detach();
-        }
-        if (this.pickingManager) {
-          const info = this.pickingManager.getLastPickInfo();
-          if (info.handle === handle) {
-            this.pickingManager.clearHighlight();
-          }
-        }
-        const overlay = this.overlays2d.get(handle);
-        if (overlay) {
-          overlay.remove();
-          this.overlays2d.delete(handle);
-        }
-        this.releaseUnusedBuffers(bufferIds);
-        return;
-      }
+      case "remove_object":
+      case "remove_text_3d":
       case "remove_objects": {
-        const handles = (args.handles as string[]) || [];
-        for (const handle of handles) {
-          this.handleCommand("remove_object", { handle }, {});
-        }
+        const roots = name === "remove_objects" ? args.handles as string[] : [args.handle as string];
+        const handles = Array.isArray(result.removed) ? result.removed as string[] : this.subtreeHandles(roots);
+        for (const handle of handles) this.removeDrawableAndFrame(handle);
         return;
       }
       case "clone_object": {
@@ -1146,13 +1120,20 @@ export class FrameVizCore {
           if (result.object) restoreSceneObject(this, result.object);
           return;
         }
-        const cloned = source.clone(true);
+        const resumeHighlight = this.pickingManager?.suspendObjectHighlight(sourceHandle);
+        let cloned: THREE.Object3D;
+        try {
+          cloned = source.clone(true);
+        } finally {
+          resumeHighlight?.();
+        }
         cloned.traverse((child) => {
           const mesh = child as THREE.Mesh;
           if (mesh.geometry) mesh.geometry = mesh.geometry.clone();
           if (mesh.material) {
             const cloneMaterial = (material: THREE.Material) => {
               const copy = material.clone();
+              this.renderModeManager?.restoreBaseWireframe(material, copy);
               for (const key in copy) {
                 const value = (copy as any)[key];
                 if (value?.isTexture) (copy as any)[key] = value.clone();
@@ -1162,22 +1143,31 @@ export class FrameVizCore {
             mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cloneMaterial) : cloneMaterial(mesh.material);
           }
         });
+        const original = this.frames.get(sourceHandle);
+        const record = result.object as Record<string, unknown> | undefined;
+        this.createFrame(handle, record ?? {
+          parent: original?.parent?.userData.sceneNodeHandle,
+          scene_id: source.userData.scene_id,
+          pose: { pos: source.position.toArray(), quat: source.quaternion.toArray() },
+          geometry_scale: source.scale.toArray(),
+        });
+        this.frames.get(handle)!.visible = source.userData.userVisible ?? source.visible;
         cloned.userData.handle = handle;
         cloned.userData.scene_id = source.userData.scene_id;
         const groupId = args.group_id as string | undefined;
         if (groupId) {
           cloned.userData.group_id = groupId;
         }
-        this.sceneManager?.addObject(handle, cloned);
-        this.objects.set(handle, cloned);
+        this.putDrawable(handle, cloned);
         this.emitEvent('object_ready', { handle, view_id: this.viewId });
         return;
       }
       case "clear_scene": {
-        this.clearSceneContents();
+        this.clearSceneContents(!args.view_id || args.view_id === this.viewId);
         return;
       }
       case "destroy_scene": {
+        this.widgetPanel?.reset([]);
         const sceneId = args.scene_id as string | undefined;
         this.clearSceneContents();
         if (sceneId) {
@@ -1195,8 +1185,9 @@ export class FrameVizCore {
         if (viewId) {
           this.views.delete(viewId);
           if (this.viewId === viewId) {
-            this.viewId = undefined;
+            this.setViewId(undefined);
             this.clearSceneContents();
+            this.widgetPanel?.reset([]);
             // Only the owning viewer should signal that local teardown is done.
             this.emitEvent("view_destroyed", { view_id: viewId });
           }
@@ -1217,13 +1208,12 @@ export class FrameVizCore {
         });
         label.userData.handle = handle;
         label.userData.scene_id = args.scene_id;
-        if (this.sceneManager) {
-          this.sceneManager.addObject(handle, label);
-        }
-        this.objects.set(handle, label);
+        this.putDrawable(handle, label);
         return;
       }
       case "update_text_3d": {
+        const pos = args.pos as [number, number, number] | undefined;
+        if (pos) this.setFramePose(args.handle as string, { pose: { pos } });
         const label = this.objects.get(args.handle as string);
         if (label && this.labelManager) {
           this.labelManager.updateLabel(label as any, {
@@ -1232,16 +1222,6 @@ export class FrameVizCore {
             color: args.color as [number, number, number] | undefined,
             fontSize: args.font_size as number | undefined,
           });
-        }
-        return;
-      }
-      case "remove_text_3d": {
-        const handle = args.handle as string;
-        const label = this.objects.get(handle);
-        if (label) {
-          this.labelManager?.removeLabel(label as any);
-          this.sceneManager?.removeObject(handle);
-          this.objects.delete(handle);
         }
         return;
       }
@@ -1335,12 +1315,82 @@ export class FrameVizCore {
     }
   }
 
+  /**
+   * Inline the buffers and compiled mesh assets from an isolated capture snapshot.
+   * The offline viewer can replay the resulting display data without any network.
+   */
+  prepareTutorialSnapshot(snapshot: Record<string, any>): Record<string, unknown> {
+    const buffers: Record<string, unknown> = {};
+    for (const [id, info] of Object.entries(snapshot.buffers ?? {}) as [string, Record<string, unknown>][]) {
+      if (typeof info.data_base64 === 'string') {
+        buffers[id] = info;
+        continue;
+      }
+      const data = this.buffers.get(id)?.data;
+      if (!data) throw new Error(`Missing geometry buffer ${id}`);
+      const bytes = ArrayBuffer.isView(data)
+        ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        : new Uint8Array(data);
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 32768) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+      }
+      buffers[id] = { ...info, data_base64: btoa(binary) };
+    }
+
+    const objects = (snapshot.objects ?? []).map((object: any) => {
+      if (object.object_type !== 'loaded_mesh') return object;
+      const drawable = this.objects.get(object.handle);
+      if (!drawable) throw new Error(`Missing loaded model ${object.handle}`);
+      const baked = drawable.toJSON();
+      for (const image of baked.images ?? []) {
+        const sources = Array.isArray(image.url) ? image.url : [image.url];
+        if (sources.some((source: unknown) => typeof source === 'string' && !source.startsWith('data:'))) {
+          throw new Error(`Model ${object.handle} has an image that cannot be embedded`);
+        }
+      }
+      const { url: _, ...data } = object.data;
+      return { ...object, data: { ...data, baked_model: baked } };
+    });
+
+    return {
+      scene_id: snapshot.scene_id, objects, buffers, view_config: snapshot.view_config,
+      camera_pose: snapshot.camera_pose, camera_controls: snapshot.camera_controls,
+      render_mode: snapshot.render_mode, overlays: snapshot.overlays,
+    };
+  }
+
+  getRenderStatus(): { ready: boolean; failed: string[] } {
+    return {
+      ready: this.pendingLoads.size === 0 && this.pendingRenders.length === 0,
+      failed: [...this.failedModels],
+    };
+  }
+
   render(): void {
     if (!this.sceneManager) return;
     this.cameraController?.controls.update();
     this.sceneManager.updateClipPlanes(this.cameraController?.controls.target);
     this.sceneManager.render();
     this.renderModeManager?.cleanupHelpers(this.objects);
+    if (this.cameraViewDirty) {
+      this.cameraViewDirty = false;
+      const camera = this.getCameraView();
+      if (camera && this.viewId) this.emitEvent("camera_view_changed", { ...camera, revision: this.sceneRevision });
+    }
+  }
+
+  private watchCameraView(): void {
+    this.cameraController?.controls.addEventListener?.("change", () => {
+      this.cameraViewDirty = true;
+    });
+  }
+
+  getCameraView() {
+    const pose = this.getCameraPose();
+    const camera = this.sceneManager?.camera;
+    if (!pose || !camera) return null;
+    return { ...pose, projection: { type: "perspective", fov: camera.fov } };
   }
 
   getCameraPose(): { eye: number[]; target: number[]; up: number[] } | null {
@@ -1587,22 +1637,138 @@ export class FrameVizCore {
     }
   }
 
-  private clearSceneContents(): void {
+  private frameParent(parent: unknown): THREE.Object3D | undefined {
+    return typeof parent === "string" ? this.frames.get(parent) : this.sceneManager?.scene;
+  }
+
+  private createFrame(handle: string, args: Record<string, unknown>, empty = false): void {
+    if (this.frames.has(handle)) return;
+    const frame = new THREE.Group();
+    frame.userData.sceneNodeHandle = handle;
+    frame.userData.scene_id = args.scene_id;
+    frame.userData.emptyNode = empty;
+    this.frames.set(handle, frame);
+    this.frameParent(args.parent)?.add(frame);
+    this.setFramePose(handle, args);
+  }
+
+  private setFramePose(handle: string, args: Record<string, unknown>): void {
+    const input = args.pose as (Pose & { position?: Pose["pos"]; quaternion?: Pose["quat"] }) | number[] | undefined;
+    const pose: Pose = Array.isArray(input)
+      ? { pos: [input[0], input[1], input[2]], quat: [input[3], input[4], input[5], input[6]] }
+      : { pos: input?.position ?? input?.pos ?? args.pos as Pose["pos"], quat: input?.quaternion ?? input?.quat };
+    const scale = (args.geometry_scale ?? (Array.isArray(input) ? undefined : input?.scale) ?? args.scale) as Pose["scale"];
+    const frame = this.frames.get(handle);
+    if (frame) {
+      this.geometryFactory?.applyPose(frame, pose);
+      if (scale) frame.userData.geometryScale = scale;
+    }
+    const drawable = this.objects.get(handle);
+    if (drawable) this.geometryFactory?.applyPose(drawable, { ...pose, scale });
+  }
+
+  private putDrawable(handle: string, drawable: THREE.Object3D): void {
+    this.sceneManager?.addObject(handle, drawable);
+    this.objects.set(handle, drawable);
+    const frame = this.frames.get(handle);
+    if (!frame) return;
+    // Drawables and the unscaled frame are siblings. Child nodes attach to the frame.
+    frame.parent?.add(drawable);
+    drawable.position.copy(frame.position);
+    drawable.quaternion.copy(frame.quaternion);
+    if (frame.userData.geometryScale) drawable.scale.fromArray(frame.userData.geometryScale);
+    drawable.visible = frame.visible;
+    drawable.userData.userVisible = frame.visible;
+    this.renderModeManager?.applyToObject(drawable);
+  }
+
+  private onGizmoTransform(handle: string, value: { pos: number[]; quat: number[]; scale: number[] }): void {
+    const drawable = this.objects.get(handle);
+    const frame = this.frames.get(handle);
+    if (!frame && !drawable) return;
+    const pose = { pos: value.pos, quat: value.quat };
+    const groupId = drawable?.userData.group_id as string | undefined;
+    const sceneId = frame?.userData.scene_id ?? drawable?.userData.scene_id;
+    const args = { pose, scene_id: sceneId, ...(drawable && { geometry_scale: value.scale }) };
+    if (!drawable) frame?.scale.set(1, 1, 1);
+    if (groupId) {
+      const items = [...this.objects].filter(([, obj]) => obj.userData.group_id === groupId)
+        .map(([handle]) => ({ ...args, handle }));
+      for (const item of items) this.setFramePose(item.handle, item);
+      this.emitCommand("set_object_transforms", { scene_id: sceneId, items });
+    } else {
+      this.setFramePose(handle, args);
+      this.emitCommand("set_transform", { ...args, handle });
+    }
+    this.emitEvent("transformed", {
+      view_id: this.viewId, handle: groupId ?? handle, pose, ...(drawable && { scale: value.scale }),
+    });
+  }
+
+  private subtreeHandles(roots: string[]): string[] {
+    const handles = new Set(roots);
+    for (const root of roots) {
+      this.frames.get(root)?.traverse(frame => {
+        const handle = frame.userData.sceneNodeHandle;
+        if (this.frames.get(handle) === frame) handles.add(handle);
+      });
+    }
+    return [...handles];
+  }
+
+  private removeDrawableAndFrame(handle: string): void {
+    const bufferIds = [
+      ...(this.objects.get(handle)?.userData.bufferIds ?? []),
+      ...this.pendingRenders.filter(render => render.handle === handle).flatMap(render => render.bufferIds),
+    ];
+    this.frames.get(handle)?.removeFromParent();
+    this.frames.delete(handle);
+    this.deferredMutations.delete(handle);
+    if (this.pickingManager?.getLastPickInfo().handle === handle) this.pickingManager.clearHighlight();
+    const obj = this.objects.get(handle);
+    if (obj && this.sceneManager) {
+      const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
+      const labelDiv = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLElement | undefined;
+      if ((cssLabel.isCSS2DObject || labelDiv) && this.labelManager) {
+        this.labelManager.removeLabel(obj as any);
+      }
+      this.disposeObject(obj);
+      this.sceneManager.removeObject(handle);
+      this.objects.delete(handle);
+    }
+    this.removePendingRendersForHandle(handle);
+    this.pendingLoads.delete(handle);
+    this.failedModels.delete(handle);
+    if (this.gizmoManager?.getAttachedHandle() === handle) {
+      this.gizmoManager.detach();
+    }
+    const overlay = this.overlays2d.get(handle);
+    if (overlay) {
+      overlay.remove();
+      this.overlays2d.delete(handle);
+    }
+    this.releaseUnusedBuffers(bufferIds);
+  }
+
+  private clearSceneContents(clearOverlays = true): void {
     if (!this.sceneManager) return;
+    this.pickingManager?.clearHighlight();
     for (const [handle, obj] of this.objects) {
       this.disposeObject(obj);
       this.sceneManager.removeObject(handle);
     }
     this.objects.clear();
+    for (const frame of this.frames.values()) frame.removeFromParent();
+    this.frames.clear();
     this.gizmoManager?.detach();
-    this.pickingManager?.clearHighlight();
-    for (const overlay of this.overlays2d.values()) {
-      overlay.remove();
+    if (clearOverlays) {
+      for (const overlay of this.overlays2d.values()) overlay.remove();
+      this.overlays2d.clear();
     }
-    this.overlays2d.clear();
     this.renderModeManager?.cleanupHelpers(this.objects);
     this.pendingRenders = [];
     this.pendingLoads.clear();
+    this.failedModels.clear();
     this.deferredMutations.clear();
     this.buffers.clear();
   }
@@ -1665,6 +1831,59 @@ export class FrameVizCore {
         return data instanceof Uint8Array ? data : new Uint8Array(buffer);
       default:
         return data instanceof Uint8Array ? data : new Uint8Array(buffer);
+    }
+  }
+
+  private setDrawableColor(obj: THREE.Object3D, rgba: number[]): void {
+    const instanceArgs = obj.userData.instanceArgs;
+    if (instanceArgs) {
+      obj.userData.instanceArgs = { ...instanceArgs, color: rgba, alpha: rgba[3] ?? 1 };
+      delete obj.userData.instanceArgs.colors;
+      obj.traverse(child => { if ((child as THREE.InstancedMesh).isInstancedMesh) (child as THREE.InstancedMesh).instanceColor = null; });
+    }
+    const removedColors: string[] = obj.userData.colorBufferIds ??
+      (obj.userData.colorBufferId ? [obj.userData.colorBufferId] : []);
+    if (removedColors.length > 0) {
+      const ids: string[] = [...(obj.userData.bufferIds ?? [])];
+      for (const id of removedColors) {
+        const index = ids.lastIndexOf(id);
+        if (index >= 0) ids.splice(index, 1);
+      }
+      obj.userData.bufferIds = ids;
+      delete obj.userData.colorBufferId;
+      delete obj.userData.colorBufferIds;
+      this.releaseUnusedBuffers(removedColors);
+    }
+    const cssLabel = obj as THREE.Object3D & { isCSS2DObject?: boolean; element?: HTMLElement };
+    const div = (cssLabel.element || (cssLabel as any).userData?.div) as HTMLDivElement | undefined;
+    if (cssLabel.isCSS2DObject || div) {
+      if (div) {
+        const r = Math.round(rgba[0] * 255);
+        const g = Math.round(rgba[1] * 255);
+        const b = Math.round(rgba[2] * 255);
+        const a = rgba.length >= 4 ? rgba[3] ?? 1 : 1;
+        div.style.color = a < 1 ? `rgba(${r},${g},${b},${a})` : `rgb(${r},${g},${b})`;
+      }
+      return;
+    }
+    // Convert vertex-colored geometry to uniform color when needed
+    if (obj.userData.hasVertexColors === true) {
+      if (obj instanceof THREE.Mesh) {
+        this.convertMeshToUniformColor(obj, rgba);
+      } else if (obj instanceof THREE.Points) {
+        this.convertPointsToUniformColor(obj, rgba);
+      } else {
+        obj.traverse(child => {
+          if (child instanceof THREE.Points && child.userData.hasVertexColors) {
+            this.convertPointsToUniformColor(child, rgba);
+            child.userData.hasVertexColors = false;
+          }
+        });
+        this.applyColor(obj, rgba);
+      }
+      obj.userData.hasVertexColors = false;
+    } else {
+      this.applyColor(obj, rgba);
     }
   }
 

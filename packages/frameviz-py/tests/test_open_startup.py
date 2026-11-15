@@ -74,6 +74,25 @@ def test_no_runtime_error_contains_platform_installation_guidance(monkeypatch,tm
     with pytest.raises(RuntimeError,match='apt install|INSTALLATION.md'):host.start_host(timeout=.1)
 
 
+@pytest.mark.parametrize('missing_override', [False, True])
+def test_windows_runtime_errors_explain_installed_app_path(monkeypatch, tmp_path, missing_override):
+    monkeypatch.setattr(host.sys, 'platform', 'win32')
+    monkeypatch.setattr(host, '_get_repo_root', lambda: None)
+    monkeypatch.setattr(host, '_standalone_candidates', lambda _: [])
+    monkeypatch.setenv('FRAMEVIZ_DISCOVERY_PATH', str(tmp_path / 'host.json'))
+    for key in ('FRAMEVIZ_HOST_PATH', 'FRAMEVIZ_TAURI_APP', 'FRAMEVIZ_WS_SERVER_CMD'):
+        monkeypatch.delenv(key, raising=False)
+    if missing_override:
+        monkeypatch.setenv('FRAMEVIZ_TAURI_APP', str(tmp_path / 'missing.exe'))
+    with pytest.raises(RuntimeError) as error:
+        host.start_host(timeout=.1)
+    message = str(error.value)
+    assert "$env:FRAMEVIZ_TAURI_APP" in message
+    assert 'frameviz.exe' in message and '#windows-x64-trial' in message
+    if missing_override:
+        assert 'missing.exe' in message
+
+
 def test_source_and_installed_runtime_search_respects_explicit_host_path(tmp_path,monkeypatch):
     binary=tmp_path/'frameviz-server';binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o755)
     monkeypatch.setenv('FRAMEVIZ_HOST_PATH',str(binary))
@@ -139,3 +158,13 @@ def test_public_open_exposes_manual_callback_mode(context,monkeypatch):
     monkeypatch.setattr(implementation,'FrameVizClient',factory)
     implementation.open(window_mode=0,auto_events=False)
     assert options[0]['auto_events'] is False
+
+
+def test_explicit_environment_endpoint_is_not_replaced_by_discovery(context, monkeypatch):
+    _, discovery = context
+    discovery.write_text(json.dumps({
+        "ws_url": "ws://127.0.0.1:18355", "port": 18355, "pid": os.getpid(), "version": "0.5.0",
+    }))
+    monkeypatch.setattr(internal, "_resolve_discovery_port", lambda _: 18355)
+    monkeypatch.setenv("FRAMEVIZ_HOST", "ws://127.0.0.1:9527")
+    assert implementation._resolve_connection_url(None) == "ws://127.0.0.1:9527"

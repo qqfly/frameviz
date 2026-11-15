@@ -34,7 +34,7 @@ def run():
                     try:
                         viewer.recv(timeout=.2); raise AssertionError('Duplicate command delivery')
                     except TimeoutError: pass
-                    viewer.send(json.dumps({'protocol_version':'0.4.0','type':'cmd','id':'attack','name':'destroy_scene','args':{'scene_id':scene}}))
+                    viewer.send(json.dumps({'protocol_version':'0.5.0','type':'cmd','id':'attack','name':'destroy_scene','args':{'scene_id':scene}}))
                     denied=json.loads(viewer.recv(timeout=2)); assert not denied['ok']
                 try:
                     with connect(url,origin='https://untrusted.example'): raise AssertionError('Origin was accepted')

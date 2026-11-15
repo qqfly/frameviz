@@ -18,6 +18,11 @@
       "duration_seconds": 7.266666666666667,
       "sources": [
         "examples/python/01_basic_primitives/use_colors_and_transparency.py",
+        "examples/python/05_scene/use_batch_transforms.py",
+        "examples/python/05_scene/use_object_lifecycle.py"
+      ],
+      "original_sources": [
+        "examples/python/01_basic_primitives/use_colors_and_transparency.py",
         "examples/python/01_basic_primitives/use_batch_transforms_and_view_status.py",
         "examples/python/01_basic_primitives/use_resource_cleanup.py"
       ]
@@ -33,71 +38,100 @@
       "sources": [
         "packages/frameviz-py/frameviz/viz.py",
         "packages/frameviz-cpp/include/frameviz/viz.hpp"
-      ]
+      ],
+      "example": "examples/python/01_basic_primitives/hello_world.py"
     },
     {
       "file": "instancing.webp",
-      "bytes": 1370672,
-      "sha256": "86231a071797e6bc5a94c9c1341e5ddbdc9da623859ca70d43a0b30345e5bab4",
+      "bytes": 2880,
+      "sha256": "8147344094bc6e75f737bf02047a04e0d08b44f653584bbc01d957f02fd01859",
       "width": 960,
       "height": 600,
-      "sample_fps": 12,
-      "duration_seconds": 6.333333333333333,
+      "sample_fps": null,
+      "duration_seconds": 3.2,
       "sources": [
-        "examples/python/05_developer_features/showcase.py",
         "examples/python/01_basic_primitives/use_instancing.py"
-      ]
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "b367359a03f022ad82ec992de2912802b0f012b4",
+        "host_executable_sha256": "919fe9e5250f2c6036a006d0bb8250d0f31d3cbcc93af5f260a8f4d648f5ae6d",
+        "method": "State-by-state screenshots of the real Viewer in Chrome; WebP frames have explicit holds."
+      }
     },
     {
       "file": "labels-model.webp",
-      "bytes": 322398,
-      "sha256": "e69d1c7cbe30feae396a9c0d20a610563041f73a6ff66402604a9dcde2c3fad0",
+      "bytes": 5890,
+      "sha256": "49070482514fb19fee8752074d527315a5ea6d03a9dccc73b982e37f922e6038",
       "width": 960,
       "height": 600,
-      "sample_fps": 12,
-      "duration_seconds": 4.75,
+      "sample_fps": null,
+      "duration_seconds": 3.0,
       "sources": [
-        "examples/python/05_developer_features/showcase.py"
-      ]
+        "examples/python/01_basic_primitives/use_load_mesh_and_labels.py",
+        "examples/python/01_basic_primitives/serve_sample_mesh.py"
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "b367359a03f022ad82ec992de2912802b0f012b4",
+        "host_executable_sha256": "a55b70260722b2dad674651e6e4eafd09c71bb63ac684dedb05e9fac08d99003",
+        "method": "Chrome screenshots of the standalone Host's embedded Viewer before and after moving the bundled pyramid."
+      }
     },
     {
       "file": "mesh-colors.webp",
-      "bytes": 496766,
-      "sha256": "1ffb0c01c6143efdd23f3745d08bd3c880662a10ee01ea015f9cd04c0c8812e7",
+      "bytes": 2152,
+      "sha256": "e0e122f91db8c2eb5b3bfd4116cb79d1bb5b35768b8fee705b0d10e4ad8c47c0",
       "width": 960,
       "height": 600,
-      "sample_fps": 12,
-      "duration_seconds": 4.583333333333333,
+      "sample_fps": null,
+      "duration_seconds": 3.6,
       "sources": [
-        "examples/python/05_developer_features/showcase.py",
-        "examples/python/01_basic_primitives/use_mesh_color_modes.py"
-      ]
+        "examples/python/01_basic_primitives/use_mesh_color_modes.py",
+        "examples/python/01_basic_primitives/use_mesh_transparency.py"
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "b367359a03f022ad82ec992de2912802b0f012b4",
+        "host_executable_sha256": "919fe9e5250f2c6036a006d0bb8250d0f31d3cbcc93af5f260a8f4d648f5ae6d",
+        "method": "State-by-state screenshots of the real Viewer in Chrome; WebP frames have explicit holds."
+      }
     },
     {
       "file": "multi-view.webp",
-      "bytes": 312922,
-      "sha256": "1b74a3c4120e9b415c891ee1446c53435b0d507b477ec4e5cae7a4884958d9e3",
+      "bytes": 4308,
+      "sha256": "1fccaa5b382aebaa730d8e7f82bfef0f654808f623f5e391dd26892e3778380a",
       "width": 960,
       "height": 600,
-      "sample_fps": 12,
-      "duration_seconds": 4.75,
+      "sample_fps": null,
+      "duration_seconds": 3.1,
       "sources": [
-        "examples/python/02_camera_views/use_multi_view_demo.py"
-      ]
+        "examples/python/02_camera_views/use_multi_view.py"
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "b367359a03f022ad82ec992de2912802b0f012b4",
+        "host_executable_sha256": "919fe9e5250f2c6036a006d0bb8250d0f31d3cbcc93af5f260a8f4d648f5ae6d",
+        "method": "State-by-state screenshots of the real Viewer in Chrome; WebP frames have explicit holds."
+      }
     },
     {
       "file": "picking-gizmo.webp",
-      "bytes": 252700,
-      "sha256": "61057e65092d2a9c504887afeafcc6b2a0b16a1ce036cb0e4c63d52f744c598a",
+      "bytes": 8970,
+      "sha256": "f7491bb2c31879a0e1294c4844dfb04f8c005c43a1066c828acd918395de09fa",
       "width": 960,
       "height": 600,
-      "sample_fps": 12,
-      "duration_seconds": 4.416666666666667,
+      "sample_fps": null,
+      "duration_seconds": 3.5,
       "sources": [
-        "examples/python/05_developer_features/showcase.py",
-        "examples/python/03_interaction/use_picking_demo.py",
-        "examples/python/03_interaction/use_gizmo_demo.py"
-      ]
+        "examples/python/03_interaction/use_gizmo.py"
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "b367359a03f022ad82ec992de2912802b0f012b4",
+        "host_executable_sha256": "919fe9e5250f2c6036a006d0bb8250d0f31d3cbcc93af5f260a8f4d648f5ae6d",
+        "method": "State-by-state screenshots of the real Viewer in Chrome; WebP frames have explicit holds."
+      }
     },
     {
       "file": "vue-sliders.webp",
@@ -117,17 +151,15 @@
     },
     {
       "file": "so101-joint-controls.webp",
-      "bytes": 1690106,
-      "sha256": "29b1af876f30d9f5d15a7acf2f28b493a71c43876ddad1fe4b2370171be675a2",
+      "bytes": 56090,
+      "sha256": "e65bf5e1230068b680be690345cbc99cc776220180731b0c18953d83f590240c",
       "width": 960,
       "height": 600,
-      "sample_fps": 12,
-      "duration_seconds": 13.25,
-      "playback_speed": 1.5,
+      "sample_fps": null,
+      "duration_seconds": 5.4,
       "sources": [
-        "examples/apps/urdf_robot/src/components/ControlPanel.vue",
-        "packages/frameviz-py/frameviz/viz.py",
-        "packages/frameviz-vue/src/components/FrameVizViewer.vue"
+        "examples/python/04_robotics/extra/so101_display.py",
+        "examples/python/04_robotics/extra/so101_model.py"
       ],
       "model": {
         "name": "The Robot Studio SO101",
@@ -139,7 +171,12 @@
         "description_sha256": "982c02c027ec0c62d3459d0a6eb00dfb7dc13a451992e72ce99addc71f209805",
         "files_in_repository": false
       },
-      "capture_notes": "Real FrameViz rendering and Vue joint panel with capture-only MJCF transform adapter outside the repository. Five arm joints plus gripper. Original capture is played at 1.5x for a short loop; not a rendering/update-rate claim. Fixed camera and hidden origin helpers."
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "b367359a03f022ad82ec992de2912802b0f012b4",
+        "host_executable_sha256": "919fe9e5250f2c6036a006d0bb8250d0f31d3cbcc93af5f260a8f4d648f5ae6d",
+        "method": "State-by-state screenshots of the real Viewer in Chrome; WebP frames have explicit holds."
+      }
     }
   ]
 }

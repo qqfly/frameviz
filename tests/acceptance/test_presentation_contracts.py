@@ -64,7 +64,7 @@ def test_viewer_and_unauthenticated_callers_cannot_present(h):
     denied = h.request(ws, 'present_view', {'browser_session': 'sdk_test', 'view_id': view})
     assert not denied['ok'] and denied['error']['code'] == 'ERR_FORBIDDEN'
     with connect(h.url) as unauthenticated:
-        unauthenticated.send(json.dumps({'type':'cmd','protocol_version':'0.4.0','id':'unauth-present',
+        unauthenticated.send(json.dumps({'type':'cmd','protocol_version':'0.5.0','id':'unauth-present',
             'name':'present_view','args':{'browser_session':'sdk_test','view_id':view}}))
         # The existing authentication contract silently ignores pre-auth commands.
         with pytest.raises(TimeoutError):

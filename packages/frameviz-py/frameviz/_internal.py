@@ -9,12 +9,10 @@ directly by external code.
 
 from __future__ import annotations
 
-import atexit
 import builtins
 import json
 import os
 import plistlib
-import signal
 import shlex
 import socket
 import subprocess
@@ -35,65 +33,15 @@ from .discovery import get_discovery_path, read_discovery_file
 _AUTO_WS_PROCESS: Optional[subprocess.Popen] = None
 _AUTO_WS_LAST_ERROR: Optional[str] = None
 _AUTO_WS_LOG_PATH: Optional[str] = None
-_AUTO_WS_LOG_HANDLE: Optional[Any] = None
-_AUTO_WS_ATEXIT_REGISTERED: bool = False
-_AUTO_WS_PROCESS_GROUP_ID: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WebSocket auto-start helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def _stop_auto_ws_process() -> None:
-    """Best-effort cleanup for auto-started ws process."""
-    global _AUTO_WS_PROCESS
-    global _AUTO_WS_LOG_HANDLE
-    global _AUTO_WS_PROCESS_GROUP_ID
-    proc = _AUTO_WS_PROCESS
-    pgid = _AUTO_WS_PROCESS_GROUP_ID
-    _AUTO_WS_PROCESS = None
-    _AUTO_WS_PROCESS_GROUP_ID = None
-
-    if proc is not None and proc.poll() is None:
-        # On POSIX, terminate the whole process group to avoid orphan children
-        # when FRAMEVIZ_WS_SERVER_CMD launches wrappers/scripts.
-        sent_group_signal = False
-        if pgid is not None and os.name == "posix":
-            try:
-                os.killpg(pgid, signal.SIGTERM)
-                sent_group_signal = True
-            except OSError:
-                pass
-        try:
-            if not sent_group_signal:
-                proc.terminate()
-            proc.wait(timeout=3)
-        except (OSError, subprocess.TimeoutExpired):
-            if pgid is not None and os.name == "posix":
-                try:
-                    os.killpg(pgid, signal.SIGKILL)
-                except OSError:
-                    pass
-            else:
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
-
-    log_handle = _AUTO_WS_LOG_HANDLE
-    _AUTO_WS_LOG_HANDLE = None
-    if log_handle is not None:
-        try:
-            log_handle.close()
-        except OSError:
-            pass
-
-
-def _register_auto_ws_atexit() -> None:
-    global _AUTO_WS_ATEXIT_REGISTERED
-    if _AUTO_WS_ATEXIT_REGISTERED:
-        return
-    _AUTO_WS_ATEXIT_REGISTERED = True
-    atexit.register(_stop_auto_ws_process)
+def _sdk_host_stdio() -> Dict[str, Any]:
+    # The SDK keeps the write end open while its process lives. The Host
+    # decides when it is safe to exit after the OS closes that pipe.
+    return {"stdin": subprocess.PIPE, "env": dict(os.environ, FRAMEVIZ_SDK_MANAGED="1")}
 
 
 def _should_auto_start_ws() -> bool:
@@ -392,8 +340,6 @@ def _start_ws_server_process() -> bool:
     global _AUTO_WS_PROCESS
     global _AUTO_WS_LAST_ERROR
     global _AUTO_WS_LOG_PATH
-    global _AUTO_WS_LOG_HANDLE
-    global _AUTO_WS_PROCESS_GROUP_ID
     if _AUTO_WS_PROCESS and _AUTO_WS_PROCESS.poll() is None:
         return True
 
@@ -404,14 +350,10 @@ def _start_ws_server_process() -> bool:
 
     stdout_target, stderr_target, log_path = _get_ws_log_targets()
     _AUTO_WS_LOG_PATH = log_path
-    _AUTO_WS_LOG_HANDLE = (
-        stdout_target if stdout_target not in (None, subprocess.DEVNULL) else None
-    )
-
     kwargs: Dict[str, Any] = {
+        **_sdk_host_stdio(),
         "stdout": stdout_target,
         "stderr": stderr_target,
-        "stdin": subprocess.DEVNULL,
         "cwd": str(cwd) if cwd else None,
     }
     if sys.platform.startswith("win"):
@@ -426,8 +368,6 @@ def _start_ws_server_process() -> bool:
     except OSError:
         _AUTO_WS_LAST_ERROR = "failed to spawn ws-server process"
         return False
-    _AUTO_WS_PROCESS_GROUP_ID = _AUTO_WS_PROCESS.pid if os.name == "posix" else None
-    _register_auto_ws_atexit()
     _AUTO_WS_LAST_ERROR = None
     return True
 

@@ -1,6 +1,6 @@
 # Architecture
 
-> Version: v0.4.0
+> Version: v0.5.0
 
 FrameViz separates command ownership from rendering. The Rust Host owns scenes, views, objects, uploaded buffers, and authoritative mutations. SDKs send versioned commands and receive responses/events. Web, Vue, and native shells render the same scene contract through the TypeScript core.
 

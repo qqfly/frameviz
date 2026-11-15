@@ -17,11 +17,11 @@ from .exceptions import (
     TimeoutError as FrameVizTimeoutError,
     ProtocolError,
 )
-from .discovery import get_discovery_path, get_token_from_discovery, get_ws_url_from_discovery
+from .discovery import get_discovery_path, get_registered_host_token, read_discovery_file
 from .version import host_version_error
 
-PROTOCOL_VERSION = "0.4.0"
-MIN_COMPATIBLE_VERSION = "0.4.0"  # Minimum Host version SDK can work with
+PROTOCOL_VERSION = "0.5.0"
+MIN_COMPATIBLE_VERSION = "0.5.0"  # Minimum Host version SDK can work with
 DEFAULT_WS_URL = "ws://127.0.0.1:9527"
 
 # P0-2: Token authentication support
@@ -83,6 +83,9 @@ class FrameVizClient:
     _query_events: Dict[str, Tuple[str, Dict[str, Any]]] = field(default_factory=dict, init=False, repr=False)
     _event_handlers: Dict[str, List[EventHandler]] = field(default_factory=dict,
                                                            init=False)
+
+    _widget_handlers: Dict[Tuple[str, str], List[EventHandler]] = field(
+        default_factory=dict, init=False, repr=False)
 
     # P0-2: Authentication
     _auth_token: Optional[str] = field(default=None, init=False, repr=False)
@@ -209,6 +212,7 @@ class FrameVizClient:
             raise ProtocolError("Authentication failed: invalid token",
                                 code="AUTH_FAILED")
         self._check_version_compatibility(self._host_protocol_version)
+        self._auth_token = token
 
     def _check_version_compatibility(self, host_version: str) -> None:
         """Reject incompatible series on the calling thread after authentication."""
@@ -229,16 +233,19 @@ class FrameVizClient:
         if explicit:
             return explicit
         from urllib.parse import urlsplit
-        discovered = get_ws_url_from_discovery()
-        if not discovered:
-            return None
+        record = read_discovery_file() or {}
+        discovered = record.get("ws_url") or record.get("url")
+
         def endpoint(url):
             value = urlsplit(url)
             host = value.hostname
             if host in ("localhost", "127.0.0.1", "::1"):
                 host = "loopback"
             return value.scheme, host, value.port or (443 if value.scheme == "wss" else 80)
-        return get_token_from_discovery() if endpoint(discovered) == endpoint(self.url) else None
+        if (isinstance(discovered, str) and isinstance(record.get("token"), str)
+                and endpoint(discovered) == endpoint(self.url)):
+            return record["token"]
+        return get_registered_host_token(self.url)
 
     def close(self) -> None:
         """Close the WebSocket connection."""
@@ -422,6 +429,21 @@ class FrameVizClient:
         with self._lock:
             self._event_handlers.setdefault(name, []).append(handler)
 
+    def _on_widget_change(self, scene_id: str, widget_id: str,
+                          handler: EventHandler, *, append: bool) -> None:
+        if not callable(handler):
+            raise TypeError("Widget handler must be callable")
+        key = (scene_id, widget_id)
+        with self._lock:
+            if append:
+                self._widget_handlers.setdefault(key, []).append(handler)
+            else:
+                self._widget_handlers[key] = [handler]
+
+    def _off_widget_change(self, scene_id: str, widget_id: str) -> None:
+        with self._lock:
+            self._widget_handlers.pop((scene_id, widget_id), None)
+
     def present_view(self, browser_session: str, view_id: str) -> int:
         """Present a view in matching authenticated managed browser pages."""
         result = self.send_command("present_view", {
@@ -523,6 +545,10 @@ class FrameVizClient:
         """Internal helper to call handlers for a single event."""
         with self._lock:
             handlers = tuple(self._event_handlers.get(event_name, []))
+            if event_name == "widget_changed":
+                scene, widget = data.get("scene_id"), data.get("widget_id")
+                if isinstance(scene, str) and isinstance(widget, str):
+                    handlers += tuple(self._widget_handlers.get((scene, widget), []))
         for handler in handlers:
             if self._closing:
                 break

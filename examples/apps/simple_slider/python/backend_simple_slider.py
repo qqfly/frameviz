@@ -15,13 +15,14 @@ Dependencies:
 """
 
 import argparse
+from pathlib import Path
 import asyncio
 import json
 import os
 from typing import Any, Dict, List, Optional, Set
 
 import frameviz as fv
-from frameviz.business_auth import authorize_business_socket, business_messages
+from frameviz.business_auth import authorize_business_socket, business_messages, select_business_subprotocol
 
 DEFAULT_WS_HOST = os.environ.get("SIMPLE_SLIDER_WS_HOST", "127.0.0.1")
 DEFAULT_WS_PORT = int(os.environ.get("SIMPLE_SLIDER_WS_PORT", "9621"))
@@ -299,15 +300,23 @@ async def run_backend(args: argparse.Namespace) -> None:
     backend = SimpleSliderBackend(args.viewer_name)
     monitor_task = asyncio.create_task(backend.monitor_viewer())
 
-    print(f"[Backend] UI WebSocket listening on ws://{args.ws_host}:{args.ws_port}")
-    print(f"[Backend] Waiting for viewer: {args.viewer_name}")
     server = await websockets.serve(
         backend.handle_client,
         args.ws_host,
         args.ws_port,
         subprotocols=["frameviz-business"],
+        select_subprotocol=select_business_subprotocol,
         ping_interval=20,
     )
+
+    port = server.sockets[0].getsockname()[1]
+    print(f"[Backend] UI WebSocket listening on ws://{args.ws_host}:{port}")
+    print(f"[Backend] Waiting for viewer: {args.viewer_name}")
+    if getattr(args, "ready_file", None):
+        path = Path(args.ready_file)
+        pending = path.with_suffix(".tmp")
+        pending.write_text(str(port), encoding="utf-8")
+        pending.replace(path)
 
     try:
         await server.wait_closed()
@@ -323,6 +332,7 @@ async def run_backend(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Simple Slider Python backend")
     parser.add_argument("--ws-host", default=DEFAULT_WS_HOST, help="UI WebSocket host")
+    parser.add_argument("--ready-file", help=argparse.SUPPRESS)
     parser.add_argument("--ws-port", type=int, default=DEFAULT_WS_PORT, help="UI WebSocket port")
     parser.add_argument(
         "--viewer-name",

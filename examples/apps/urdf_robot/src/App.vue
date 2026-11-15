@@ -73,7 +73,7 @@ const backendConnected = ref(false)
 const jointPositions = ref([0, 0, 0, 0, 0, 0]) // in degrees
 let backendSocket: WebSocket | null = null
 
-const BACKEND_WS_URL = 'ws://127.0.0.1:9620'
+const BACKEND_WS_URL = import.meta.env.VITE_URDF_ROBOT_BACKEND_WS_URL || 'ws://127.0.0.1:9620'
 const BACKEND_RECONNECT_DELAY_MS = 2000
 function resolveViewId(viewerName: string): string | undefined {
   if (typeof window === 'undefined') return undefined
@@ -119,11 +119,10 @@ function connectBackend() {
   if (backendSocket && backendSocket.readyState === WebSocket.OPEN) return
   const businessToken = new URLSearchParams(window.location.hash.slice(1)).get('business_token')
   if (!businessToken) { console.error('[App] business_token is required in the URL fragment'); return }
-  backendSocket = new WebSocket(BACKEND_WS_URL, ['frameviz-business', `token.${businessToken}`])
+  backendSocket = new WebSocket(BACKEND_WS_URL)
 
   backendSocket.onopen = () => {
-    backendConnected.value = true
-    syncViewIdsToBackend()
+    backendSocket?.send(JSON.stringify({ type: 'auth', token: businessToken }))
   }
 
   backendSocket.onclose = () => {
@@ -139,6 +138,11 @@ function connectBackend() {
   backendSocket.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data)
+      if (msg.type === 'auth_ok') {
+        backendConnected.value = true
+        syncViewIdsToBackend()
+        return
+      }
       // Handle state updates from backend
       if (msg.type === 'state_update' && msg.joint_positions) {
         // Convert radians to degrees
@@ -150,7 +154,7 @@ function connectBackend() {
 }
 
 function sendBackendCommand(cmd: { name: string; args: Record<string, any> }) {
-  if (!backendSocket || backendSocket.readyState !== WebSocket.OPEN) {
+  if (!backendConnected.value || !backendSocket || backendSocket.readyState !== WebSocket.OPEN) {
     return
   }
   backendSocket.send(JSON.stringify(cmd))

@@ -31,8 +31,8 @@ import type { FrameVizViewerProps, ViewerInfo } from '../types'
 
 const props = withDefaults(defineProps<FrameVizViewerProps>(), {
   background: 0x1a1a2e,
-  showGrid: true,
-  showAxes: true,
+  showGrid: undefined,
+  showAxes: undefined,
   enableKeyboardShortcuts: true,
   autoStartHost: true,
 })
@@ -63,6 +63,18 @@ let cameraPoseCleanup: (() => void) | null = null
 let lastBufferSize: { width: number; height: number } | null = null
 const CAMERA_PERSIST_INTERVAL_MS = 1000
 
+watch(() => props.showWidgetPanel, enabled => {
+  coreRef.value?.setWidgetPanelEnabled(enabled === true)
+})
+
+function applyEnvironmentVisibility() {
+  coreRef.value?.setEnvironmentVisibilityOverride({
+    showGrid: props.showGrid,
+    showAxes: props.showAxes,
+  })
+}
+watch(() => [props.showGrid, props.showAxes], applyEnvironmentVisibility)
+
 onMounted(async () => {
   if (!containerRef.value) return
   
@@ -71,6 +83,7 @@ onMounted(async () => {
     const core = new FrameVizCore({
       container: containerRef.value,
       keyboardShortcuts: props.enableKeyboardShortcuts,
+      showWidgetPanel: props.showWidgetPanel,
       background: props.background,
       onEvent: (name, data) => sendEvent(name, data),
       onCommand: (name, data) => { sendCommand(name, data).catch(err => emit('error', err)) },
@@ -78,6 +91,7 @@ onMounted(async () => {
     })
     
     coreRef.value = core
+    applyEnvironmentVisibility()
     // Explicitly set initial size after a tick to ensure DOM is ready
     await nextTick()
     if (unmounted) { core.dispose(); return }
@@ -128,7 +142,6 @@ async function tryRegister() {
     coreRef.value.setViewId(info.viewId)
     isRegistered.value = true
     emit('registered', info)
-    restoreCameraPose(coreRef.value)
     coreRef.value.resize()
   } catch (err) {
     console.warn('[FrameViz] Viewer registration failed:', err)

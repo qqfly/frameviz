@@ -4,7 +4,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 cmake_minimum_required(VERSION 3.16)
-project(frameviz-cpp VERSION 0.4.0 LANGUAGES CXX)
+project(frameviz-cpp VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -74,6 +74,7 @@ if(FRAMEVIZ_BUILD_SHARED)
         src/discovery.cpp
         src/tauri.cpp
         src/host.cpp
+        src/capture.cpp
     )
     set_target_properties(frameviz-cpp PROPERTIES
         VERSION ${PROJECT_VERSION}
@@ -87,6 +88,7 @@ else()
         src/discovery.cpp
         src/tauri.cpp
         src/host.cpp
+        src/capture.cpp
     )
 endif()
 
@@ -102,6 +104,12 @@ target_link_libraries(frameviz-cpp
     PRIVATE
         ixwebsocket::ixwebsocket
 )
+if(APPLE)
+    target_link_libraries(frameviz-cpp PRIVATE "-framework CoreFoundation")
+elseif(WIN32)
+    target_compile_definitions(frameviz-cpp PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(frameviz-cpp PRIVATE advapi32 shell32 version ws2_32)
+endif()
 
 # Add aliases for easy linking (support both naming conventions)
 add_library(frameviz::frameviz-cpp ALIAS frameviz-cpp)
@@ -156,10 +164,18 @@ install(EXPORT frameviz-targets
 # Generate config file
 include(CMakePackageConfigHelpers)
 
+# IXWebSocket exposes this definition for both source builds and installed targets.
+get_target_property(ixwebsocket_definitions ixwebsocket::ixwebsocket INTERFACE_COMPILE_DEFINITIONS)
+set(FRAMEVIZ_IXWEBSOCKET_NEEDS_ZLIB OFF)
+if("IXWEBSOCKET_USE_ZLIB" IN_LIST ixwebsocket_definitions)
+    set(FRAMEVIZ_IXWEBSOCKET_NEEDS_ZLIB ON)
+endif()
+
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/frameviz-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/frameviz-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/frameviz
+    PATH_VARS CMAKE_INSTALL_LIBDIR
 )
 
 write_basic_package_version_file(
@@ -193,10 +209,6 @@ if(FRAMEVIZ_BUILD_TESTS)
     include(GoogleTest)
     gtest_discover_tests(test_client)
     gtest_discover_tests(test_concurrency)
-endif()
-
-if(WIN32)
-    target_link_libraries(frameviz-cpp PRIVATE shell32)
 endif()
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE" DESTINATION ${CMAKE_INSTALL_DATADIR}/frameviz)
