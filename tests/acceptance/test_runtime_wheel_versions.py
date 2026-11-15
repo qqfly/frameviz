@@ -7,7 +7,8 @@ import pytest
 from wheel.wheelfile import WheelFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/release'))
-from build_linux_appdir import copy_payload
+from audit_linux_runtime import installed_dependencies
+from build_linux_appdir import copy_payload, source_index
 from build_runtime_wheel import build_wheel
 from runtime_metadata import build_info
 
@@ -69,3 +70,38 @@ def test_ubuntu_payload_keeps_default_icons_without_external_theme_links(tmp_pat
     copy_payload(sysroot, appdir)
     assert (appdir / 'usr/share/icons/Adwaita/tool.svg').read_text() == 'icon fixture'
     assert not (appdir / 'usr/share/icons/Humanity').exists()
+
+
+def test_ubuntu_payload_keeps_pulseaudio_and_cuts_unused_audio_and_terminal_plugins(tmp_path):
+    sysroot, appdir = tmp_path / 'system', tmp_path / 'appdir'
+    relative = Path('usr/lib/x86_64-linux-gnu/gstreamer-1.0')
+    (sysroot / relative).mkdir(parents=True)
+    (sysroot / 'usr/bin').mkdir(parents=True)
+    (appdir / 'bin').mkdir(parents=True)
+    for helper in ('bwrap', 'xdg-dbus-proxy', 'xdg-open'):
+        (sysroot / 'usr/bin' / helper).touch()
+    for plugin in ('libgstaasink.so', 'libgstcacasink.so', 'libgstjack.so', 'libgstpulseaudio.so'):
+        (sysroot / relative / plugin).touch()
+    copy_payload(sysroot, appdir)
+    assert [path.name for path in (appdir / relative).iterdir()] == ['libgstpulseaudio.so']
+
+
+def test_elf_providers_must_be_on_the_consumer_search_path(tmp_path):
+    private = tmp_path / 'lib/pulseaudio'
+    private.mkdir(parents=True)
+    (private / 'libpulse-private.so').touch()
+    item = {'needed': ['libpulse-private.so'], 'search_paths': {'RUNPATH': '/usr/lib/pulseaudio'}}
+    assert not installed_dependencies(item, tmp_path, tmp_path, [private.parent])['libpulse-private.so']
+    assert installed_dependencies(item, tmp_path, tmp_path, [private.parent, private]) == {
+        'libpulse-private.so': ['lib/pulseaudio/libpulse-private.so'],
+    }
+
+
+def test_ubuntu_source_index_tracks_binary_version_exceptions():
+    lock = Path(__file__).resolve().parents[2] / 'scripts/release/ubuntu-runtime-packages.txt'
+    packages = [(*line.split('\t')[:3], line.split('\t')[-1], None)
+                for line in lock.read_text().splitlines() if line and not line.startswith('#')]
+    sources = {entry['source']: entry for entry in source_index(packages)['sources']}
+    assert sources['lvm2']['version'] != next(row[1] for row in packages if row[0] == 'libdevmapper1.02.1')
+    assert sources['webkit2gtk']['pool_directory'] == 'pool/main/w/webkit2gtk'
+    assert len(sources['webkit2gtk']['files_sha256']) == 4
