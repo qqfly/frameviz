@@ -24,12 +24,14 @@ viz.add_box()
 | 用法 | 试用安装材料 |
 | --- | --- |
 | Apple 芯片 Mac Python | 带 App 的平台 wheel |
-| Ubuntu 22.04／24.04 原生桌面 | 试用 `.deb` 和配套 SDK wheel。便携图形运行时仍在验收。 |
-| 无桌面 Linux | 独立 Host 和配套 SDK wheel，支持认证链接和 SSH 转发。 |
+| Ubuntu 22.04／24.04 原生桌面 | 常规试用路径为 `.deb` 和配套 SDK wheel。便携运行时随实验 wheel 验证，PyPI 平台兼容性尚待确认。 |
+| 无桌面 Linux | 独立 Host 和配套 SDK wheel，或带独立 Host 的实验 wheel。两种路径都支持认证链接和 SSH 转发。 |
 | Windows x64 | 试用 App 和配套 SDK wheel。Python 冷启动使用显式 App 路径。 |
 | 独立 Mac App、C++ SDK | 通过对应平台的独立试用包交付。 |
 
 安装标准独立包的命令见[安装说明](INSTALLATION.md)。通过明确路径安装 `py3-none-any` wheel 或源码会获得 SDK，运行时按各平台的独立安装说明提供。协议兼容沿用当前 SDK 的规则。
+
+Linux 实验 wheel 在首次使用桌面运行时，将本地随包资源解压到 `${XDG_CACHE_HOME:-~/.cache}/frameviz/runtimes` 下的内容哈希目录。不同 Python 环境可复用相同内容。卸载 wheel 后缓存会保留，确认没有使用中的 FrameViz 窗口、Host 或其他环境再清理。无桌面模式直接启动随包的独立 Host。
 
 ## 示例
 

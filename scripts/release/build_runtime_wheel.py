@@ -3,6 +3,7 @@
 
 import argparse
 from email.parser import Parser
+import hashlib
 import os
 from pathlib import Path
 import plistlib
@@ -80,6 +81,12 @@ def build_wheel(sdk, output, platform, runtime):
                 wheel.writestr(f'{dist_info}/WHEEL', metadata.as_bytes())
                 for name, path in runtime.items():
                     wheel.write(path, f'frameviz/_binaries/{name}')
+                if 'desktop.tar.xz' in runtime:
+                    digest = hashlib.sha256()
+                    with runtime['desktop.tar.xz'].open('rb') as archive:
+                        for chunk in iter(lambda: archive.read(1024 * 1024), b''):
+                            digest.update(chunk)
+                    wheel.writestr('frameviz/_binaries/desktop.sha256', digest.hexdigest() + '\n')
             destination.hardlink_to(staged)
     return destination
 

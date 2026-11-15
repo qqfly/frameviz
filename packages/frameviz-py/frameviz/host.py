@@ -106,7 +106,10 @@ def _standalone_candidates(repo_root: Optional[Path]) -> list[Path]:
 def _bundled_runtime(*, native: bool) -> Optional[Path]:
     if native and sys.platform == "darwin":
         return _RUNTIME_DIRECTORY / "FrameViz.app"
-    if not native and sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux"):
+        if native:
+            from ._linux_runtime import prepare_desktop_runtime
+            return prepare_desktop_runtime(_RUNTIME_DIRECTORY)
         return _RUNTIME_DIRECTORY / "frameviz-server"
     return None
 
