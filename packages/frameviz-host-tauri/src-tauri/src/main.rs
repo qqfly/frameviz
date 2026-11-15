@@ -388,6 +388,14 @@ fn get_ws_port(state: tauri::State<AppState>) -> u16 {
 }
 
 fn main() {
+    if std::env::args().skip(1).eq(["--build-info".to_owned()]) {
+        println!("{}", serde_json::json!({
+            "role": "desktop",
+            "release": env!("CARGO_PKG_VERSION"),
+            "protocol": frameviz_server::PROTOCOL_VERSION,
+        }));
+        return;
+    }
     let args = parse_args();
     if args.show_version {
         println!("FrameViz Host v{}", env!("CARGO_PKG_VERSION"));

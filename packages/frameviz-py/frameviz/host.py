@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import plistlib
 import shutil
@@ -114,6 +115,21 @@ def _bundled_runtime(*, native: bool) -> Optional[Path]:
     return None
 
 
+def _bundled_protocol(path: Path, binary: Path, *, native: bool) -> Optional[str]:
+    receipt = _RUNTIME_DIRECTORY / "build.json"
+    if not receipt.exists():
+        return _runtime_version(path, binary)
+    try:
+        role = "desktop" if native else "standalone"
+        matches = [item for item in json.loads(receipt.read_text())["runtimes"]
+                   if item["role"] == role]
+        if len(matches) == 1 and parse_version(matches[0]["protocol"]):
+            return matches[0]["protocol"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    raise RuntimeError(f"Invalid FrameViz wheel build receipt: {receipt}. Reinstall the matching wheel.")
+
+
 def find_host_executable(prefer_browser: bool = False, *, native_only: bool = False) -> Optional[Path]:
     for key in ("FRAMEVIZ_HOST_PATH", "FRAMEVIZ_TAURI_APP"):
         if not (configured := os.environ.get(key)):
@@ -137,7 +153,7 @@ def find_host_executable(prefer_browser: bool = False, *, native_only: bool = Fa
             continue
         if (binary := _executable(bundled)) is None:
             raise RuntimeError(f"Incomplete FrameViz runtime in the Python wheel: {bundled}. Reinstall the matching wheel.")
-        version = _runtime_version(bundled, binary)
+        version = _bundled_protocol(bundled, binary, native=native)
         if version is None:
             raise RuntimeError(f"Cannot determine the bundled FrameViz runtime version: {bundled}. Reinstall the matching wheel.")
         if error := host_version_error(version, PROTOCOL_VERSION):

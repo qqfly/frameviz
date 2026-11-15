@@ -17,7 +17,9 @@ For the Apple Silicon platform wheel, build the universal SDK wheel and the App 
 
 ```sh
 python scripts/release/build_runtime_wheel.py /new/sdk/frameviz-0.5.0-py3-none-any.whl /new/wheels \
-  --mac-app /new/signed/FrameViz.app
+  --mac-app /new/signed/FrameViz.app --source-revision "$(git rev-parse HEAD)"
 ```
 
 Install this file into a fresh environment. Verify the installed App with `codesign --verify --deep --strict` and, after completing notarization, separately verify its stapled ticket and Gatekeeper assessment. Complete native window checks before making the file available. For the examples command, place the matching ZIP and its `SHA256SUMS` alongside the versioned Release assets.
+
+The [Ubuntu AppDir recipe and PyPI checklist](PYTHON_LINUX_RELEASE.md) cover the Linux platform wheel.

@@ -3,18 +3,25 @@
 
 import argparse
 from email.parser import Parser
-import hashlib
+import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import stat
 import struct
+import subprocess
+import tarfile
 from tempfile import TemporaryDirectory
 
+from packaging.utils import parse_wheel_filename
+from packaging.version import Version
 from wheel.wheelfile import WheelFile
 
+from runtime_metadata import build_info, check_pair, file_hash, sdk_protocol, sha256
 
-def mac_runtime(app):
+
+def mac_runtime(app, revision):
     if app.name != 'FrameViz.app':
         raise ValueError('Expected the packaged FrameViz.app')
     with (app / 'Contents/Info.plist').open('rb') as stream:
@@ -38,10 +45,20 @@ def mac_runtime(app):
             raise ValueError(f'The App has a wheel-incompatible file: {path}')
         if path.is_file():
             files[f'FrameViz.app/{path.relative_to(app).as_posix()}'] = path
-    return 'macosx_11_0_arm64', files
+    desktop = build_info(binary, 'desktop')
+    desktop_release = Version(desktop['release'])
+    if Version(info['CFBundleShortVersionString']) not in {desktop_release, Version(desktop_release.base_version)}:
+        raise ValueError('The App bundle version does not match its desktop executable')
+    digest = file_hash(binary)
+    receipt = app.parent / 'app-build.json'
+    if receipt.exists():
+        source = json.loads(receipt.read_text())
+        if source['source_revision'] != revision or source['files']['FrameViz.app/Contents/MacOS/frameviz'] != digest:
+            raise ValueError('The Apple App does not match its build receipt')
+    return 'macosx_11_0_arm64', files, [dict(desktop, sha256=digest)]
 
 
-def linux_runtime(desktop_archive, host):
+def linux_runtime(desktop_archive, host, revision):
     if desktop_archive.suffixes[-2:] != ['.tar', '.xz']:
         raise ValueError('Expected a .tar.xz desktop runtime archive')
     with host.open('rb') as stream:
@@ -50,14 +67,54 @@ def linux_runtime(desktop_archive, host):
         raise ValueError('Expected an x86-64 Linux standalone Host')
     if not os.access(host, os.X_OK):
         raise ValueError('Expected an executable standalone Host')
-    return 'linux_x86_64', {'desktop.tar.xz': desktop_archive, 'frameviz-server': host}
+    manifest = None
+    desktop_hash = None
+    launcher_hash = None
+    with tarfile.open(desktop_archive, mode='r|xz') as archive:
+        for member in archive:
+            name = member.name.removeprefix('./')
+            if name == 'runtime-build.json':
+                if manifest is not None or not member.isfile() or member.size > 1024 * 1024:
+                    raise ValueError('Invalid runtime-build.json in the Linux AppDir')
+                manifest = json.load(archive.extractfile(member))
+            elif name == 'bin/frameviz-real':
+                if desktop_hash is not None or not member.isfile():
+                    raise ValueError('Invalid desktop executable in the Linux AppDir')
+                desktop_hash = sha256(archive.extractfile(member))
+            elif name == 'bin/frameviz':
+                if launcher_hash is not None or not member.isfile():
+                    raise ValueError('Invalid launcher in the Linux AppDir')
+                launcher_hash = sha256(archive.extractfile(member))
+    if not manifest or not desktop_hash or not launcher_hash:
+        raise ValueError('The Linux AppDir must contain the launcher, desktop executable and runtime-build.json')
+    if manifest['source_revision'] != revision or manifest['launcher_sha256'] != launcher_hash:
+        raise ValueError('The Linux AppDir does not match the candidate revision or launcher checksum')
+    desktop, standalone = manifest['desktop'], manifest['standalone']
+    if desktop['role'] != 'desktop' or desktop['sha256'] != desktop_hash:
+        raise ValueError('The Linux AppDir desktop executable does not match its build manifest')
+    if standalone['role'] != 'standalone' or standalone['sha256'] != file_hash(host):
+        raise ValueError('The standalone Host does not match the Linux AppDir build manifest')
+    return 'linux_x86_64', {'desktop.tar.xz': desktop_archive, 'frameviz-server': host}, [desktop, standalone]
 
 
-def build_wheel(sdk, output, platform, runtime):
+def build_wheel(sdk, output, platform, runtime, native, revision):
+    if not re.fullmatch(r'[a-f0-9]{40}', revision):
+        raise ValueError('Use a full FrameViz source commit SHA')
     with WheelFile(sdk) as source:
         if not sdk.name.startswith('frameviz-') or not sdk.name.endswith('-py3-none-any.whl'):
             raise ValueError('Expected the universal FrameViz SDK wheel')
         dist_info = source.dist_info_path
+        name, version, _, _ = parse_wheel_filename(sdk.name)
+        sdk_meta = Parser().parsestr(source.read(f'{dist_info}/METADATA').decode('utf-8'))
+        if name != 'frameviz' or sdk_meta['Name'].lower() != 'frameviz' or Version(sdk_meta['Version']) != version:
+            raise ValueError('SDK metadata does not match its wheel filename')
+        wire = sdk_protocol(source.read('frameviz/client.py').decode('utf-8'))
+        for item in native:
+            check_pair(str(version), wire, item)
+        provenance = {'source_revision': revision, 'platform': platform,
+                      'sdk_release': str(version), 'sdk_protocol': wire,
+                      'sdk_wheel_sha256': file_hash(sdk), 'runtimes': native}
+
         distribution = sdk.name.removesuffix('-py3-none-any.whl')
         destination = output / f'{distribution}-py3-none-{platform}.whl'
         metadata = Parser().parsestr(source.read(f'{dist_info}/WHEEL').decode('utf-8'))
@@ -70,6 +127,7 @@ def build_wheel(sdk, output, platform, runtime):
         for path in runtime.values():
             if not stat.S_ISREG(path.lstat().st_mode):
                 raise ValueError(f'Expected a regular runtime file: {path}')
+        output.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=output) as directory:
             staged = Path(directory) / destination.name
             replaced = {f'{dist_info}/WHEEL', source.record_path,
@@ -81,12 +139,10 @@ def build_wheel(sdk, output, platform, runtime):
                 wheel.writestr(f'{dist_info}/WHEEL', metadata.as_bytes())
                 for name, path in runtime.items():
                     wheel.write(path, f'frameviz/_binaries/{name}')
+                wheel.writestr('frameviz/_binaries/build.json', json.dumps(provenance, indent=2) + '\n')
                 if 'desktop.tar.xz' in runtime:
-                    digest = hashlib.sha256()
-                    with runtime['desktop.tar.xz'].open('rb') as archive:
-                        for chunk in iter(lambda: archive.read(1024 * 1024), b''):
-                            digest.update(chunk)
-                    wheel.writestr('frameviz/_binaries/desktop.sha256', digest.hexdigest() + '\n')
+                    wheel.writestr('frameviz/_binaries/desktop.sha256',
+                                   file_hash(runtime['desktop.tar.xz']) + '\n')
             destination.hardlink_to(staged)
     return destination
 
@@ -99,16 +155,20 @@ def main():
     inputs.add_argument('--mac-app', type=Path)
     inputs.add_argument('--linux-desktop', type=Path, help='Local Linux candidate AppDir archive')
     parser.add_argument('--linux-host', type=Path)
+    parser.add_argument('--source-revision', required=True, help='Source revision for the SDK build receipt')
     args = parser.parse_args()
-    if args.mac_app:
-        if args.linux_host:
-            parser.error('--linux-host requires --linux-desktop')
-        platform, files = mac_runtime(args.mac_app)
-    elif args.linux_host:
-        platform, files = linux_runtime(args.linux_desktop, args.linux_host)
-    else:
-        parser.error('--linux-desktop requires --linux-host')
-    print(build_wheel(args.sdk, args.output, platform, files))
+    try:
+        if args.mac_app:
+            if args.linux_host:
+                parser.error('--linux-host requires --linux-desktop')
+            platform, files, native = mac_runtime(args.mac_app, args.source_revision)
+        elif args.linux_host:
+            platform, files, native = linux_runtime(args.linux_desktop, args.linux_host, args.source_revision)
+        else:
+            parser.error('--linux-desktop requires --linux-host')
+        print(build_wheel(args.sdk, args.output, platform, files, native, args.source_revision))
+    except (OSError, KeyError, TypeError, ValueError, tarfile.TarError, subprocess.SubprocessError) as error:
+        parser.error(str(error))
 
 
 if __name__ == '__main__':
