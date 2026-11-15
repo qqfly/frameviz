@@ -13,6 +13,7 @@ emacsen-common	3.0.4	emacsen-common	3563c905c330851ebe707ec3ed0604b681e9e76e6c31
 fontconfig	2.13.1-4.2ubuntu5	fontconfig	9a844b4e8c27b76f39a00dd36dc833b2c99bfa24959df9b6b0749659c31a5c1c	pool/main/f/fontconfig/fontconfig_2.13.1-4.2ubuntu5_amd64.deb
 fontconfig-config	2.13.1-4.2ubuntu5	fontconfig	c40405fa036d1732e269fabd4c5b40076b973a226da1df6921d4b7e7a1e2ff72	pool/main/f/fontconfig/fontconfig-config_2.13.1-4.2ubuntu5_all.deb
 fonts-dejavu-core	2.37-2build1	fonts-dejavu	c33fe8bf33b50d99d6448804a090123b1bbba37d7a8703c630695676d110a47d	pool/main/f/fonts-dejavu/fonts-dejavu-core_2.37-2build1_all.deb
+gcc-12-base	12.3.0-1ubuntu1~22.04.3	gcc-12	7f9253b7e0976f0526fc21346c73ee006e185a7b2f2f865048ea78a2af55bc8d	pool/main/g/gcc-12/gcc-12-base_12.3.0-1ubuntu1~22.04.3_amd64.deb
 glib-networking	2.72.0-1	glib-networking	3535a026be85284fba36f1102ebad5c39b02bd60f88479816451a177ba84617d	pool/main/g/glib-networking/glib-networking_2.72.0-1_amd64.deb
 glib-networking-common	2.72.0-1	glib-networking	811e2f9e802d2ccf12ac185079ac4f4a987e270fe6592956b17e06d744a4388b	pool/main/g/glib-networking/glib-networking-common_2.72.0-1_all.deb
 glib-networking-services	2.72.0-1	glib-networking	48647ed9caa2c09d42d75a7bca8cc6859d5c386d27f2ec3d0bc159e26ec464ff	pool/main/g/glib-networking/glib-networking-services_2.72.0-1_amd64.deb
@@ -168,6 +169,7 @@ libsoup2.4-1	2.74.2-3ubuntu0.10	libsoup2.4	0aa5ae9e0ff42bec49f28a8c1d7d6e27e1420
 libsoup2.4-common	2.74.2-3ubuntu0.10	libsoup2.4	abfbfd13c2a5c634eeabc39e72cdee94b41d36002c303e741c56a3e95d44bf81	pool/main/libs/libsoup2.4/libsoup2.4-common_2.74.2-3ubuntu0.10_all.deb
 libspeex1	1.2~rc1.2-1.1ubuntu3	speex	a2fa1a19f9f473339c287f89763f78363a6c10490c3836258f4a12e959494bd6	pool/main/s/speex/libspeex1_1.2~rc1.2-1.1ubuntu3_amd64.deb
 libsqlite3-0	3.37.2-2ubuntu0.8	sqlite3	6e22b1e8d375fed6a1d52cad5887e762b6cdeaba137595e726c95486968dfab5	pool/main/s/sqlite3/libsqlite3-0_3.37.2-2ubuntu0.8_amd64.deb
+libssl3	3.0.2-0ubuntu1.30	openssl	d1b4636e32ac6d3b95d583ac05ac548b1aa248414bae1c51b14f54be0f8fd7bc	pool/main/o/openssl/libssl3_3.0.2-0ubuntu1.30_amd64.deb
 libsystemd0	249.11-0ubuntu3.23	systemd	ff02a85ba73f850cf7958d2867b34947c67a1072e2b2d1c108a8c6e23715624d	pool/main/s/systemd/libsystemd0_249.11-0ubuntu3.23_amd64.deb
 libtag1v5	1.11.1+dfsg.1-3ubuntu3	taglib	868e48c2598a460015b252206185530d26d1a0d5fc0c4538665ea04180a0b69d	pool/main/t/taglib/libtag1v5_1.11.1+dfsg.1-3ubuntu3_amd64.deb
 libtag1v5-vanilla	1.11.1+dfsg.1-3ubuntu3	taglib	ecd60606443de5f010413157f3062458b90bee4afe9af768797ead16e723d43e	pool/main/t/taglib/libtag1v5-vanilla_1.11.1+dfsg.1-3ubuntu3_amd64.deb
@@ -229,7 +231,6 @@ libxshmfence1	1.3-1build4	libxshmfence	d51ed6fc3932038ebfa0e59065184c715e27ea2cd
 libxslt1.1	1.1.34-4ubuntu0.22.04.5	libxslt	5e50bc83e9365942cf63272d8a45ce71170aaf4a1a4e3c4b30f591f6194d77ef	pool/main/libx/libxslt/libxslt1.1_1.1.34-4ubuntu0.22.04.5_amd64.deb
 libxxf86vm1	1:1.1.4-1build3	libxxf86vm	2a4bd31dded8481c81bfaa65bd97d61bff1e90cb025c01bcabfc2597c7c7569a	pool/main/libx/libxxf86vm/libxxf86vm1_1.1.4-1build3_amd64.deb
 libzstd1	1.4.8+dfsg-3build1	libzstd	ae7db00ce8b093e50c994518b90203544e063b4bc574836a048bb142b950b2c9	pool/main/libz/libzstd/libzstd1_1.4.8+dfsg-3build1_amd64.deb
-openssl	3.0.2-0ubuntu1.30	openssl	a5b9484a287aba47096fa9ea9821c5c98cf95b8dd726786e7c3a3311fb8eb3b4	pool/main/o/openssl/openssl_3.0.2-0ubuntu1.30_amd64.deb
 session-migration	0.3.6	session-migration	3cb465d5ae1b0852ca056c9b18110bffeccc673e2042d49122708540b2fcdf17	pool/main/s/session-migration/session-migration_0.3.6_amd64.deb
 shared-mime-info	2.1-2	shared-mime-info	0c0164e8673e2607ffa16511f595c5060658a06c0ccf784c269d4e9cd2463942	pool/main/s/shared-mime-info/shared-mime-info_2.1-2_amd64.deb
 systemd	249.11-0ubuntu3.23	systemd	537d9b1e23b0cb6ae3d2034b0342384b832d3ef92b585feba59b3b9e8bb2f957	pool/main/s/systemd/systemd_249.11-0ubuntu3.23_amd64.deb

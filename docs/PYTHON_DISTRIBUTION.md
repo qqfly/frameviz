@@ -17,7 +17,7 @@ viz = fv.open()
 viz.add_box()
 ```
 
-独立脚本可调用 `viz.keep_running()`。App 位于当前 Python 环境，随 wheel 安装和卸载。新开场景会优先复用兼容的已运行 Host。没有 Host 时，SDK 会自动查找随包 App。显式连接地址和路径沿用原有规则。候选 App 使用 Developer ID 签名，Apple 公证等待维护者完成配置。独立 DMG 的签名状态以对应产物记录为准。
+独立脚本可调用 `viz.keep_running()`。App 位于当前 Python 环境，随 wheel 安装和卸载。新开场景会优先复用兼容的已运行 Host。没有 Host 时，SDK 会自动查找随包 App。显式连接地址和路径沿用原有规则。候选 App 使用 Developer ID 签名。公证和已安装 App 的验证结果以对应 wheel 的验收记录为准。独立 DMG 有自己的签名和公证记录。
 
 ## 各平台和产物
 

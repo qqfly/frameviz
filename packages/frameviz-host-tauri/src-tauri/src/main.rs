@@ -388,7 +388,8 @@ fn get_ws_port(state: tauri::State<AppState>) -> u16 {
 }
 
 fn main() {
-    if std::env::args().skip(1).eq(["--build-info".to_owned()]) {
+    let build_args: Vec<_> = std::env::args().skip(1).collect();
+    if build_args.as_slice() == ["--build-info"] || build_args.as_slice() == ["--build-info", "--version"] {
         println!("{}", serde_json::json!({
             "role": "desktop",
             "release": env!("CARGO_PKG_VERSION"),

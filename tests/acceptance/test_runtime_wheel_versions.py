@@ -8,6 +8,7 @@ from wheel.wheelfile import WheelFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/release'))
 from build_runtime_wheel import build_wheel
+from runtime_metadata import build_info
 
 REVISION = 'a' * 40
 
@@ -43,3 +44,11 @@ def test_normalizes_prerelease_and_creates_new_directory(tmp_path):
     with WheelFile(result) as completed:
         assert b'"sdk_release": "0.5.0rc1"' in completed.read('frameviz/_binaries/build.json')
         assert b'"sdk_protocol": "0.5.0"' in completed.read('frameviz/_binaries/build.json')
+
+
+def test_legacy_desktop_version_probe_does_not_launch_window(tmp_path):
+    binary = tmp_path / 'legacy'
+    binary.write_text('#!/bin/sh\n[ "$2" = --version ] || exit 2\necho "FrameViz Host v0.4.0"\n')
+    binary.chmod(0o755)
+    with pytest.raises(ValueError, match='Invalid --build-info'):
+        build_info(binary, 'desktop')

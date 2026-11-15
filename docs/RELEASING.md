@@ -22,4 +22,6 @@ python scripts/release/build_runtime_wheel.py /new/sdk/frameviz-0.5.0-py3-none-a
 
 Install this file into a fresh environment. Verify the installed App with `codesign --verify --deep --strict` and, after completing notarization, separately verify its stapled ticket and Gatekeeper assessment. Complete native window checks before making the file available. For the examples command, place the matching ZIP and its `SHA256SUMS` alongside the versioned Release assets.
 
+If an already signed and notarized runtime predates a packaging-only change, use `--runtime-source-revision` with its original build receipt. Verify that the runtime inputs are identical across those revisions. The wheel records the SDK and native runtime revisions separately.
+
 The [Ubuntu AppDir recipe and PyPI checklist](PYTHON_LINUX_RELEASE.md) cover the Linux platform wheel.

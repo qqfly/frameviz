@@ -39,7 +39,9 @@ def sdk_protocol(source):
 
 
 def build_info(binary, role):
-    result = subprocess.run([binary, '--build-info'], capture_output=True, text=True,
+    # Older desktop builds ignore unknown flags. --version makes those builds
+    # exit without opening a native window. Only newer builds return JSON.
+    result = subprocess.run([binary, '--build-info', '--version'], capture_output=True, text=True,
                             check=True, timeout=10)
     try:
         info = json.loads(result.stdout)

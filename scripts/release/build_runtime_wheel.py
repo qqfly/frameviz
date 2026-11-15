@@ -55,7 +55,7 @@ def mac_runtime(app, revision):
         source = json.loads(receipt.read_text())
         if source['source_revision'] != revision or source['files']['FrameViz.app/Contents/MacOS/frameviz'] != digest:
             raise ValueError('The Apple App does not match its build receipt')
-    return 'macosx_11_0_arm64', files, [dict(desktop, sha256=digest)]
+    return 'macosx_11_0_arm64', files, [dict(desktop, sha256=digest, source_revision=revision)]
 
 
 def linux_runtime(desktop_archive, host, revision):
@@ -94,7 +94,8 @@ def linux_runtime(desktop_archive, host, revision):
         raise ValueError('The Linux AppDir desktop executable does not match its build manifest')
     if standalone['role'] != 'standalone' or standalone['sha256'] != file_hash(host):
         raise ValueError('The standalone Host does not match the Linux AppDir build manifest')
-    return 'linux_x86_64', {'desktop.tar.xz': desktop_archive, 'frameviz-server': host}, [desktop, standalone]
+    native = [dict(item, source_revision=revision) for item in (desktop, standalone)]
+    return 'linux_x86_64', {'desktop.tar.xz': desktop_archive, 'frameviz-server': host}, native
 
 
 def build_wheel(sdk, output, platform, runtime, native, revision):
@@ -156,14 +157,18 @@ def main():
     inputs.add_argument('--linux-desktop', type=Path, help='Local Linux candidate AppDir archive')
     parser.add_argument('--linux-host', type=Path)
     parser.add_argument('--source-revision', required=True, help='Source revision for the SDK build receipt')
+    parser.add_argument('--runtime-source-revision', help='Revision in the existing native build receipt, if different')
     args = parser.parse_args()
     try:
+        revision = args.runtime_source_revision or args.source_revision
+        if not re.fullmatch(r'[a-f0-9]{40}', revision):
+            raise ValueError('Use a full runtime source commit SHA')
         if args.mac_app:
             if args.linux_host:
                 parser.error('--linux-host requires --linux-desktop')
-            platform, files, native = mac_runtime(args.mac_app, args.source_revision)
+            platform, files, native = mac_runtime(args.mac_app, revision)
         elif args.linux_host:
-            platform, files, native = linux_runtime(args.linux_desktop, args.linux_host, args.source_revision)
+            platform, files, native = linux_runtime(args.linux_desktop, args.linux_host, revision)
         else:
             parser.error('--linux-desktop requires --linux-host')
         print(build_wheel(args.sdk, args.output, platform, files, native, args.source_revision))
