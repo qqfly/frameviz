@@ -31,6 +31,21 @@ def test_find_installed_runtime_without_checkout_or_override(installation):
     assert host.find_host_executable() == installation
 
 
+def test_headless_wheel_host_is_preferred_only_for_the_headless_path(installation, tmp_path, monkeypatch):
+    runtime = tmp_path / "wheel"
+    runtime.mkdir()
+    standalone = runtime / "frameviz-server"
+    standalone.write_text("#!/bin/sh\nprintf 'FrameViz Host v0.5.0\\n'\n")
+    standalone.chmod(0o755)
+    monkeypatch.setattr(host, "_RUNTIME_DIRECTORY", runtime)
+    monkeypatch.setenv("DISPLAY", ":8")
+    assert host.find_host_executable() == installation
+    assert host.find_host_executable(native_only=True) == installation
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert host.find_host_executable(prefer_browser=True) == standalone
+
+
 def test_open_bootstraps_installed_runtime_without_welcome(installation, monkeypatch):
     commands = []
     monkeypatch.setattr(viz, '_run_process', lambda cmd: commands.append(cmd) or True)

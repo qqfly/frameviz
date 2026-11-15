@@ -12,3 +12,12 @@ Version 0.5.0 is unreleased. Local candidate builds and manual CI produce review
 `python3 scripts/release/export_source.py /new/output/source` works without Git and uses an explicit source manifest. The manifest is refreshed by `python3 scripts/update_source_manifest.py` after intentional source changes. `local-release.sh` requires a new output directory and fails on build errors. The repository has no inherited commit history; old project provenance stays in the private transition records, not the new distributable history.
 
 From a clean candidate checkout, run `python3 scripts/release/build_examples_zip.py /new/output/FrameViz-0.5.0-examples.zip` to build the shared Python/C++ examples archive. When building from an exported source tree, pass `--source-ref` with its candidate commit to pin links to repository-only documentation. Extract the produced ZIP to a path with spaces and use the installed SDK to test the documented commands. The [examples guide](../examples/DOWNLOAD.md) lists the required runtime and optional renderer.
+
+For the Apple Silicon platform wheel, build the universal SDK wheel and the App from the same candidate. Use the App produced by the [Developer ID signing workflow](MACOS.md). With the `wheel` Python tool installed, run:
+
+```sh
+python scripts/release/build_runtime_wheel.py /new/sdk/frameviz-0.5.0-py3-none-any.whl /new/wheels \
+  --mac-app /new/signed/FrameViz.app
+```
+
+Install this file into a fresh environment. Verify the installed App with `codesign --verify --deep --strict` and, after completing notarization, separately verify its stapled ticket and Gatekeeper assessment. Complete native window checks before making the file available. For the examples command, place the matching ZIP and its `SHA256SUMS` alongside the versioned Release assets.

@@ -2,6 +2,8 @@
 
 For 0.5.0 trials, ask the maintainer for the matching runtime, SDK and checksums, or build them from this checkout. Use 0.4 SDKs with the older 0.4 runtimes on Releases. Install into a dedicated development environment and a new version prefix.
 
+The Apple Silicon platform wheel includes the Tauri App. See [Python distribution](PYTHON_DISTRIBUTION.md) for the local candidate and its signing status. Standalone DMGs, Ubuntu packages and C++ SDKs remain separate downloads.
+
 Python source installation:
 
 ```sh

@@ -25,24 +25,21 @@
 
 ## 快速开始
 
-请向维护者获取适合你平台的 **0.5.0 试用运行时和配套 SDK**，也可从当前源码构建。[Releases](https://github.com/qqfly/frameviz/releases) 上已有的 0.4 预览包请搭配 0.4 SDK。各平台文件和命令见[安装说明](docs/INSTALLATION.md)。
-
-各平台共用一份 Python／C++ 示例源码 ZIP。文件清单、运行命令和 SDK 要求见[示例包指引](examples/DOWNLOAD.md)。
-
-先安装一次运行环境，再在每个 Python 项目环境里安装配套 SDK：
-
-| 环境 | 运行环境 | 显示方式 |
-|---|---|---|
-| Apple 芯片 Mac | 随配套试用 DMG 提供的 `FrameViz.app` | 默认原生窗口 |
-| Windows x64 桌面 | 配套 App 和 SDK，见 [Windows 试用指引](docs/INSTALLATION.md#windows-x64-trial) | 默认原生窗口 |
-| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
-| 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
+Apple 芯片 Mac 的 Python 候选 wheel 已内置 Tauri App。向维护者获取候选文件，在项目的 Python 环境里安装。公开发行后将使用 `python -m pip install frameviz`。
 
 ```sh
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
+.venv/bin/python -m pip install ./frameviz-0.5.0-py3-none-macosx_11_0_arm64.whl
 ```
+
+独立桌面 App、C++ SDK 和其他 Python 试用平台继续使用维护者提供的配套文件。[安装与下载说明](docs/INSTALLATION.md)。
+
+| 环境 | 运行环境 | 显示方式 |
+|---|---|---|
+| Apple 芯片 Mac | 内置 App 的 Python 候选 wheel，或独立试用 DMG | 默认原生窗口 |
+| Windows x64 桌面 | 配套 App 和 SDK，见 [Windows 试用指引](docs/INSTALLATION.md#windows-x64-trial) | 默认原生窗口 |
+| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
+| 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
 
 在 IPython 或 Python 会话中运行：
 
@@ -54,9 +51,7 @@ viz.add_box()
 
 Python 会复用兼容的运行环境，也能自动启动已安装的 macOS 或 Linux 运行时。Windows 从 Python 冷启动时，在当前 PowerShell 用 `FRAMEVIZ_TAURI_APP` 指定已安装的可执行文件。C++ SDK 可以自动发现已安装的 Windows App。独立 Python 脚本用 `viz.keep_running()` 保持运行，Ctrl+C 关闭视图和连接。`fv.open(window_mode=1)` 使用浏览器，`window_mode=0` 由应用管理页面。无 Linux 桌面时会自动打印私有链接。浏览器模式复用页面，各场景仍独立。需要同时保留多个页面时，使用 `reuse_browser=False`。
 
-已有 Mac 预览版使用临时签名，**尚未经过 Apple 公证**。Ubuntu 构建/容器安装检查与原生桌面、显卡实机体验分开验收，具体以对应产物和测试记录为准。参见[安装与源码构建](docs/INSTALLATION.md)、[Mac 首次打开](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
-
-SDK 已能通过 pip 安装 wheel 或源码。公共 `pip install frameviz` 暂未作为受支持的入口；当前方案将运行环境与 SDK 分开安装。[Python 分发说明](docs/PYTHON_DISTRIBUTION.md)。
+对应版本的 Release 资产准备好后，Python 可运行 `python -m frameviz download-examples --output ./frameviz-examples` 获取共用示例。私有候选阶段可向维护者获取同一份 Python／C++ ZIP。[Python 分发说明](docs/PYTHON_DISTRIBUTION.md) · [示例包指引](examples/DOWNLOAD.md)。
 
 ## 开发者功能案例
 

@@ -25,24 +25,21 @@ Coordinates and dimensions come from your application. Quaternions use **`[x, y,
 
 ## Quick start
 
-Ask the maintainer for the **0.5.0 trial runtime and its matching SDK** for your platform, or build both from this checkout. The older [0.4 previews](https://github.com/qqfly/frameviz/releases) need their matching 0.4 SDK. See the [installation guide](docs/INSTALLATION.md) for artifact choices and commands.
-
-The shared examples ZIP contains the Python and C++ source examples for all platforms. See the [ZIP guide](examples/DOWNLOAD.md) for the contents, commands, and required SDKs.
-
-Install the runtime once, then install its paired Python SDK wheel in each project environment:
-
-| Environment | Runtime | Viewer |
-|---|---|---|
-| Apple Silicon Mac | Matching trial DMG with `FrameViz.app` | Native window by default |
-| Windows x64 desktop | Matching App and SDK. See the [Windows trial instructions](docs/INSTALLATION.md#windows-x64-trial). | Native window by default |
-| Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./FrameViz_*.deb` | Native window by default |
-| Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |
+The Apple Silicon Python candidate bundles the Tauri App. Obtain the candidate wheel from the maintainer and install it in your Python environment. The planned public command is `python -m pip install frameviz`, pending release.
 
 ```sh
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
+.venv/bin/python -m pip install ./frameviz-0.5.0-py3-none-macosx_11_0_arm64.whl
 ```
+
+For standalone installations, C++ and the other Python trial platforms, use the matching runtime and SDK. [Installation and available downloads](docs/INSTALLATION.md).
+
+| Environment | Runtime | Viewer |
+|---|---|---|
+| Apple Silicon Mac | Bundled Python candidate wheel or independent trial DMG | Native window by default |
+| Windows x64 desktop | Matching App and SDK. See the [Windows trial instructions](docs/INSTALLATION.md#windows-x64-trial). | Native window by default |
+| Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./FrameViz_*.deb` | Native window by default |
+| Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |
 
 In IPython or a Python session:
 
@@ -54,9 +51,7 @@ viz.add_box()
 
 A running compatible runtime is reused. Python can start a known macOS or Linux installation automatically. For a Windows cold start, set `FRAMEVIZ_TAURI_APP` to the installed executable in the current PowerShell session. The C++ SDK can discover the installed Windows App automatically. In a standalone Python script, end with `viz.keep_running()`. Ctrl+C closes the view and connection. Use `fv.open(window_mode=1)` to open a browser or `window_mode=0` to manage pages yourself. Without a Linux desktop, FrameViz prints the private link automatically. Browser mode reuses the managed page and keeps scenes independent. Use `reuse_browser=False` to keep separate pages.
 
-The existing Mac preview is ad-hoc signed and **not Apple-notarized**. Ubuntu build/container checks and native desktop/GPU acceptance are different results; the latest artifact and test records determine which has run. See [installation and source builds](docs/INSTALLATION.md), [Mac first-open steps](docs/MACOS.md), and [troubleshooting](docs/TROUBLESHOOTING.md).
-
-The SDK is pip-installable from a wheel or source. Public `pip install frameviz` is not an advertised installation entry yet; the current delivery keeps runtime installation separate. [Python distribution](docs/PYTHON_DISTRIBUTION.md).
+Python can fetch the matching examples with `python -m frameviz download-examples --output ./frameviz-examples` once the versioned Release assets are available. For private candidates, obtain the shared Python/C++ ZIP from the maintainer. [Python distribution](docs/PYTHON_DISTRIBUTION.md) · [Examples ZIP](examples/DOWNLOAD.md).
 
 ## Developer examples
 
