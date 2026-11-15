@@ -64,6 +64,11 @@ def copy_payload(sysroot, root):
         source = sysroot / name
         if source.is_dir():
             shutil.copytree(source, root / name, symlinks=True)
+    icons = root / 'usr/share/icons'
+    if icons.is_dir():
+        for theme in icons.iterdir():
+            if theme.is_dir() and not theme.is_symlink() and theme.name not in {'Adwaita', 'hicolor'}:
+                shutil.rmtree(theme)
     for name in ('bwrap', 'xdg-dbus-proxy', 'xdg-open'):
         shutil.copy2(sysroot / 'usr/bin' / name, root / 'bin' / name)
     for directory in (root / 'usr/lib', root / 'lib'):
@@ -87,6 +92,9 @@ def copy_payload(sysroot, root):
             driver.symlink_to(recorded[digest])
         else:
             recorded[digest] = driver.name
+    for link in root.rglob('*'):
+        if link.is_symlink() and (link.readlink().is_absolute() or not link.resolve().is_relative_to(root)):
+            raise ValueError(f'Ubuntu runtime link escapes the AppDir: {link.relative_to(root)}')
 
 
 def relocate_webkit(root):
@@ -157,7 +165,8 @@ def build(args):
         server_info = build_info(standalone, 'standalone')
         check_pair(desktop_info['release'], desktop_info['protocol'], server_info)
         manifest = {'source_revision': args.source_revision, 'preview_deb_sha256': args.preview_sha256,
-                    'ubuntu_lock_sha256': file_hash(args.lock), 'webkit_relocation': relocation,
+                    'ubuntu_lock_sha256': file_hash(args.lock), 'appdir_recipe_sha256': file_hash(Path(__file__)),
+                    'webkit_relocation': relocation,
                     'launcher_sha256': file_hash(launcher),
                     'desktop': dict(desktop_info, sha256=file_hash(desktop_binary)),
                     'standalone': dict(server_info, sha256=file_hash(standalone))}

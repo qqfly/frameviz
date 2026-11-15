@@ -7,6 +7,7 @@ import pytest
 from wheel.wheelfile import WheelFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/release'))
+from build_linux_appdir import copy_payload
 from build_runtime_wheel import build_wheel
 from runtime_metadata import build_info
 
@@ -52,3 +53,19 @@ def test_legacy_desktop_version_probe_does_not_launch_window(tmp_path):
     binary.chmod(0o755)
     with pytest.raises(ValueError, match='Invalid --build-info'):
         build_info(binary, 'desktop')
+
+
+def test_ubuntu_payload_keeps_default_icons_without_external_theme_links(tmp_path):
+    sysroot, appdir = tmp_path / 'system', tmp_path / 'appdir'
+    icons = sysroot / 'usr/share/icons'
+    (icons / 'Adwaita').mkdir(parents=True)
+    (icons / 'Humanity').mkdir()
+    (icons / 'Adwaita/tool.svg').write_text('icon fixture')
+    (icons / 'Humanity/external.svg').symlink_to('/places/16/start-here.svg')
+    (sysroot / 'usr/bin').mkdir(parents=True)
+    for helper in ('bwrap', 'xdg-dbus-proxy', 'xdg-open'):
+        (sysroot / 'usr/bin' / helper).write_text('helper fixture')
+    (appdir / 'bin').mkdir(parents=True)
+    copy_payload(sysroot, appdir)
+    assert (appdir / 'usr/share/icons/Adwaita/tool.svg').read_text() == 'icon fixture'
+    assert not (appdir / 'usr/share/icons/Humanity').exists()
