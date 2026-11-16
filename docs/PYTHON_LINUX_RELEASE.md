@@ -23,7 +23,11 @@ Use the actual preview filename. Verify its checksum against the preview's recei
 
 The builder excludes system glibc, developer files, MiniBrowser and the PAM session module. It omits the GStreamer ASCII-art, libcaca and JACK modules. WebGL, standard audio discovery and PulseAudio remain available. GnuTLS and its library dependencies are bundled for the GIO TLS module and GTK's CUPS backend. HTTPS uses the operating system's CA trust store. PulseAudio's private library directory is part of the launcher's search path because the Ubuntu libraries also carry an absolute system RUNPATH. The builder deduplicates identical Mesa DRI binaries, retains Adwaita and hicolor, rejects escaping symlinks and compiles GLib schemas.
 
-For Ubuntu desktop acceptance use an ordinary user with the default sandbox and test actual pointer interaction. The launcher leaves WebKit's sandbox environment alone. WebKitGTK's active Bubblewrap path still references `/usr/bin/bwrap` and `/usr/bin/xdg-dbus-proxy`. Its startup logic also binds resources within the sandbox. A container run with default environment values does not exercise that path unless WebKit actually uses it. Record which helper and subprocess paths were executed, together with Xvfb, software rendering and CPU translation where applicable. Treat the extracted cache as disk usage and container launch timing as environment-specific.
+The Linux native Viewer uses the WebKitGTK 4.1 context as created by Wry. FrameViz leaves the context and sandbox environment settings at their defaults. The running contexts in the Ubuntu 22.04 and 24.04 wheel checks had Bubblewrap sandboxing disabled by default. The WebProcess shared its Host's namespaces and did not acquire an additional seccomp filter. The ordinary desktop path does not use the Bubblewrap helpers. Headless Host and external-browser modes do not create a packaged WebKitGTK Viewer.
+
+An upstream `WEBKIT_FORCE_SANDBOX=1` diagnostic selects a different path. The shipped WebKitGTK still has compiled-in `/usr/bin/bwrap` and `/usr/bin/xdg-dbus-proxy` references for that path. FrameViz does not expose a sandbox-enabled mode in this version. A future opt-in or default-on feature would require a WebKit build with relocatable helpers, read-only mounts for the AppDir libraries and resources, and effective confinement validation on supported desktop hosts. That work would limit WebProcess access to the host system. It is tracked separately from the default-mode wheel checks.
+
+Use the [native Ubuntu acceptance procedure](PYTHON_LINUX_NATIVE_REVIEW.md) from a regular desktop account. Record actual pointer interaction, renderer and process evidence. Report Xvfb, software rendering and CPU translation when applicable. Treat the extracted cache as disk usage and container launch timing as environment-specific.
 
 ## Native license and source records
 
@@ -31,7 +35,15 @@ For Ubuntu desktop acceptance use an ordinary user with the default sandbox and 
 
 Fetch Ubuntu sources by exact package and source version from the signed Jammy snapshot in `ubuntu-runtime-sources.json`. Enable the corresponding `deb-src` entries for `jammy`, `jammy-updates` and `jammy-security` with the Ubuntu archive keyring, then use `apt-get source --download-only --only-source <source>=<version>`. The index includes the component paths of the binary inputs, which can differ from the path of their source. For WebKitGTK use the exact [source file lock](../scripts/release/ubuntu-webkit-source.json). Its `pool_directory` works under the Ubuntu archive and the pinned snapshot. The recipe replaces two occurrences of the fixed helper path byte string, keeps the length unchanged, and records the original and modified library hashes and byte strings in `runtime-build.json`. The AppDir includes the exact modifying recipe under `usr/share/doc/frameviz`.
 
-Before public distribution, provide the corresponding source files and required build and modification materials for the native licenses alongside the wheel. The package indexes and WebKit source hashes identify what to publish and let reviewers verify an offline copy.
+Use the standalone collector with a trusted Ubuntu archive keyring to prepare the source delivery. It checks signatures on the three historical `InRelease` records and SHA-256 on their source indexes, then downloads every exact source version in the AppDir index. The output includes the signed metadata, per-file checksums and source receipt.
+
+```sh
+python scripts/release/collect_ubuntu_sources.py /new/runtime/ubuntu-runtime-sources.json /new/source/ubuntu \
+  --keyring /usr/share/keyrings/ubuntu-archive-keyring.gpg
+(cd /new/source/ubuntu && sha256sum -c SHA256SUMS)
+```
+
+Make this source collection available alongside the wheel, together with the exact FrameViz source revisions, build scripts, notices and the WebKit modification record. The [matching source delivery instructions](PYTHON_LINUX_CORRESPONDING_SOURCE.md) explain the bundle layout, extraction and rebuild inputs.
 
 ## Public PyPI checklist
 
@@ -39,4 +51,4 @@ The local wheel uses `linux_x86_64`. PyPI Warehouse accepts the defined `manylin
 
 For the final size, check the project account's actual limit. Default single-file limits are 100 MB for an individual project and 200 MB for an organization-owned project. If still over the relevant limit, prepare an increase request for PyPI with the project URL, measured candidate size, requested cap, and an explanation that a single package includes the native WebKitGTK/Mesa closure for an offline first launch and the headless Host. PyPI asks for an existing smaller release before filing. If the project is new, plan a genuine smaller first release, such as the approved Apple Silicon build, only after publication is separately authorized. Prepare the account, 2FA and Trusted Publishing configuration for the actual project/workflow. A pending publisher does not reserve a name. [PyPI storage limits](https://docs.pypi.org/project-management/storage-limits/) · [Pending Trusted Publishers](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
 
-Keep the current wheel tagged `linux_x86_64` for local installation. Before assigning a public tag, verify active sandbox startup using relocatable helper paths and read-only bindings for the extracted runtime and its resources. Validate native desktop rendering, the system integration paths and the standalone Host on the actual final artifact.
+Keep the current wheel tagged `linux_x86_64` for local installation. Before assigning a public tag, complete the default-mode native desktop test on the actual final artifact, including its renderer and relevant system integration paths. Record the tested host conditions and close any portability gaps uncovered there. Verify the standalone Host on the same artifact. Enabling the optional WebKit sandbox is a separate feature.
