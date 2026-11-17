@@ -76,8 +76,15 @@ def copy_payload(sysroot, root):
         for theme in icons.iterdir():
             if theme.is_dir() and not theme.is_symlink() and theme.name not in {'Adwaita', 'hicolor'}:
                 shutil.rmtree(theme)
-    for name in ('bwrap', 'xdg-dbus-proxy', 'xdg-open'):
+    for name in ('bwrap', 'xdg-dbus-proxy'):
         shutil.copy2(sysroot / 'usr/bin' / name, root / 'bin' / name)
+    libexec = root / 'libexec'
+    libexec.mkdir()
+    shutil.copy2(sysroot / 'usr/bin/xdg-open', libexec / 'xdg-open')
+    shutil.copy2(HERE / 'linux_appdir_host_environment.sh', libexec / 'frameviz-host-environment.sh')
+    opener = root / 'bin/xdg-open'
+    shutil.copy2(HERE / 'linux_appdir_xdg_open.sh', opener)
+    opener.chmod(0o755)
     plugins = root / 'usr/lib/x86_64-linux-gnu/gstreamer-1.0'
     for name in PRUNED_GSTREAMER_SINKS:
         (plugins / name).unlink(missing_ok=True)
@@ -199,6 +206,8 @@ def build(args):
                     'ubuntu_lock_sha256': file_hash(args.lock), 'appdir_recipe_sha256': file_hash(Path(__file__)),
                     'webkit_relocation': relocation, 'excluded_gstreamer_modules': PRUNED_GSTREAMER_SINKS,
                     'launcher_sha256': file_hash(launcher),
+                    'host_opener_sha256': file_hash(root / 'bin/xdg-open'),
+                    'host_environment_sha256': file_hash(root / 'libexec/frameviz-host-environment.sh'),
                     'desktop': dict(desktop_info, sha256=file_hash(desktop_binary)),
                     'standalone': dict(server_info, sha256=file_hash(standalone))}
         (root / 'runtime-build.json').write_text(json.dumps(manifest, indent=2) + '\n')

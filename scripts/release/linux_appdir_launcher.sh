@@ -2,6 +2,8 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 lib="$root/usr/lib/x86_64-linux-gnu"
+. "$root/libexec/frameviz-host-environment.sh"
+save_frameviz_host_environment
 # PulseAudio's Jammy libraries have an absolute RUNPATH for their private ABI.
 export LD_LIBRARY_PATH="$lib:$root/lib/x86_64-linux-gnu:$lib/pulseaudio"
 export WEBKIT_INJECTED_BUNDLE_PATH="$lib/webkit2gtk-4.1/injected-bundle"

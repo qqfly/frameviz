@@ -1,6 +1,8 @@
 """The runtime assembler rejects incompatible inputs before writing an output."""
 
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 
 import pytest
@@ -84,6 +86,52 @@ def test_ubuntu_payload_keeps_pulseaudio_and_cuts_unused_audio_and_terminal_plug
         (sysroot / relative / plugin).touch()
     copy_payload(sysroot, appdir)
     assert [path.name for path in (appdir / relative).iterdir()] == ['libgstpulseaudio.so']
+
+
+@pytest.mark.parametrize('host_library_path', [None, '', '/user lib:$literal'])
+def test_linux_xdg_open_keeps_the_callers_environment(tmp_path, host_library_path):
+    sysroot, appdir = tmp_path / 'system', tmp_path / 'App Dir'
+    host_bin = tmp_path / 'host bin'
+    system_bin = sysroot / 'usr/bin'
+    system_bin.mkdir(parents=True)
+    (appdir / 'bin').mkdir(parents=True)
+    host_bin.mkdir()
+    for helper in ('bwrap', 'xdg-dbus-proxy'):
+        (system_bin / helper).touch()
+    xdg_open = system_bin / 'xdg-open'
+    xdg_open.write_text('#!/bin/sh\nexec system-handler "$@"\n')
+    xdg_open.chmod(0o755)
+    host_probe = (
+        '#!/bin/sh\n'
+        'printf "%s\\0" "${LD_LIBRARY_PATH-unset}" "${XDG_DATA_DIRS-unset}" '
+        '"${GTK_PATH-unset}" "${GIO_EXTRA_MODULES-unset}" "${GST_PLUGIN_SCANNER-unset}" '
+        '"$PATH" "$PWD" "$@"\n'
+    )
+    handler = host_bin / 'system-handler'
+    handler.write_text(host_probe)
+    handler.chmod(0o755)
+    copy_payload(sysroot, appdir)
+    executable = appdir / 'bin/frameviz-real'
+    executable.write_text(
+        '#!/bin/sh\n'
+        'case "$LD_LIBRARY_PATH" in "$PWD"/*) ;; *) exit 1 ;; esac\n'
+        'exec "$@"\n'
+    )
+    executable.chmod(0o755)
+    launcher = appdir / 'bin/frameviz'
+    shutil.copy2(Path(sys.path[0]) / 'linux_appdir_launcher.sh', launcher)
+    launcher.chmod(0o755)
+    env = {
+        'PATH': f'{host_bin}:/usr/bin:/bin',
+        'XDG_DATA_DIRS': '/user share:/other\nshare',
+        'GTK_PATH': '',
+    }
+    if host_library_path is not None:
+        env['LD_LIBRARY_PATH'] = host_library_path
+    output = subprocess.check_output([launcher, 'xdg-open', 'https://example.invalid/?a=1&b=2'],
+                                     env=env, cwd=tmp_path, text=True)
+    assert output.split('\0') == [env.get('LD_LIBRARY_PATH', 'unset'), env['XDG_DATA_DIRS'], '', 'unset', 'unset',
+                                  env['PATH'], str(tmp_path.resolve()), 'https://example.invalid/?a=1&b=2', '']
 
 
 def test_elf_providers_must_be_on_the_consumer_search_path(tmp_path):
