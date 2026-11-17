@@ -1,15 +1,15 @@
 # Python 安装与分发
 
-当前采用两步安装：先装一次 FrameViz 运行环境，再在每个虚拟环境中装 Python SDK。wheel 只包含 Python SDK，依赖 `numpy` 与 `websocket-client`，不包含 Rust Host、桌面 App 或平台安装器。
+Apple 芯片 Mac 可从 [PyPI 安装 0.5.0 预览版](https://pypi.org/project/frameviz/0.5.0rc1/)。平台 wheel 包含 Python SDK 和已签名、公证的 FrameViz App。`fv.open()` 会打开原生窗口。
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
+.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
 ```
 
-源码仓库用户可改用 `.venv/bin/python -m pip install ./packages/frameviz-py`。macOS 和 Linux 支持自动发现和启动标准位置的已安装运行时。Windows 可复用已运行的 Host；冷启动时在当前 PowerShell 将 `FRAMEVIZ_TAURI_APP` 指向已安装的 `frameviz.exe`。同一 `major.minor` 的不同 patch 版本兼容，跨次版本会提示应升级 SDK 还是运行环境。[完整安装说明](INSTALLATION.md)。
+Linux 的公开 wheel 和正式 0.5.0 正在准备中。独立运行时用户可以在虚拟环境中安装配套的 `py3-none-any` SDK wheel，也可以用 `.venv/bin/python -m pip install ./packages/frameviz-py` 从源码安装 SDK。macOS 和 Linux 支持自动发现标准位置的兼容运行时。Windows 从 Python 冷启动时，在 PowerShell 将 `FRAMEVIZ_TAURI_APP` 指向已安装的 `frameviz.exe`。[完整安装说明](INSTALLATION.md)
 
-本项目拟使用 PyPI 发行名 `frameviz`，导入名仍为 `frameviz`。公开索引的查询结果不能确认维护者的项目所有权。当前通过明确的本地 wheel 路径安装。后续公开发布须核实 PyPI 名称/账号、固定发布版本，完成配套运行环境与 wheel 验证，再通过维护者设置的 [Trusted Publishing](https://docs.pypi.org/publishing/publishing-to-pypi/) 发布。当前开发计划保留两步安装，不把包含运行时的平台 wheel 作为本轮目标。
+发布名和导入名均为 `frameviz`。示例源码见[案例目录](../examples/README.md)，同一组 Python／C++ 示例也可以打成共用 ZIP。[示例包指引](../examples/DOWNLOAD.md)
 
 截图和教程 HTML 导出使用 `capture` extra。可在 wheel 路径后加 `[capture]`，然后运行 `python -m playwright install chromium`。
 

@@ -1,5 +1,7 @@
 # macOS Apple Silicon preview
 
+For current Apple Silicon Python use, install the [0.5.0 preview from PyPI](INSTALLATION.md#apple-silicon-mac-preview). Its wheel contains the Developer ID signed, notarized App. The 0.4 DMG steps below describe archived private previews.
+
 The published 0.4 private preview targets Apple Silicon (M-series) Macs. Its executable and bundle declare macOS 11.0 as the minimum deployment target; runtime acceptance has been executed on the maintainer's macOS 27.2 machine. That declaration is not independent testing on every older macOS version. The other Mac remains a separate acceptance environment.
 
 ## Install and start
@@ -90,4 +92,4 @@ The separate `scripts/release/build-macos-signed.sh /new/absolute/output` builde
 
 The builder collects notices before signing, enables the hardened runtime and timestamp, submits and staples the App, then signs, submits and staples its DMG. A rejected notarization response stops the build and stays in the output directory. It writes to a new directory and does not replace installed Apps or old previews. No ad-hoc signature is substituted when credentials are absent. The existing ad-hoc preview builder remains separate.
 
-This build path has not yet completed Developer ID/notarization acceptance: no usable identity or repository signing secret was visible during setup. After providing credentials, run it, preserve both Apple responses, and download the resulting DMG on the other Mac for first-open acceptance. A script or a local Gatekeeper assessment cannot substitute for that second-machine result.
+Record the exact source, Apple submission results and installed-App checks for each artifact. The 0.5.0rc1 App has completed signing, notarization and local installed-wheel validation. Any new DMG or second-machine validation needs its own acceptance record.

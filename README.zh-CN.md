@@ -4,7 +4,19 @@
 
 用 **Python 或 C++** 绘制并交互操作三维数据，显示在桌面窗口、浏览器或你的 **Vue** 应用里。FrameViz 提供对象句柄、NumPy/数组输入、实例化、相机控制、拾取事件和 Gizmo。Rust Host 在本地维护场景，Three.js Viewer 负责渲染。
 
-当前为 **0.5.0 开发候选版**。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+**0.5.0 Apple 芯片预览版**已在 [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/) 提供下载。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+
+## 在 Apple 芯片 Mac 上快速开始
+
+预览 wheel 包含 Python SDK 和已签名、公证的 FrameViz App。在 Python 3.9 或更新版本的环境中运行：
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
+.venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
+```
+
+FrameViz 会打开原生窗口并绘制方块。回终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Ubuntu、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。Linux 公开 wheel 和正式 0.5.0 正在准备中。
 
 ## 可以绘制什么？
 
@@ -23,26 +35,7 @@
 
 坐标与尺寸由你的应用提供；四元数按 **`[x, y, z, w]`** 排列。输入约定见 [API 文档](docs/API_Definition.md)，具体语言签名见 [Python](packages/frameviz-py/frameviz/viz.py) 与 [C++](packages/frameviz-cpp/include/frameviz/viz.hpp)。
 
-## 快速开始
-
-请向维护者获取适合你平台的 **0.5.0 试用运行时和配套 SDK**，也可从当前源码构建。[Releases](https://github.com/qqfly/frameviz/releases) 上已有的 0.4 预览包请搭配 0.4 SDK。各平台文件和命令见[安装说明](docs/INSTALLATION.md)。
-
-各平台共用一份 Python／C++ 示例源码 ZIP。文件清单、运行命令和 SDK 要求见[示例包指引](examples/DOWNLOAD.md)。
-
-先安装一次运行环境，再在每个 Python 项目环境里安装配套 SDK：
-
-| 环境 | 运行环境 | 显示方式 |
-|---|---|---|
-| Apple 芯片 Mac | 随配套试用 DMG 提供的 `FrameViz.app` | 默认原生窗口 |
-| Windows x64 桌面 | 配套 App 和 SDK，见 [Windows 试用指引](docs/INSTALLATION.md#windows-x64-trial) | 默认原生窗口 |
-| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
-| 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
-
-```sh
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install /path/to/frameviz-0.5.0-py3-none-any.whl
-```
+## 使用 FrameViz
 
 在 IPython 或 Python 会话中运行：
 
@@ -54,9 +47,7 @@ viz.add_box()
 
 Python 会复用兼容的运行环境，也能自动启动已安装的 macOS 或 Linux 运行时。Windows 从 Python 冷启动时，在当前 PowerShell 用 `FRAMEVIZ_TAURI_APP` 指定已安装的可执行文件。C++ SDK 可以自动发现已安装的 Windows App。独立 Python 脚本用 `viz.keep_running()` 保持运行，Ctrl+C 关闭视图和连接。`fv.open(window_mode=1)` 使用浏览器，`window_mode=0` 由应用管理页面。无 Linux 桌面时会自动打印私有链接。浏览器模式复用页面，各场景仍独立。需要同时保留多个页面时，使用 `reuse_browser=False`。
 
-已有 Mac 预览版使用临时签名，**尚未经过 Apple 公证**。Ubuntu 构建/容器安装检查与原生桌面、显卡实机体验分开验收，具体以对应产物和测试记录为准。参见[安装与源码构建](docs/INSTALLATION.md)、[Mac 首次打开](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
-
-SDK 已能通过 pip 安装 wheel 或源码。公共 `pip install frameviz` 暂未作为受支持的入口；当前方案将运行环境与 SDK 分开安装。[Python 分发说明](docs/PYTHON_DISTRIBUTION.md)。
+参见 [Python 分发说明](docs/PYTHON_DISTRIBUTION.md)、[macOS 打包](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
 
 ## 开发者功能案例
 
