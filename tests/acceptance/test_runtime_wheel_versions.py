@@ -17,6 +17,37 @@ from runtime_metadata import build_info
 REVISION = 'a' * 40
 
 
+def test_can_stamp_a_release_candidate_without_changing_the_protocol(tmp_path):
+    if not shutil.which('node'):
+        pytest.skip('Node.js is required for the version tool')
+    repo = Path(__file__).resolve().parents[2]
+    files = [
+        'version.json', 'scripts/sync-version.mjs',
+        'packages/frameviz-protocol/src/constants.ts',
+        'packages/frameviz-py/frameviz/client.py', 'packages/frameviz-py/pyproject.toml',
+        'packages/frameviz-server/src/websocket.rs',
+        'packages/frameviz-server/Cargo.toml', 'packages/frameviz-server/Cargo.lock',
+        'packages/frameviz-host-tauri/src-tauri/Cargo.toml',
+        'packages/frameviz-host-tauri/src-tauri/Cargo.lock',
+        'packages/frameviz-host-tauri/src-tauri/tauri.conf.json',
+        'packages/frameviz-cpp/include/frameviz/types.hpp', 'packages/frameviz-cpp/CMakeLists.txt',
+        'packages/frameviz-web-viewer/index.html',
+    ]
+    files += [str(p.relative_to(repo)) for p in (repo / 'packages/frameviz-protocol/schemas').glob('envelope-*.json')]
+    for file in files:
+        destination = tmp_path / file
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(repo / file, destination)
+    sync = ['node', 'scripts/sync-version.mjs']
+    subprocess.run([*sync, '--release', '0.5.0-rc.1'], cwd=tmp_path, check=True)
+    subprocess.run([*sync, '--check'], cwd=tmp_path, check=True)
+    assert 'version = "0.5.0rc1"' in (tmp_path / 'packages/frameviz-py/pyproject.toml').read_text()
+    assert 'PROTOCOL_VERSION = "0.5.0"' in (tmp_path / 'packages/frameviz-py/frameviz/client.py').read_text()
+    host = tmp_path / 'packages/frameviz-host-tauri/src-tauri'
+    assert '"version": "0.5.0-rc.1"' in (host / 'tauri.conf.json').read_text()
+    assert 'name = "frameviz-server"\nversion = "0.5.0-rc.1"' in (host / 'Cargo.lock').read_text()
+
+
 def sdk_wheel(directory):
     path = directory / 'frameviz-0.5.0rc1-py3-none-any.whl'
     with WheelFile(path, 'w') as wheel:

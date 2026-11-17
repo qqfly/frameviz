@@ -26,6 +26,23 @@ python3 scripts/sync_icons.py --check
 node scripts/sync-version.mjs --check
 pnpm --filter @frameviz/host-tauri exec tauri build --target aarch64-apple-darwin --bundles app --no-sign -- --locked
 ditto "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/bundle/macos/FrameViz.app" "$APP"
+python3 - "$APP" <<'PYVERSION'
+import json, plistlib, subprocess, sys
+from pathlib import Path
+app = Path(sys.argv[1])
+expected = json.loads(Path('version.json').read_text())
+native = json.loads(subprocess.check_output([app / 'Contents/MacOS/frameviz', '--build-info', '--version']))
+if native['release'] != expected['release_version'] or native['protocol'] != expected['protocol_version']:
+    raise SystemExit('Mac runtime release or protocol differs from version.json')
+release_base, separator, _ = native['release'].partition('-')
+if separator:
+    # Apple expects numeric bundle fields. The executable and wheel retain the RC.
+    info = app / 'Contents/Info.plist'
+    value = plistlib.loads(info.read_bytes())
+    value['CFBundleShortVersionString'] = release_base
+    value['CFBundleVersion'] = release_base
+    info.write_bytes(plistlib.dumps(value))
+PYVERSION
 cargo metadata --locked --format-version 1 --filter-platform aarch64-apple-darwin --manifest-path packages/frameviz-host-tauri/src-tauri/Cargo.toml > "$OUT/cargo-metadata.json"
 python3 scripts/release/collect_macos_licenses.py --metadata "$OUT/cargo-metadata.json" --app "$APP"
 # The current App has no embedded frameworks/plug-ins; fail if packaging changes.
