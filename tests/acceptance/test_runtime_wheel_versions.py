@@ -8,7 +8,8 @@ import sys
 import pytest
 from wheel.wheelfile import WheelFile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/release'))
+RELEASE_SCRIPTS = Path(__file__).resolve().parents[2] / 'scripts/release'
+sys.path.insert(0, str(RELEASE_SCRIPTS))
 from audit_linux_runtime import installed_dependencies
 from build_linux_appdir import copy_payload, source_index
 from build_runtime_wheel import build_wheel
@@ -150,7 +151,7 @@ def test_linux_xdg_open_keeps_the_callers_environment(tmp_path, host_library_pat
     )
     executable.chmod(0o755)
     launcher = appdir / 'bin/frameviz'
-    shutil.copy2(Path(sys.path[0]) / 'linux_appdir_launcher.sh', launcher)
+    shutil.copy2(RELEASE_SCRIPTS / 'linux_appdir_launcher.sh', launcher)
     launcher.chmod(0o755)
     env = {
         'PATH': f'{host_bin}:/usr/bin:/bin',
