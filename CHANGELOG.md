@@ -27,7 +27,11 @@
 
 The 0.5 SDK requires a 0.5 runtime. See [known limits and compatibility](docs/COMPATIBILITY.md) and [examples](examples/README.md).
 
-## 0.4.0 Unreleased
+## 0.5.0rc1 (2026-11-17)
+
+- Apple Silicon preview on [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/). One wheel installs the Python SDK and the signed, notarized FrameViz App. `fv.open()` opens the desktop window.
+
+## 0.4.0 previews
 
 - 2026-11-09 private preview: welcome on the first manual launch only; closing it keeps the Host available, with the guide accessible from Help.
 - Python discovers verified installed macOS bundles and starts them in the background without an App-path variable; SDK-owned and manually launched Hosts retain separate lifetimes.
@@ -37,5 +41,3 @@ The 0.5 SDK requires a 0.5 runtime. See [known limits and compatibility](docs/CO
 - Authenticated Host/viewers and separate example business-channel credentials.
 - Scene-scope validation, atomic batch updates, shared buffer cleanup, and viewer lifecycle restoration.
 - Protocol 0.4.0 required across all components; unsupported or omitted command versions fail explicitly.
-
-No public release or registry publication has been performed.

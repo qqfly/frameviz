@@ -1,6 +1,20 @@
 # Installation
 
-For 0.5.0 trials, ask the maintainer for the matching runtime, SDK and checksums, or build them from this checkout. Use 0.4 SDKs with the older 0.4 runtimes on Releases. Install into a dedicated development environment and a new version prefix.
+## Apple Silicon Mac preview
+
+With Python 3.9 or newer, install the [0.5.0 preview](https://pypi.org/project/frameviz/0.5.0rc1/) from PyPI. The wheel provides both the Python SDK and the signed, notarized desktop App.
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
+.venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
+```
+
+Press Ctrl+C to finish. After installation the App can start offline. Run the [examples from this checkout](../examples/README.md) with the same Python interpreter.
+
+## Other installation paths
+
+The public Linux wheel and stable 0.5.0 are in preparation. Use the matching SDK and runtime with a separate trial package, or build both from this checkout. Install into a dedicated development environment and a new version prefix.
 
 Python source installation:
 
@@ -35,7 +49,7 @@ One Host owns each state directory. To run multiple Hosts, give every process an
 
 On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, the standalone executable is preferred. Its installed locations are `/usr/bin/frameviz-server`, `/usr/local/bin/frameviz-server`, and `~/.local/bin/frameviz-server`; arbitrary `PATH` entries remain excluded. With no display, `fv.open()` prints a private browser link and returns the scene context. With a desktop it prefers Tauri and uses a browser if a window cannot be opened. The Viewer address is read after startup, including automatically assigned ports.
 
-Use `fv.open(window_mode=1)` to force the browser path, including on a desktop where Tauri is installed. This existing public parameter is the browser switch; no additional environment variable is needed. Native window opening is bypassed. `window_mode=0` keeps page opening manual. The SDK leaves externally started runtimes under external management. A runtime started by the SDK stays alive while the launcher or any connected client is active. After launcher exit and the final disconnect, it discards in-memory scenes and exits. Use the runtime and wheel built for the same candidate to get this lifecycle behavior. If no runtime can be found, the error gives platform-specific runtime installation and source-build guidance; installing a Python wheel alone does not install the native runtime.
+Use `fv.open(window_mode=1)` to force the browser path, including on a desktop where Tauri is installed. This existing public parameter is the browser switch; no additional environment variable is needed. Native window opening is bypassed. `window_mode=0` keeps page opening manual. The SDK leaves externally started runtimes under external management. A runtime started by the SDK stays alive while the launcher or any connected client is active. After launcher exit and the final disconnect, it discards in-memory scenes and exits. Use the runtime and wheel built for the same candidate to get this lifecycle behavior. The standalone SDK wheel requires a matching runtime installation. If the runtime is missing, the error gives platform-specific installation instructions.
 
 Browser links use only the Viewer address advertised for the connected runtime. A missing or mismatched address is an error, rather than a guess at a development server port. Failed view opening releases only the scene/view created by that call. Discovery updates replace a private file atomically; updates and shutdown preserve records owned by another runtime.
 
