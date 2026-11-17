@@ -53,6 +53,27 @@ def test_user_installed_app_is_found_without_a_checkout_or_override(installed):
     assert host.find_host_executable() == binary
 
 
+def test_wheel_app_precedes_system_app_but_respects_explicit_override(installed, tmp_path, monkeypatch):
+    external = bundle(installed)
+    runtime = tmp_path / "Python Environment/site-packages/frameviz/_binaries"
+    bundled = bundle(runtime / "FrameViz.app")
+    monkeypatch.setattr(host, "_RUNTIME_DIRECTORY", runtime)
+    assert host.find_host_executable() == bundled
+    assert host.find_host_executable(native_only=True) == bundled
+    monkeypatch.setenv("FRAMEVIZ_TAURI_APP", str(installed))
+    assert host.find_host_executable() == external
+
+
+def test_incomplete_wheel_app_reports_reinstall(installed, tmp_path, monkeypatch):
+    bundle(installed)
+    runtime = tmp_path / "wheel"
+    executable = bundle(runtime / "FrameViz.app")
+    executable.chmod(0o644)
+    monkeypatch.setattr(host, "_RUNTIME_DIRECTORY", runtime)
+    with pytest.raises(RuntimeError, match="Incomplete FrameViz runtime.*Reinstall"):
+        host.find_host_executable()
+
+
 def test_sdk_launches_installed_app_without_showing_welcome(installed, monkeypatch):
     binary = bundle(installed)
     launched = []

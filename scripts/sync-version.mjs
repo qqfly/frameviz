@@ -5,13 +5,24 @@ import {fileURLToPath} from 'node:url'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const args=process.argv.slice(2),check=args.includes('--check')
 const configPath=path.join(root,'version.json'),config=JSON.parse(fs.readFileSync(configPath,'utf8'))
+const releasePattern=/^((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:-(alpha|beta|rc|dev)\.(0|[1-9]\d*))?$/
 if(args.includes('--bump')) {
  const value=args[args.indexOf('--bump')+1]
  if(!/^\d+\.\d+\.\d+$/.test(value))throw new Error('Use a plain semantic version')
+ if(args.includes('--release'))throw new Error('Choose either --bump or --release')
  config.protocol_version=value;config.min_compatible_version=value.split('.').slice(0,2).join('.')+'.0'
- fs.writeFileSync(configPath,JSON.stringify(config,null,2)+'\n')
+ config.release_version=value
 }
+if(args.includes('--release')) config.release_version=args[args.indexOf('--release')+1] ?? ''
 const version=config.protocol_version,min=config.min_compatible_version,errors=[]
+const release=config.release_version ?? version
+const match=release.match(releasePattern)
+if(!match)throw new Error('Use a semantic release version such as 0.5.0 or 0.5.0-rc.1')
+const [,releaseBase,prerelease,serial]=match
+const pythonSuffix={alpha:'a',beta:'b',rc:'rc',dev:'.dev'}
+const pythonRelease=prerelease ? `${releaseBase}${pythonSuffix[prerelease]}${serial}` : releaseBase
+if(check && (args.includes('--bump') || args.includes('--release')))throw new Error('--check checks the stamped version')
+if(args.includes('--bump') || args.includes('--release'))fs.writeFileSync(configPath,JSON.stringify(config,null,2)+'\n')
 if(min!==version.split('.').slice(0,2).join('.')+'.0')errors.push('min_compatible_version must be major.minor.0')
 for(const name of ['command','response','event']) {
  const file=path.join(root,`packages/frameviz-protocol/schemas/envelope-${name}.json`)
@@ -33,10 +44,10 @@ function edit(file,patterns) {
 }
 edit('packages/frameviz-protocol/src/constants.ts',[[/export const PROTOCOL_VERSION = "[\d.]+" as const;/,`export const PROTOCOL_VERSION = "${version}" as const;`]])
 edit('packages/frameviz-py/frameviz/client.py',[[/PROTOCOL_VERSION = "[\d.]+"/,`PROTOCOL_VERSION = "${version}"`],[/MIN_COMPATIBLE_VERSION = "[\d.]+"/,`MIN_COMPATIBLE_VERSION = "${min}"`]])
-edit('packages/frameviz-py/pyproject.toml',[[/^version = "[\d.]+"/m,`version = "${version}"`]])
+edit('packages/frameviz-py/pyproject.toml',[[/^version = "[^"\n]+"/m,`version = "${pythonRelease}"`]])
 edit('packages/frameviz-server/src/websocket.rs',[[/const PROTOCOL_VERSION: &str = "[\d.]+";/,`const PROTOCOL_VERSION: &str = "${version}";`]])
 edit('packages/frameviz-cpp/include/frameviz/types.hpp',[[/constexpr const char \*PROTOCOL_VERSION = "[\d.]+";/,`constexpr const char *PROTOCOL_VERSION = "${version}";`],[/constexpr const char \*MIN_COMPATIBLE_VERSION = "[\d.]+";/,`constexpr const char *MIN_COMPATIBLE_VERSION = "${min}";`]])
-edit('packages/frameviz-cpp/CMakeLists.txt',[[/project\(frameviz-cpp VERSION [\d.]+ LANGUAGES CXX\)/,`project(frameviz-cpp VERSION ${version} LANGUAGES CXX)`]])
+edit('packages/frameviz-cpp/CMakeLists.txt',[[/project\(frameviz-cpp VERSION [\d.]+ LANGUAGES CXX\)/,`project(frameviz-cpp VERSION ${releaseBase} LANGUAGES CXX)`]])
 edit('packages/frameviz-web-viewer/index.html',[[/const PROTOCOL_VERSION = '[\d.]+';/,`const PROTOCOL_VERSION = '${version}';`]])
 function walk(dir) {
  for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
@@ -45,10 +56,21 @@ function walk(dir) {
   if(entry.isDirectory())walk(p)
   else if(entry.name==='package.json'||entry.name==='tauri.conf.json') {
    const data=JSON.parse(fs.readFileSync(p,'utf8'))
-   if(data.version!==undefined) {if(check&&data.version!==version)errors.push(rel);else if(!check){data.version=version;fs.writeFileSync(p,JSON.stringify(data,null,2)+'\n')}}
-  } else if(entry.name==='Cargo.toml')edit(rel,[[/^version = "[\d.]+"/m,`version = "${version}"`]])
+   if(data.version!==undefined) {if(check&&data.version!==release)errors.push(rel);else if(!check){data.version=release;fs.writeFileSync(p,JSON.stringify(data,null,2)+'\n')}}
+  } else if(entry.name==='Cargo.toml')edit(rel,[[/^version = "[^"\n]+"/m,`version = "${release}"`]])
+  else if(entry.name==='Cargo.lock') {
+   const locked=fs.readFileSync(p,'utf8')
+   const updated=locked.split(/(?=^\[\[package\]\]$)/m).map(section=> {
+    if(!/^name = "(?:frameviz|frameviz-server)"$/m.test(section) || /^source = /m.test(section))return section
+    return section.replace(/^version = "[^"\n]+"/m,`version = "${release}"`)
+   }).join('')
+   if(locked!==updated) {
+    if(check)errors.push(`${rel}: local package release versions`)
+    else fs.writeFileSync(p,updated)
+   }
+  }
  }
 }
 walk(root)
-console.log(JSON.stringify({protocol_version:version,min_compatible_version:min,errors},null,2))
+console.log(JSON.stringify({release_version:release,python_release:pythonRelease,protocol_version:version,min_compatible_version:min,errors},null,2))
 if(errors.length)process.exit(1)

@@ -74,6 +74,14 @@ async fn termination_signal() -> std::io::Result<()> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
+    if args.as_slice() == ["--build-info"] || args.as_slice() == ["--build-info", "--version"] {
+        println!("{}", serde_json::json!({
+            "role": "standalone",
+            "release": env!("CARGO_PKG_VERSION"),
+            "protocol": frameviz_server::PROTOCOL_VERSION,
+        }));
+        return Ok(());
+    }
     if matches!(args.as_slice(), [argument] if matches!(argument.as_str(), "--version" | "-V")) {
         println!("FrameViz Host v{}", env!("CARGO_PKG_VERSION"));
         return Ok(());

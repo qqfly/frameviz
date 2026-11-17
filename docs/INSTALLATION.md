@@ -16,6 +16,8 @@ Press Ctrl+C to finish. After installation the App can start offline. Run the [e
 
 The public Linux wheel and stable 0.5.0 are in preparation. Use the matching SDK and runtime with a separate trial package, or build both from this checkout. Install into a dedicated development environment and a new version prefix.
 
+The Apple Silicon platform wheel includes the Tauri App. See [Python distribution](PYTHON_DISTRIBUTION.md) for the local candidate and its signing status. Standalone DMGs, Ubuntu packages and C++ SDKs remain separate downloads.
+
 Python source installation:
 
 ```sh

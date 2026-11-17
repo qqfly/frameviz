@@ -33,6 +33,7 @@ pub use websocket::{
     run_server,
     select_available_port_avoiding,
     update_discovery_http_port,
+    PROTOCOL_VERSION,
     ServerDiagnostics,
 };
 pub use http_server::{start_http_server, start_http_server_at, select_http_port, HttpServerConfig};

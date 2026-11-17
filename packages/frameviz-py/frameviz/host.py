@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import plistlib
 import shutil
@@ -35,6 +36,7 @@ from ._internal import (
 _started_host_proc: Optional[subprocess.Popen] = None
 _started_host_we_own: bool = False
 _started_host_log_path: Optional[Path] = None
+_RUNTIME_DIRECTORY = Path(__file__).resolve().parent / "_binaries"
 
 
 def _parse_host_port(url: str) -> Tuple[str, int]:
@@ -102,6 +104,32 @@ def _standalone_candidates(repo_root: Optional[Path]) -> list[Path]:
     return paths
 
 
+def _bundled_runtime(*, native: bool) -> Optional[Path]:
+    if native and sys.platform == "darwin":
+        return _RUNTIME_DIRECTORY / "FrameViz.app"
+    if sys.platform.startswith("linux"):
+        if native:
+            from ._linux_runtime import prepare_desktop_runtime
+            return prepare_desktop_runtime(_RUNTIME_DIRECTORY)
+        return _RUNTIME_DIRECTORY / "frameviz-server"
+    return None
+
+
+def _bundled_protocol(path: Path, binary: Path, *, native: bool) -> Optional[str]:
+    receipt = _RUNTIME_DIRECTORY / "build.json"
+    if not receipt.exists():
+        return _runtime_version(path, binary)
+    try:
+        role = "desktop" if native else "standalone"
+        matches = [item for item in json.loads(receipt.read_text())["runtimes"]
+                   if item["role"] == role]
+        if len(matches) == 1 and parse_version(matches[0]["protocol"]):
+            return matches[0]["protocol"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    raise RuntimeError(f"Invalid FrameViz wheel build receipt: {receipt}. Reinstall the matching wheel.")
+
+
 def find_host_executable(prefer_browser: bool = False, *, native_only: bool = False) -> Optional[Path]:
     for key in ("FRAMEVIZ_HOST_PATH", "FRAMEVIZ_TAURI_APP"):
         if not (configured := os.environ.get(key)):
@@ -115,10 +143,26 @@ def find_host_executable(prefer_browser: bool = False, *, native_only: bool = Fa
             raise ProtocolError(f"{key} ({path}): {error}", code="ERR_PROTOCOL_VERSION")
         return None if native_only and binary.name == "frameviz-server" else binary
 
+    desktop = _desktop_available()
+    # Prefer this environment's binaries for cold starts. Compatibility with
+    # an already running endpoint is decided before discovery reaches here.
+    for native in (False, True) if prefer_browser else (True, False):
+        if (native and not desktop) or (not native and (native_only or (desktop and not prefer_browser))):
+            continue
+        if (bundled := _bundled_runtime(native=native)) is None or not bundled.exists():
+            continue
+        if (binary := _executable(bundled)) is None:
+            raise RuntimeError(f"Incomplete FrameViz runtime in the Python wheel: {bundled}. Reinstall the matching wheel.")
+        version = _bundled_protocol(bundled, binary, native=native)
+        if version is None:
+            raise RuntimeError(f"Cannot determine the bundled FrameViz runtime version: {bundled}. Reinstall the matching wheel.")
+        if error := host_version_error(version, PROTOCOL_VERSION):
+            raise ProtocolError(f"{bundled}: {error}", code="ERR_PROTOCOL_VERSION")
+        return binary
     repo_root = _get_repo_root()
     gui = _get_tauri_app_candidates(repo_root) + _get_tauri_exec_candidates(repo_root) + _get_appimage_candidates(repo_root)
     server = [] if native_only else _standalone_candidates(repo_root)
-    if prefer_browser and not _desktop_available():
+    if prefer_browser and not desktop:
         gui = []
     candidates = server + gui if prefer_browser else gui + server
     unknown = None
