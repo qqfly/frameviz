@@ -4,7 +4,19 @@
 
 用 **Python 或 C++** 绘制并交互操作三维数据，显示在桌面窗口、浏览器或你的 **Vue** 应用里。FrameViz 提供对象句柄、NumPy/数组输入、实例化、相机控制、拾取事件和 Gizmo。Rust Host 在本地维护场景，Three.js Viewer 负责渲染。
 
-当前为 **0.5.0 开发候选版**。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+**0.5.0 Apple 芯片预览版**已在 [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/) 提供下载。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+
+## 在 Apple 芯片 Mac 上快速开始
+
+预览 wheel 包含 Python SDK 和已签名、公证的 FrameViz App。在 Python 3.9 或更新版本的环境中运行：
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
+.venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
+```
+
+FrameViz 会打开原生窗口并绘制方块。回终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Ubuntu、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。Linux 公开 wheel 和正式 0.5.0 正在准备中。
 
 ## 可以绘制什么？
 
@@ -23,23 +35,7 @@
 
 坐标与尺寸由你的应用提供；四元数按 **`[x, y, z, w]`** 排列。输入约定见 [API 文档](docs/API_Definition.md)，具体语言签名见 [Python](packages/frameviz-py/frameviz/viz.py) 与 [C++](packages/frameviz-cpp/include/frameviz/viz.hpp)。
 
-## 快速开始
-
-Apple 芯片 Mac 的 Python 候选 wheel 已内置 Tauri App。向维护者获取候选文件，在项目的 Python 环境里安装。公开发行后将使用 `python -m pip install frameviz`。
-
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install ./frameviz-0.5.0-py3-none-macosx_11_0_arm64.whl
-```
-
-独立桌面 App、C++ SDK 和其他 Python 试用平台继续使用维护者提供的配套文件。[安装与下载说明](docs/INSTALLATION.md)。
-
-| 环境 | 运行环境 | 显示方式 |
-|---|---|---|
-| Apple 芯片 Mac | 内置 App 的 Python 候选 wheel，或独立试用 DMG | 默认原生窗口 |
-| Windows x64 桌面 | 配套 App 和 SDK，见 [Windows 试用指引](docs/INSTALLATION.md#windows-x64-trial) | 默认原生窗口 |
-| Ubuntu 22.04 / 24.04 x86_64 桌面 | 配套预览 `.deb`：`sudo apt install ./FrameViz_*.deb` | 默认原生窗口 |
-| 无桌面 Linux | 解压独立 Host 压缩包，把其中的 `frameviz-server` 放进 `~/.local/bin/frameviz-server` | 打印私有浏览器链接；远程使用 SSH 转发 |
+## 使用 FrameViz
 
 在 IPython 或 Python 会话中运行：
 
@@ -51,7 +47,7 @@ viz.add_box()
 
 Python 会复用兼容的运行环境，也能自动启动已安装的 macOS 或 Linux 运行时。Windows 从 Python 冷启动时，在当前 PowerShell 用 `FRAMEVIZ_TAURI_APP` 指定已安装的可执行文件。C++ SDK 可以自动发现已安装的 Windows App。独立 Python 脚本用 `viz.keep_running()` 保持运行，Ctrl+C 关闭视图和连接。`fv.open(window_mode=1)` 使用浏览器，`window_mode=0` 由应用管理页面。无 Linux 桌面时会自动打印私有链接。浏览器模式复用页面，各场景仍独立。需要同时保留多个页面时，使用 `reuse_browser=False`。
 
-对应版本的 Release 资产准备好后，Python 可运行 `python -m frameviz download-examples --output ./frameviz-examples` 获取共用示例。私有候选阶段可向维护者获取同一份 Python／C++ ZIP。[Python 分发说明](docs/PYTHON_DISTRIBUTION.md) · [示例包指引](examples/DOWNLOAD.md)。
+参见 [Python 分发说明](docs/PYTHON_DISTRIBUTION.md)、[macOS 打包](docs/MACOS.md)和[故障排查](docs/TROUBLESHOOTING.md)。
 
 ## 开发者功能案例
 

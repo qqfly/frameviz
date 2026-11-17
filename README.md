@@ -4,7 +4,19 @@
 
 Draw and interact with 3D data from **Python or C++**, in a desktop window, browser, or your **Vue** application. FrameViz provides object handles, NumPy/array input, instancing, camera control, picking events, and transform handles. A local Rust Host keeps scene state; a Three.js viewer renders it.
 
-Version **0.5.0**, development candidate. Copyright **qqfly**, [MIT](LICENSE). Third-party attribution: [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+The **0.5.0 preview for Apple Silicon** is available on [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/). Copyright **qqfly**, [MIT](LICENSE). See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for third-party attribution.
+
+## Quick start on Apple Silicon
+
+The preview wheel includes the Python SDK and the signed, notarized FrameViz App. With Python 3.9 or newer, run:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
+.venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
+```
+
+FrameViz opens a desktop window and draws a box. Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). For Ubuntu, Windows, C++ and source builds, see [Installation](docs/INSTALLATION.md). The public Linux wheel and stable 0.5.0 are in preparation.
 
 ## What can I draw?
 
@@ -23,23 +35,7 @@ Version **0.5.0**, development candidate. Copyright **qqfly**, [MIT](LICENSE). T
 
 Coordinates and dimensions come from your application. Quaternions use **`[x, y, z, w]`**. See the [API contract](docs/API_Definition.md), [Python signatures](packages/frameviz-py/frameviz/viz.py), and [C++ signatures](packages/frameviz-cpp/include/frameviz/viz.hpp).
 
-## Quick start
-
-The Apple Silicon Python candidate bundles the Tauri App. Obtain the candidate wheel from the maintainer and install it in your Python environment. The planned public command is `python -m pip install frameviz`, pending release.
-
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install ./frameviz-0.5.0-py3-none-macosx_11_0_arm64.whl
-```
-
-For standalone installations, C++ and the other Python trial platforms, use the matching runtime and SDK. [Installation and available downloads](docs/INSTALLATION.md).
-
-| Environment | Runtime | Viewer |
-|---|---|---|
-| Apple Silicon Mac | Bundled Python candidate wheel or independent trial DMG | Native window by default |
-| Windows x64 desktop | Matching App and SDK. See the [Windows trial instructions](docs/INSTALLATION.md#windows-x64-trial). | Native window by default |
-| Ubuntu 22.04 / 24.04 x86_64 desktop | Matching preview `.deb`: `sudo apt install ./FrameViz_*.deb` | Native window by default |
-| Linux without a desktop | Extract the standalone archive; copy its `frameviz-server` to `~/.local/bin/frameviz-server` | Printed private browser link; SSH forwarding for remote use |
+## Using FrameViz
 
 In IPython or a Python session:
 
@@ -51,7 +47,7 @@ viz.add_box()
 
 A running compatible runtime is reused. Python can start a known macOS or Linux installation automatically. For a Windows cold start, set `FRAMEVIZ_TAURI_APP` to the installed executable in the current PowerShell session. The C++ SDK can discover the installed Windows App automatically. In a standalone Python script, end with `viz.keep_running()`. Ctrl+C closes the view and connection. Use `fv.open(window_mode=1)` to open a browser or `window_mode=0` to manage pages yourself. Without a Linux desktop, FrameViz prints the private link automatically. Browser mode reuses the managed page and keeps scenes independent. Use `reuse_browser=False` to keep separate pages.
 
-Python can fetch the matching examples with `python -m frameviz download-examples --output ./frameviz-examples` once the versioned Release assets are available. For private candidates, obtain the shared Python/C++ ZIP from the maintainer. [Python distribution](docs/PYTHON_DISTRIBUTION.md) · [Examples ZIP](examples/DOWNLOAD.md).
+See [Python distribution](docs/PYTHON_DISTRIBUTION.md), [macOS packaging](docs/MACOS.md), and [troubleshooting](docs/TROUBLESHOOTING.md).
 
 ## Developer examples
 

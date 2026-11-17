@@ -1,5 +1,7 @@
 # macOS Apple Silicon preview
 
+For current Apple Silicon Python use, install the [0.5.0 preview from PyPI](INSTALLATION.md#apple-silicon-mac-preview). Its wheel contains the Developer ID signed, notarized App. The 0.4 DMG steps below describe archived private previews.
+
 The published 0.4 private preview targets Apple Silicon (M-series) Macs. Its executable and bundle declare macOS 11.0 as the minimum deployment target; runtime acceptance has been executed on the maintainer's macOS 27.2 machine. That declaration is not independent testing on every older macOS version. The other Mac remains a separate acceptance environment.
 
 ## Install and start
@@ -89,5 +91,7 @@ For ordinary end-user distribution, use Developer ID signing plus notarization a
 The separate `scripts/release/build-macos-signed.sh /new/absolute/output` builder uses an installed **Developer ID Application** certificate selected through `FRAMEVIZ_SIGNING_IDENTITY`. Set `FRAMEVIZ_NOTARY_PROFILE=qqfly-apple-notary`, the default profile. Run `xcrun notarytool history --keychain-profile qqfly-apple-notary` to verify credentials. An empty history is valid. Keep the account's App-specific password in Keychain. [Apple notarization credentials](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
 The builder records the candidate commit and the signed App and submission archive hashes. For a wheel, use `--prepare-app` to create the signed App, then use `--resume-app` in the same output directory to submit it, retain the submission UUID and log, staple and validate the ticket, and check Gatekeeper. Re-running the resume step waits for the saved submission. The default invocation also builds and notarizes the DMG. Both modes preserve existing installations.
+
+Record the exact source, Apple submission results and installed-App checks for each artifact. The 0.5.0rc1 App has completed signing, notarization and local installed-wheel validation. Any new DMG or second-machine validation needs its own acceptance record.
 
 Verify `codesign --verify --deep --strict`, `xcrun stapler validate` and `spctl --assess --type execute` against the actual App installed from the final wheel. Test the first launch with quarantine preserved in a clean destination. Record a simulated quarantine marker separately from a download through a real browser or a second-Mac launch.

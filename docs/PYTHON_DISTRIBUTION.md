@@ -1,20 +1,12 @@
 # Python 安装与分发
 
-## Apple 芯片 Mac 候选
+## Apple 芯片 Mac 预览
 
-向维护者获取匹配的候选 wheel 和 SHA-256，在项目环境中安装。
+Apple 芯片 Mac 可从 [PyPI 安装 0.5.0 预览版](https://pypi.org/project/frameviz/0.5.0rc1/)。平台 wheel 包含 Python SDK 和已签名、公证的 FrameViz App。`fv.open()` 会打开原生窗口。
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install ./frameviz-0.5.0-py3-none-macosx_11_0_arm64.whl
-```
-
-随后在 Python 或 IPython 中执行：
-
-```python
-import frameviz as fv
-viz = fv.open()
-viz.add_box()
+.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
 ```
 
 独立脚本可调用 `viz.keep_running()`。App 位于当前 Python 环境，随 wheel 安装和卸载。新开场景会优先复用兼容的已运行 Host。没有 Host 时，SDK 会自动查找随包 App。显式连接地址和路径沿用原有规则。候选 App 使用 Developer ID 签名。公证和已安装 App 的验证结果以对应 wheel 的验收记录为准。独立 DMG 有自己的签名和公证记录。
@@ -23,7 +15,7 @@ viz.add_box()
 
 | 用法 | 试用安装材料 |
 | --- | --- |
-| Apple 芯片 Mac Python | 带 App 的平台 wheel |
+| Apple 芯片 Mac Python | 带 App 的 [PyPI 预览 wheel](https://pypi.org/project/frameviz/0.5.0rc1/) |
 | Ubuntu 22.04／24.04 原生桌面 | 常规试用路径为 `.deb` 和配套 SDK wheel。便携运行时随实验 wheel 验证，PyPI 平台兼容性尚待确认。 |
 | 无桌面 Linux | 独立 Host 和配套 SDK wheel，或带独立 Host 的实验 wheel。两种路径都支持认证链接和 SSH 转发。 |
 | Windows x64 | 试用 App 和配套 SDK wheel。Python 冷启动使用显式 App 路径。 |
@@ -35,7 +27,7 @@ Linux 实验 wheel 在首次使用桌面运行时，将本地随包资源解压�
 
 ## 示例
 
-对应版本的 Release 上有 ZIP 和 `SHA256SUMS` 后，可运行：
+现有示例可从[案例目录](../examples/README.md)运行。对应版本的 Release 发布 ZIP 和 `SHA256SUMS` 后，可运行：
 
 ```sh
 python -m frameviz download-examples --output ./frameviz-examples
@@ -49,4 +41,4 @@ Python SDK 的最低版本为 3.9。pip 为解释器选取兼容的 NumPy 和 we
 
 PNG 截图和教程 HTML 导出使用 `capture` extra。可在 wheel 路径后加 `[capture]`，然后运行 `python -m playwright install chromium`。Linux 还需满足 Chromium 的系统依赖。
 
-计划使用公开命令 `python -m pip install frameviz`。发布前核对 PyPI 项目权限、wheel 平台标签和已验收产物，并配置 [Trusted Publishing](https://docs.pypi.org/publishing/publishing-to-pypi/)。独立 App、C++ SDK 和共用示例继续使用 GitHub Releases。
+Mac 预览使用明确的 `0.5.0rc1` 版本。Mac 和 Linux 正式 `0.5.0` 计划在 PyPI 同时发布。独立 App、C++ SDK 和共用示例的下载入口见 [GitHub Releases](https://github.com/qqfly/frameviz/releases)。
