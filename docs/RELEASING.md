@@ -13,17 +13,21 @@ The Apple Silicon `0.5.0rc1` wheel is available on [PyPI](https://pypi.org/proje
 
 From a clean candidate checkout, run `python3 scripts/release/build_examples_zip.py /new/output/FrameViz-0.5.0-examples.zip` to build the shared Python/C++ examples archive. When building from an exported source tree, pass `--source-ref` with its candidate commit to pin links to repository-only documentation. Extract the produced ZIP to a path with spaces and use the installed SDK to test the documented commands. The [examples guide](../examples/DOWNLOAD.md) lists the required runtime and optional renderer.
 
-For the Apple Silicon platform wheel, build the universal SDK wheel and the App from the same candidate. Use the App produced by the [Developer ID signing workflow](MACOS.md). With the `wheel` Python tool installed, run:
+For stable Python distribution, build the pure SDK wheel, the App from the [Developer ID signing workflow](MACOS.md), and the two native Linux runtimes from the [Ubuntu AppDir recipe](PYTHON_LINUX_RELEASE.md). On the Mac with `wheel` installed, run:
 
 ```sh
-python scripts/release/build_runtime_wheel.py /new/sdk/frameviz-0.5.0-py3-none-any.whl /new/wheels \
-  --mac-app /new/signed/FrameViz.app --source-revision "$(git rev-parse HEAD)"
+revision=$(git rev-parse HEAD)
+python scripts/release/build_host_distribution.py /new/sdk/frameviz-0.5.0-py3-none-any.whl /new/distribution \
+  --source-revision "$revision" \
+  --mac-app /new/signed/FrameViz.app --mac-source-revision "$revision" \
+  --linux-desktop /new/runtime/desktop.tar.xz --linux-host /new/runtime/frameviz-server \
+  --linux-host-notices /new/preview/standalone/notices --linux-source-revision "$revision"
 ```
 
-Install this file into a fresh environment. Verify the installed App with `codesign --verify --deep --strict` and, after completing notarization, separately verify its stapled ticket and Gatekeeper assessment. Complete native window checks before making the file available. For the examples command, place the matching ZIP and its `SHA256SUMS` alongside the versioned Release assets.
+The distribution contains one `py3-none-any` wheel with runtime hashes and three archives. Install that wheel into fresh environments and test `python -m frameviz install-host --path ARCHIVE`, repeating with the other platform and Linux standalone role. Verify the installed Mac App with `codesign --verify --deep --strict`, `xcrun stapler validate`, and a Gatekeeper assessment. Complete native window checks before making the files available. Include all three archives, the matching Linux corresponding source, the examples ZIP and their checksums in the versioned GitHub Release. With publication approval, confirm that the exact pinned assets are accessible before publishing the SDK wheel on PyPI.
 
-If an already signed and notarized runtime predates a packaging-only change, use `--runtime-source-revision` with its original build receipt. Verify that the runtime inputs are identical across those revisions. The wheel records the SDK and native runtime revisions separately.
+When reusing verified native builds, supply their original source revisions with `--mac-source-revision` and `--linux-source-revision`. Record which checks carry forward and rerun installation checks on the new distribution files.
 
 Run `python -m twine check --strict` on the final wheels. Preview the description from the built wheel and check that the demo plays, the example link opens, and the quick start works with the installed package. After publication, verify that PyPI renders the page and plays the demo through its image proxy.
 
-The [Ubuntu AppDir recipe and PyPI checklist](PYTHON_LINUX_RELEASE.md) cover the Linux platform wheel.
+The [Ubuntu AppDir recipe](PYTHON_LINUX_RELEASE.md) also records the bundled Linux wheel experiment and its platform-tag requirements.

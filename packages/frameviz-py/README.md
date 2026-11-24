@@ -8,13 +8,14 @@ Try picking and moving objects with the [Gizmo example](https://github.com/qqfly
 
 ## Install
 
-FrameViz requires Python 3.9 or newer. To try the latest preview, run:
+FrameViz requires Python 3.9 or newer. Set up the local viewer on Apple Silicon Macs and Ubuntu 22.04 or 24.04 (x86-64) with the same commands:
 
 ```sh
-python -m pip install --pre frameviz
+python -m pip install frameviz
+python -m frameviz install-host
 ```
 
-For a stable release, use `python -m pip install frameviz`. Check the **Release files** tab on PyPI for the platforms available for each version. The Apple Silicon wheel includes the signed and notarized FrameViz app. For other installation paths, see the [installation guide](https://github.com/qqfly/frameviz/blob/main/docs/INSTALLATION.md).
+The second command installs the matching runtime once for this version under your user account. On an Ubuntu server without a desktop session it installs the standalone Host. After installation you can start the viewer offline. Use `frameviz.install_host()` to run the same setup from a notebook. See the [installation guide](https://github.com/qqfly/frameviz/blob/main/docs/INSTALLATION.md) for local builds and offline setup.
 
 ## Open a viewer
 

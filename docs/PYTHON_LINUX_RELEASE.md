@@ -1,5 +1,7 @@
 # Ubuntu runtime build and PyPI readiness
 
+The stable Python distribution installs a pure SDK wheel from PyPI and downloads the Ubuntu runtime archive during `python -m frameviz install-host`. The bundled Linux wheel and its manylinux review below remain available for local trials. See the [stable release plan](PYTHON_PYPI_RELEASE_PLAN.md).
+
 ## Build the local Ubuntu candidate
 
 Use a clean FrameViz checkout on Ubuntu 22.04 x86-64. Install the build tools and Tauri prerequisites listed in the Ubuntu preview workflow, plus `binutils`, `xz-utils` and `libglib2.0-bin`. In the build Python environment install `build` and `wheel`. Build the same revision used for the SDK. The release and protocol are read separately from the actual desktop and standalone binaries using `--build-info`.

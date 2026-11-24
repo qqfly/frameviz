@@ -6,17 +6,18 @@ Draw and interact with 3D data from **Python or C++**, in a desktop window, brow
 
 The **0.5.0 preview for Apple Silicon** is available on [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/). Copyright **qqfly**, [MIT](LICENSE). See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for third-party attribution.
 
-## Quick start on Apple Silicon
+## Python quick start on macOS and Ubuntu
 
-The preview wheel includes the Python SDK and the signed, notarized FrameViz App. With Python 3.9 or newer, run:
+For the stable release on Apple Silicon and Ubuntu 22.04 or 24.04 x86-64, use Python 3.9 or newer:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
+.venv/bin/python -m pip install frameviz
+.venv/bin/python -m frameviz install-host
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-FrameViz opens a desktop window and draws a box. Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). For Ubuntu, Windows, C++ and source builds, see [Installation](docs/INSTALLATION.md). The public Linux wheel and stable 0.5.0 are in preparation.
+Runtime installation is a one-time step per version. FrameViz can then open a desktop window offline. Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). The stable release is in preparation. See [Installation](docs/INSTALLATION.md) for the available Mac preview, Windows, C++ and source builds.
 
 ## What can I draw?
 
