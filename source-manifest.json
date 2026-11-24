@@ -352,7 +352,7 @@
     "packages/frameviz-py/tests/test_discovery.py": "aa2b5008b3959f43eaa3948b3d642f61614245a0893b513460603a6ef68ccddd",
     "packages/frameviz-py/tests/test_example.py": "b4ade0d77ab63f94a83929cf9710f59c5e2815773d4cf6eff42c0620e0a54447",
     "packages/frameviz-py/tests/test_host.py": "b33f56b0ab0d7407fc37629ef109ade9bfa6c7f50f876612c9d252e81875add7",
-    "packages/frameviz-py/tests/test_host_install.py": "5f76e1c309e130afa60355871fea2829a7ef6e62cdc8012e643a8437059b49c3",
+    "packages/frameviz-py/tests/test_host_install.py": "fbff74b9753f690cf77fb4449396cb0a723b601445c9baa63864d9457b0dc42c",
     "packages/frameviz-py/tests/test_installed_app.py": "d909a2084f1ee766572594aa64313f5561ae0ec46da0b0e5fc766031f77f1443",
     "packages/frameviz-py/tests/test_installed_linux.py": "fdd6e6df368b2856239b6a93d8ec21f3fbebc309a229fbc7ae44e095e6715e2a",
     "packages/frameviz-py/tests/test_integration.py": "92e27dabf19d91b455a32ec215ca7e2d98680039e38fa10a212de9bf50e79964",

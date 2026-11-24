@@ -13,6 +13,9 @@ from frameviz import host
 
 def test_local_host_can_be_registered_for_later_discovery(tmp_path, monkeypatch):
     monkeypatch.setenv('FRAMEVIZ_HOME', str(tmp_path / 'state'))
+    monkeypatch.setenv('DISPLAY', ':8')
+    for variable in ('FRAMEVIZ_HOST_PATH', 'FRAMEVIZ_TAURI_APP'):
+        monkeypatch.delenv(variable, raising=False)
     monkeypatch.setattr(host, '_get_repo_root', lambda: None)
     binary = tmp_path / 'custom-frameviz'
     binary.write_text('#!/bin/sh\n' "echo '{\"role\":\"desktop\",\"release\":\"0.5.0\",\"protocol\":\"0.5.0\"}'\n")
