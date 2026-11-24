@@ -12,20 +12,31 @@ python3 -m venv .venv
 
 Press Ctrl+C to finish. After installation the App can start offline. Run the [examples from this checkout](../examples/README.md) with the same Python interpreter.
 
-## Other installation paths
+## Python SDK and runtime for the stable release
 
-The public Linux wheel and stable 0.5.0 are in preparation. Use the matching SDK and runtime with a separate trial package, or build both from this checkout. Install into a dedicated development environment and a new version prefix.
+The stable 0.5.0 release is in preparation. Use these commands with its published SDK, or install a candidate wheel from an explicit path. Apple Silicon macOS and Ubuntu 22.04 or 24.04 x86-64 use the same commands:
 
-The Apple Silicon platform wheel includes the Tauri App. See [Python distribution](PYTHON_DISTRIBUTION.md) for the local candidate and its signing status. Standalone DMGs, Ubuntu packages and C++ SDKs remain separate downloads.
+```sh
+python -m pip install frameviz
+python -m frameviz install-host
+```
 
-Python source installation:
+The installer reuses a compatible runtime or installs the matching signed Mac App, Ubuntu desktop App, or standalone Ubuntu Host if no desktop is available. There is also a Python entry point, `frameviz.install_host()`. This is needed once per runtime version. `fv.open()` reuses the installed runtime and gives a command to run when one is missing. Remote connections use the supplied endpoint without downloading a local runtime.
+
+For offline setup, obtain the official SDK wheel, its Python dependency wheels and the runtime archive for the target platform while online. Install the Python wheels from local files, then run `python -m frameviz install-host --path ./FrameViz-0.5.0-linux-x86_64-desktop.tar.xz` with the archive matching your system and display mode. The SDK verifies the archive against its embedded release manifest. The same manifest binds the version and files used for online installation.
+
+## Source and standalone installations
+
+To use this checkout's built runtime while developing Python:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install ./packages/frameviz-py
+.venv/bin/python -m pip install -e ./packages/frameviz-py
 ```
 
-For an independently built wheel, install its explicit path inside a virtual environment. Offline installation also requires compatible wheels for numpy and websocket-client; a source archive alone is not a complete offline distribution.
+Prepare the Viewer as shown in [Build from source](../README.md#build-from-source). Build the desktop runtime with `cargo build --locked --manifest-path packages/frameviz-host-tauri/src-tauri/Cargo.toml`, or the headless Host with `cargo build --locked --manifest-path packages/frameviz-server/Cargo.toml`. FrameViz looks for the resulting runtime in this checkout. For a build in another directory, run `python -m frameviz install-host --path /absolute/path/to/frameviz` or pass the path to `FrameViz.app`. This registers the existing path for the current SDK. After moving or replacing a custom build, rerun the command. A source SDK without a release manifest does not select a download by version number.
+
+Standalone DMGs, Ubuntu packages and C++ SDKs are separate downloads. An SDK built locally also works with the installed runtime as documented below.
 
 C++ source installation:
 

@@ -5,15 +5,30 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "frameviz"
 version = "0.5.0"
-description = "FrameViz Python client"
+description = "Interactive 3D visualization for robotics, geometry, and point clouds"
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES/*.txt"]
 authors = [{name = "qqfly"}]
 requires-python = ">=3.9"
+keywords = ["3d", "visualization", "robotics", "point-cloud", "geometry"]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Multimedia :: Graphics :: Viewers",
+  "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = [
   "websocket-client>=1.6.0",
   "numpy>=1.20.0"
 ]
+
+[project.urls]
+Source = "https://github.com/qqfly/frameviz"
+Documentation = "https://github.com/qqfly/frameviz/blob/main/docs/INSTALLATION.md"
+Examples = "https://github.com/qqfly/frameviz/tree/main/examples"
+Issues = "https://github.com/qqfly/frameviz/issues"
+Changelog = "https://github.com/qqfly/frameviz/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 capture = ["playwright>=1.46"]

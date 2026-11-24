@@ -1,5 +1,6 @@
 from importlib.metadata import version as _get_version
 
+from ._host_install import install_host  # noqa: F401
 from .client import DEFAULT_WS_URL, FrameVizClient  # noqa: F401
 from .host import ensure_host_running, is_host_running, start_host, stop_host  # noqa: F401
 from .viz import (  # noqa: F401
@@ -32,6 +33,7 @@ __all__ = [
     "DEFAULT_VIEWER_URL",
     "ensure_host_running",
     "is_host_running",
+    "install_host",
     "start_host",
     "stop_host",
 ]

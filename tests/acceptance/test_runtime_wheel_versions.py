@@ -1,5 +1,6 @@
 """The runtime assembler rejects incompatible inputs before writing an output."""
 
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -164,6 +165,16 @@ def test_linux_xdg_open_keeps_the_callers_environment(tmp_path, host_library_pat
                                      env=env, cwd=tmp_path, text=True)
     assert output.split('\0') == [env.get('LD_LIBRARY_PATH', 'unset'), env['XDG_DATA_DIRS'], '', 'unset', 'unset',
                                   env['PATH'], str(tmp_path.resolve()), 'https://example.invalid/?a=1&b=2', '']
+
+
+def test_linux_tauri_windows_cannot_open_named_host_programs_via_shell_plugin():
+    app = RELEASE_SCRIPTS.parents[1] / 'packages/frameviz-host-tauri/src-tauri'
+    capabilities = [json.loads(path.read_text()) for path in (app / 'capabilities').glob('*.json')]
+    assert capabilities
+    linux_permissions = {permission for capability in capabilities
+                         if 'linux' in capability.get('platforms', ['linux'])
+                         for permission in capability['permissions'] if isinstance(permission, str)}
+    assert not any(permission.startswith('shell:') for permission in linux_permissions)
 
 
 def test_elf_providers_must_be_on_the_consumer_search_path(tmp_path):

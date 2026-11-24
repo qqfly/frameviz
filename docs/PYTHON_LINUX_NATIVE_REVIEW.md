@@ -1,16 +1,17 @@
 # Native Ubuntu review of the FrameViz wheel
 
-On an x86_64 Ubuntu 22.04 or 24.04 desktop, sign in to your usual graphical session with an ordinary user account. Download `FrameViz-Linux-Native-Review.zip` and save it in Downloads. The bundle includes the final Linux wheel, the review script and a test-only observer for WebKitGTK. A working Python virtual environment is required. The pip step obtains the SDK's Python dependencies from the configured index if they are missing.
+On an x86_64 Ubuntu 22.04 or 24.04 desktop, sign in to your usual graphical session with an ordinary user account. Download `FrameViz-Linux-Native-Review.zip` and save it in Downloads. The bundle includes the Linux wheel, Python dependencies for both Ubuntu versions, the review script and a test-only observer for WebKitGTK. If your live session lacks virtual environment support or `unzip`, install `python3-venv` or `unzip` through Ubuntu before disconnecting.
 
 On an Intel or AMD Windows PC, a bootable Ubuntu 24.04 LTS Desktop (AMD64) USB and the **Try Ubuntu** session can be used for this review. Save the log somewhere persistent before rebooting. WSL 2 with WSLg or a regular VM can provide an early functional check of install, rendering and interaction. Record it as virtualized evidence and use the live USB or a direct Ubuntu installation for the real GPU and driver check. [Ubuntu USB guide](https://ubuntu.com/desktop/docs/en/latest/how-to/create-a-bootable-usb-stick/) · [Microsoft WSLg guide](https://learn.microsoft.com/en-us/windows/wsl/tutorials/gui-apps).
 
 ```bash
 cd "$HOME/Downloads"
-unzip -q FrameViz-Linux-Native-Review.zip -d FrameViz-Linux-Native-Review
+unzip -q FrameViz-Linux-Native-Review.zip
 cd FrameViz-Linux-Native-Review
 sha256sum -c SHA256SUMS
 python3 -m venv .venv
-.venv/bin/python -m pip install ./frameviz-0.5.0-py3-none-linux_x86_64.whl
+.venv/bin/python -m pip install --no-index --find-links ./deps ./frameviz-0.5.0-py3-none-linux_x86_64.whl
+.venv/bin/python -m pip check
 set -o pipefail
 env -u WEBKIT_FORCE_SANDBOX -u WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS \
   -u LIBGL_ALWAYS_SOFTWARE -u WEBKIT_DISABLE_COMPOSITING_MODE \

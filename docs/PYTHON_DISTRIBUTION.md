@@ -1,5 +1,18 @@
 # Python 安装与分发
 
+## macOS 和 Ubuntu 正式版方案
+
+Apple 芯片 Mac 和 Ubuntu 22.04／24.04 x86-64 使用同一组命令。正式版正在准备中。
+
+```sh
+python -m pip install frameviz
+python -m frameviz install-host
+```
+
+第一条安装 SDK。第二条一次性安装当前版本的原生 App，或在无桌面 Ubuntu 上安装独立 Host。之后 `fv.open()` 可以离线启动。Notebook 用户也可以调用 `fv.install_host()`。离线准备可使用 `install-host --path ARCHIVE`，由 SDK 校验与当前版本配套的归档。版本化运行时保存在用户目录，不需要系统级安装。
+
+源码开发使用 `pip install -e ./packages/frameviz-py` 及当前源码目录的本地构建。自定义目录里的运行时可使用 `install-host --path PATH` 注册。 [完整安装指引](INSTALLATION.md)
+
 ## Apple 芯片 Mac 预览
 
 Apple 芯片 Mac 可从 [PyPI 安装 0.5.0 预览版](https://pypi.org/project/frameviz/0.5.0rc1/)。平台 wheel 包含 Python SDK 和已签名、公证的 FrameViz App。`fv.open()` 会打开原生窗口。
@@ -16,12 +29,12 @@ python3 -m venv .venv
 | 用法 | 试用安装材料 |
 | --- | --- |
 | Apple 芯片 Mac Python | 带 App 的 [PyPI 预览 wheel](https://pypi.org/project/frameviz/0.5.0rc1/) |
-| Ubuntu 22.04／24.04 原生桌面 | 常规试用路径为 `.deb` 和配套 SDK wheel。便携运行时随实验 wheel 验证，PyPI 平台兼容性尚待确认。 |
+| Ubuntu 22.04／24.04 原生桌面 | 正式版用 `install-host` 安装。独立试用可使用 `.deb` 和配套 SDK wheel，或便携运行时实验 wheel。 |
 | 无桌面 Linux | 独立 Host 和配套 SDK wheel，或带独立 Host 的实验 wheel。两种路径都支持认证链接和 SSH 转发。 |
 | Windows x64 | 试用 App 和配套 SDK wheel。Python 冷启动使用显式 App 路径。 |
 | 独立 Mac App、C++ SDK | 通过对应平台的独立试用包交付。 |
 
-安装标准独立包的命令见[安装说明](INSTALLATION.md)。通过明确路径安装 `py3-none-any` wheel 或源码会获得 SDK，运行时按各平台的独立安装说明提供。协议兼容沿用当前 SDK 的规则。
+安装标准独立包的命令见[安装说明](INSTALLATION.md)。带发行清单的正式 `py3-none-any` wheel 可用 `install-host` 安装配套运行时。自行构建的 SDK 使用本地运行时。协议兼容沿用当前 SDK 的规则。
 
 Linux 实验 wheel 在首次使用桌面运行时，将本地随包资源解压到 `${XDG_CACHE_HOME:-~/.cache}/frameviz/runtimes` 下的内容哈希目录。不同 Python 环境可复用相同内容。卸载 wheel 后缓存会保留，确认没有使用中的 FrameViz 窗口、Host 或其他环境再清理。无桌面模式直接启动随包的独立 Host。
 

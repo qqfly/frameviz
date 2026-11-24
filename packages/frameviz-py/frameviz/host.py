@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from . import _host_install
 from .client import DEFAULT_WS_URL, PROTOCOL_VERSION
 from .discovery import read_discovery_file, get_discovery_path
 from .version import host_version_error, parse_version
@@ -50,7 +51,18 @@ def _desktop_available() -> bool:
     return not sys.platform.startswith('linux') or bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
 
 
+def _source_sdk(repo_root):
+    return (sys.platform in ('darwin', 'linux') and repo_root is not None
+            and Path(__file__).resolve().is_relative_to(repo_root / 'packages/frameviz-py'))
+
+
 def _installation_hint() -> str:
+    role = 'desktop' if _desktop_available() else 'standalone'
+    if _host_install.can_install(role):
+        return 'No compatible local FrameViz runtime was found. Run python -m frameviz install-host, then retry.'
+    if sys.platform in ('darwin', 'linux') and _source_sdk(_get_repo_root()):
+        return ('Build the FrameViz runtime from this checkout or run python -m frameviz install-host --path '
+                'with your local build. See docs/INSTALLATION.md.')
     if sys.platform.startswith('win'):
         return (
             "Get the compatible Windows FrameViz App from the project maintainer. "
@@ -149,6 +161,8 @@ def find_host_executable(prefer_browser: bool = False, *, native_only: bool = Fa
     for native in (False, True) if prefer_browser else (True, False):
         if (native and not desktop) or (not native and (native_only or (desktop and not prefer_browser))):
             continue
+        if installed := _host_install.installed_runtime('desktop' if native else 'standalone'):
+            return installed
         if (bundled := _bundled_runtime(native=native)) is None or not bundled.exists():
             continue
         if (binary := _executable(bundled)) is None:
@@ -159,7 +173,7 @@ def find_host_executable(prefer_browser: bool = False, *, native_only: bool = Fa
         if error := host_version_error(version, PROTOCOL_VERSION):
             raise ProtocolError(f"{bundled}: {error}", code="ERR_PROTOCOL_VERSION")
         return binary
-    repo_root = _get_repo_root()
+    repo_root = None if _host_install.has_release_manifest() else _get_repo_root()
     gui = _get_tauri_app_candidates(repo_root) + _get_tauri_exec_candidates(repo_root) + _get_appimage_candidates(repo_root)
     server = [] if native_only else _standalone_candidates(repo_root)
     if prefer_browser and not desktop:
@@ -167,9 +181,9 @@ def find_host_executable(prefer_browser: bool = False, *, native_only: bool = Fa
     candidates = server + gui if prefer_browser else gui + server
     unknown = None
     first_error = None
-    # Prefer a verified installation over a verified source build. Older
-    # standalone executables may lack --version and are checked at startup.
-    for source in (False, True):
+    # An editable SDK uses its own checkout. Preserve discovery of installed
+    # runtimes for normal SDKs and manual source fallbacks for legacy wheels.
+    for source in (True,) if _source_sdk(repo_root) else (False, True):
         for path in candidates:
             is_source = repo_root is not None and path.is_relative_to(repo_root)
             if is_source != source or (binary := _executable(path)) is None:
@@ -263,7 +277,7 @@ def start_host(
         from ._internal import _read_ws_log_tail
         tail=_read_ws_log_tail(str(_started_host_log_path)) if _started_host_log_path else None
         diagnostic=f" Startup log: {_started_host_log_path}. {tail or ''}" if _started_host_log_path else ''
-        raise RuntimeError(f"FrameViz runtime did not become ready (exit={proc.poll()}).{diagnostic} {_installation_hint()}")
+        raise RuntimeError(f"FrameViz runtime did not become ready (exit={proc.poll()}).{diagnostic}")
 
     if not os.environ.get('FRAMEVIZ_WS_SERVER_CMD'):
         raise RuntimeError(_installation_hint())

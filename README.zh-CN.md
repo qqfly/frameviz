@@ -6,17 +6,18 @@
 
 **0.5.0 Apple 芯片预览版**已在 [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/) 提供下载。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
-## 在 Apple 芯片 Mac 上快速开始
+## 在 macOS 和 Ubuntu 上快速开始
 
-预览 wheel 包含 Python SDK 和已签名、公证的 FrameViz App。在 Python 3.9 或更新版本的环境中运行：
+正式版支持 Apple 芯片 Mac 和 x86-64 Ubuntu 22.04／24.04，使用 Python 3.9 或更新版本。
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install 'frameviz==0.5.0rc1'
+.venv/bin/python -m pip install frameviz
+.venv/bin/python -m frameviz install-host
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-FrameViz 会打开原生窗口并绘制方块。回终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Ubuntu、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。Linux 公开 wheel 和正式 0.5.0 正在准备中。
+配套运行时每个版本只需安装一次，之后可离线打开窗口。终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。正式版正在准备中。现有 Mac 预览版、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。
 
 ## 可以绘制什么？
 
