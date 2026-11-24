@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "desktop-shell",
+  "description": "External URL handling on macOS and Windows",
+  "platforms": ["macOS", "windows"],
+  "windows": ["main", "view_*"],
+  "permissions": ["shell:allow-open"]
+}

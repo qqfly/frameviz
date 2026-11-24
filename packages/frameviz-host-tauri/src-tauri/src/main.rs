@@ -413,8 +413,13 @@ fn main() {
     // Start HTTP server for browser mode support
     let (http_port, http_shutdown_tx) = start_http_server(ws_port, control_port, DEFAULT_HTTP_PORT);
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+    let builder = tauri::Builder::default();
+    // The Linux AppDir must route host opens through its environment-restoring
+    // xdg-open wrapper. The unused shell plugin can launch named apps directly.
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_shell::init());
+
+    builder
         .manage(AppState {
             ws_port,
             http_port,

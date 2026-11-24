@@ -5,7 +5,6 @@
   "windows": ["main", "view_*"],
   "permissions": [
     "core:default",
-    "shell:allow-open",
     "core:window:allow-close",
     "core:window:allow-show",
     "core:window:allow-hide",
