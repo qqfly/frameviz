@@ -24,4 +24,6 @@ Install this file into a fresh environment. Verify the installed App with `codes
 
 If an already signed and notarized runtime predates a packaging-only change, use `--runtime-source-revision` with its original build receipt. Verify that the runtime inputs are identical across those revisions. The wheel records the SDK and native runtime revisions separately.
 
+Run `python -m twine check --strict` on the final wheels. Preview the description from the built wheel and check that the demo plays, the example link opens, and the quick start works with the installed package. After publication, verify that PyPI renders the page and plays the demo through its image proxy.
+
 The [Ubuntu AppDir recipe and PyPI checklist](PYTHON_LINUX_RELEASE.md) cover the Linux platform wheel.
