@@ -1,6 +1,6 @@
 # Releasing
 
-The Apple Silicon `0.5.0rc1` wheel is available on [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/). The stable 0.5.0 release is in preparation. Local candidate builds and manual CI produce artifacts for review.
+The Apple Silicon `0.5.0rc1` wheel is available on [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/). Version `0.5.0` uses one SDK wheel and matching native archives. Local builds and manual CI produce artifacts for review.
 
 1. Review the [changelog](../CHANGELOG.md) for user-facing features, compatibility changes, fixes, and known limitations. Keep candidate changes under Unreleased until publication. Run source/privacy, license, version, contract, and installed-consumer checks against the exact source manifest.
 2. Build source, wheel, JS SDK, and C++ archives into a new output directory. Include LICENSE, NOTICE, dependency license files, source identity, and artifact hashes.

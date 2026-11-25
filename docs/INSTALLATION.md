@@ -14,7 +14,7 @@ Press Ctrl+C to finish. After installation the App can start offline. Run the [e
 
 ## Python SDK and runtime for the stable release
 
-The stable 0.5.0 release is in preparation. Use these commands with its published SDK, or install a candidate wheel from an explicit path. Apple Silicon macOS and Ubuntu 22.04 or 24.04 x86-64 use the same commands:
+Apple Silicon macOS and Ubuntu 22.04 or 24.04 x86-64 use the same commands for 0.5.0.
 
 ```sh
 python -m pip install frameviz

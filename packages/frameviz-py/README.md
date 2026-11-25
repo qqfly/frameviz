@@ -1,14 +1,14 @@
 # FrameViz
 
-FrameViz lets you draw and inspect 3D data from Python in a desktop window or in your browser. Use it to inspect point clouds, check robot coordinate frames, or build interactive tools for geometry and robotics.
+FrameViz gives Python and C++ programs an interactive 3D interface. Open a desktop window from IPython to inspect your data, or embed the viewer in your own Vue app. Both use the same scene API and support point picking and pose editing.
 
-![A box is selected and moved using the on-screen transform handles](https://raw.githubusercontent.com/qqfly/frameviz/138945679667a8361a3dcac35152da68482049e7/docs/media/picking-gizmo.webp)
+![A Python terminal opens a FrameViz view, draws axes, points, and a box, then changes the box color and position.](https://raw.githubusercontent.com/qqfly/frameviz/main/docs/media/python-terminal-and-view.webp)
 
-Try picking and moving objects with the [Gizmo example](https://github.com/qqfly/frameviz/blob/138945679667a8361a3dcac35152da68482049e7/examples/python/03_interaction/use_gizmo.py).
+Watch a live Python session build the scene one command at a time. The commands are in the quick start below.
 
 ## Install
 
-FrameViz requires Python 3.9 or newer. Set up the local viewer on Apple Silicon Macs and Ubuntu 22.04 or 24.04 (x86-64) with the same commands:
+FrameViz requires Python 3.9 or newer. The same commands set up the local viewer on Apple Silicon Macs and Ubuntu 22.04 or 24.04 (x86-64).
 
 ```sh
 python -m pip install frameviz
@@ -17,24 +17,41 @@ python -m frameviz install-host
 
 The second command installs the matching runtime once for this version under your user account. On an Ubuntu server without a desktop session it installs the standalone Host. After installation you can start the viewer offline. Use `frameviz.install_host()` to run the same setup from a notebook. See the [installation guide](https://github.com/qqfly/frameviz/blob/main/docs/INSTALLATION.md) for local builds and offline setup.
 
-## Open a viewer
+Ubuntu desktop rendering and interaction were verified in containers. Physical-desktop GPU and driver validation is pending.
+
+## Start in Python or IPython
 
 ```python
 import frameviz as fv
 
 viz = fv.open()
-viz.add_box()
-viz.keep_running()
+frame = viz.add_axes(length=0.8)
+pts = [(i/10, i%4/5, .4) for i in range(14)]
+cloud = viz.add_points(pts, color="#2563eb", size=10)
+box = viz.add_box(position=[1.7, 0, 0.5])
+viz.set_color(box, "#f59e0b")
+viz.set_transform(box, position=[1.7, 0.7, 0.5])
 ```
 
-Run this as a script to open the viewer and draw a box. Press Ctrl+C in the terminal to finish.
+Run these lines in IPython and keep adding or moving objects. In a standalone script, add `viz.keep_running()` at the end and press Ctrl+C to finish. [Python and C++ example index](https://github.com/qqfly/frameviz/blob/main/examples/INVENTORY.md)
 
-## Explore
+## Work with your own geometry
 
-- Draw point clouds, triangle meshes, coordinate frames, lines, and geometric primitives.
-- Pick objects or individual points and drag transform handles to edit object poses.
-- Inspect a scene from multiple cameras, add interactive sliders, and export screenshots or standalone HTML.
+![FrameViz drawables and their Python and C++ APIs](https://raw.githubusercontent.com/qqfly/frameviz/138945679667a8361a3dcac35152da68482049e7/docs/media/drawables-overview.png)
 
-Screenshot and HTML export require `python -m pip install 'frameviz[capture]'` and `python -m playwright install chromium`. See the [distribution guide](https://github.com/qqfly/frameviz/blob/main/docs/PYTHON_DISTRIBUTION.md) for platform details.
+- **Inspect your data in context.** Draw points, lines, meshes, coordinate frames, and labels together. Attach geometry to a sensor or robot link so it follows the parent pose. Open a second view for an independent camera. [Scene tree](https://github.com/qqfly/frameviz/blob/main/examples/python/05_scene/use_scene_tree.py) · [Multiple views](https://github.com/qqfly/frameviz/blob/main/examples/python/02_camera_views/use_multi_view.py)
+- **Make the viewer an input to your program.** Click a point to look up its input array index. Drag a goal pose to recompute and redraw a path with your own code. Add sliders for interactive tuning. [Point picking](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_picking.py) · [Interactive trajectory](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_target_trajectory.py) · [Widgets](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_widget_panel.py)
 
-See the [gallery of supported objects](https://github.com/qqfly/frameviz/blob/main/docs/media/drawables-overview.png), the [runnable examples](https://github.com/qqfly/frameviz/tree/main/examples/python), and the [Python API reference](https://github.com/qqfly/frameviz/blob/main/docs/API_Definition.md).
+The [SO-101 example](https://github.com/qqfly/frameviz/blob/main/examples/python/04_robotics/extra/README.md) combines mesh geometry, parent-relative poses, and joint sliders in one scene.
+
+## Embed the viewer in a Vue app
+
+![A Vue slider sends a move through a C++ backend. Python attaches to the same view and moves the same box.](https://raw.githubusercontent.com/qqfly/frameviz/main/docs/media/vue-cpp-python-attach.webp)
+
+The Vue slider moves a box in a scene created by C++. Python then attaches to the running view with `fv.connect()` and moves the same box again. The embedded viewport shows both updates. [Vue and C++ example](https://github.com/qqfly/frameviz/blob/main/examples/apps/simple_slider/README.md)
+
+## Share a scene
+
+Create a PNG from a temporary camera, even with no viewer window open. For a tutorial, export a standalone HTML scene with an optional precomputed pose animation. Readers can orbit the scene, play or seek the animation, and open the page offline in their browser. Export requires `python -m pip install 'frameviz[capture]'` and `python -m playwright install chromium`. [PNG example](https://github.com/qqfly/frameviz/blob/main/examples/python/06_scene_output/save_png.py) · [Offline HTML example](https://github.com/qqfly/frameviz/blob/main/examples/python/06_scene_output/export_html.py)
+
+[Python API reference](https://github.com/qqfly/frameviz/blob/main/docs/API_Definition.md) · [Distribution guide](https://github.com/qqfly/frameviz/blob/main/docs/PYTHON_DISTRIBUTION.md)

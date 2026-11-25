@@ -1,8 +1,8 @@
 # Python 安装与分发
 
-## macOS 和 Ubuntu 正式版方案
+## macOS 和 Ubuntu 0.5.0 安装
 
-Apple 芯片 Mac 和 Ubuntu 22.04／24.04 x86-64 使用同一组命令。正式版正在准备中。
+Apple 芯片 Mac 和 Ubuntu 22.04／24.04 x86-64 使用同一组命令。Ubuntu 桌面和无桌面路径均已在容器中验证，实体机显卡与驱动验收待补。
 
 ```sh
 python -m pip install frameviz
@@ -54,4 +54,4 @@ Python SDK 的最低版本为 3.9。pip 为解释器选取兼容的 NumPy 和 we
 
 PNG 截图和教程 HTML 导出使用 `capture` extra。可在 wheel 路径后加 `[capture]`，然后运行 `python -m playwright install chromium`。Linux 还需满足 Chromium 的系统依赖。
 
-Mac 预览使用明确的 `0.5.0rc1` 版本。Mac 和 Linux 正式 `0.5.0` 计划在 PyPI 同时发布。独立 App、C++ SDK 和共用示例的下载入口见 [GitHub Releases](https://github.com/qqfly/frameviz/releases)。
+Mac 预览使用明确的 `0.5.0rc1` 版本。`0.5.0` 的 Apple 芯片 Mac 和 Ubuntu x86-64 共用同一个 PyPI SDK wheel。配套运行时和共用示例见 [GitHub Releases](https://github.com/qqfly/frameviz/releases)。

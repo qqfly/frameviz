@@ -4,9 +4,13 @@
 
 用 **Python 或 C++** 绘制并交互操作三维数据，显示在桌面窗口、浏览器或你的 **Vue** 应用里。FrameViz 提供对象句柄、NumPy/数组输入、实例化、相机控制、拾取事件和 Gizmo。Rust Host 在本地维护场景，Three.js Viewer 负责渲染。
 
-**0.5.0 Apple 芯片预览版**已在 [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/) 提供下载。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+Python SDK 见 [PyPI](https://pypi.org/project/frameviz/)，运行时和示例见 [GitHub Releases](https://github.com/qqfly/frameviz/releases)。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
 ## 在 macOS 和 Ubuntu 上快速开始
+
+![左侧逐行输入 Python 命令，右侧的 FrameViz 场景随之更新](docs/media/python-terminal-and-view.webp)
+
+用 `viz = fv.open()` 打开空场景，再逐行画出坐标系、点云和方块。[复制动图中的命令](packages/frameviz-py/README.md#start-in-python-or-ipython)。
 
 正式版支持 Apple 芯片 Mac 和 x86-64 Ubuntu 22.04／24.04，使用 Python 3.9 或更新版本。
 
@@ -17,7 +21,7 @@ python3 -m venv .venv
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-配套运行时每个版本只需安装一次，之后可离线打开窗口。终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。正式版正在准备中。现有 Mac 预览版、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。
+配套运行时每个版本只需安装一次，之后可离线打开窗口。终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Mac 预览版、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。
 
 ## 可以绘制什么？
 
