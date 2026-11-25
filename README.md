@@ -23,7 +23,9 @@ python3 -m venv .venv
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-`pip install frameviz` installs the Python SDK. `install-host` sets up the matching runtime once per version. After setup, FrameViz can open its desktop window offline. On Ubuntu without a desktop session, `install-host` sets up the standalone Host, and `fv.open()` prints a private browser link.
+`pip install frameviz` installs the Python SDK. `install-host` reuses a runtime in the same protocol series (`0.5.x` for this SDK) when available. Otherwise it downloads the platform archive from the GitHub Release tagged for the SDK version. Before installing, it checks the archive size and SHA-256, and verifies the runtime's release and protocol versions against the manifest included in the wheel.
+
+After setup, FrameViz can open its desktop window offline. On Ubuntu without a desktop session, `install-host` sets up the standalone Host, and `fv.open()` prints a private browser link.
 
 Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). See [Installation](docs/INSTALLATION.md) for Windows, C++, and source builds.
 

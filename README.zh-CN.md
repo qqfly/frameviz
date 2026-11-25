@@ -23,7 +23,9 @@ python3 -m venv .venv
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-`pip install frameviz` 安装 Python SDK，`install-host` 为每个版本一次性安装配套运行时。安装后可以离线打开桌面窗口。无桌面 Ubuntu 会安装独立 Host，调用 `fv.open()` 后会输出私有浏览器链接。
+`pip install frameviz` 安装 Python SDK。`install-host` 优先复用同一协议系列的本机运行时（此版本为 `0.5.x`）。需要下载时，它会从 SDK 版本对应的 GitHub Release 获取平台归档，并按 wheel 内的清单核对归档大小、SHA-256、运行时发行版本和协议版本。
+
+安装后可以离线打开桌面窗口。无桌面 Ubuntu 会安装独立 Host，调用 `fv.open()` 后会输出私有浏览器链接。
 
 在终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。
 
