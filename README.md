@@ -4,7 +4,7 @@
 
 Draw and interact with 3D data from **Python or C++**, in a desktop window, browser, or your **Vue** application. FrameViz provides object handles, NumPy/array input, instancing, camera control, picking events, and transform handles. A local Rust Host keeps scene state; a Three.js viewer renders it.
 
-The **0.5.0 preview for Apple Silicon** is available on [PyPI](https://pypi.org/project/frameviz/0.5.0rc1/). Copyright **qqfly**, [MIT](LICENSE). See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for third-party attribution.
+Python SDK on [PyPI](https://pypi.org/project/frameviz/) · Runtime and examples on [GitHub Releases](https://github.com/qqfly/frameviz/releases). Copyright **qqfly**, [MIT](LICENSE). See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for third-party attribution.
 
 ## Python quick start on macOS and Ubuntu
 
@@ -21,7 +21,7 @@ python3 -m venv .venv
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-Runtime installation is a one-time step per version. FrameViz can then open a desktop window offline. Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). The stable release is in preparation. See [Installation](docs/INSTALLATION.md) for the available Mac preview, Windows, C++ and source builds.
+Runtime installation is a one-time step per version. FrameViz can then open a desktop window offline. Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). See [Installation](docs/INSTALLATION.md) for the Mac preview, Windows, C++, and source builds.
 
 ## What can I draw?
 

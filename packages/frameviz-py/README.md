@@ -17,6 +17,8 @@ python -m frameviz install-host
 
 The second command installs the matching runtime once for this version under your user account. On an Ubuntu server without a desktop session it installs the standalone Host. After installation you can start the viewer offline. Use `frameviz.install_host()` to run the same setup from a notebook. See the [installation guide](https://github.com/qqfly/frameviz/blob/main/docs/INSTALLATION.md) for local builds and offline setup.
 
+Ubuntu desktop rendering and interaction were verified in containers. Physical-desktop GPU and driver validation is pending.
+
 ## Start in Python or IPython
 
 ```python
