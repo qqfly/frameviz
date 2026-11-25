@@ -150,6 +150,27 @@
       "capture_notes": "Camera, helper-axis removal, background; debug handle/footer hidden and header used as dataflow caption. Application control logic is unchanged."
     },
     {
+      "file": "vue-cpp-python-attach.webp",
+      "bytes": 44420,
+      "sha256": "e430d24532854dc9a7fed202e40a1c3bc69ea8f62dc299580434312c3db0d2ab",
+      "width": 960,
+      "height": 600,
+      "sample_fps": null,
+      "duration_seconds": 5.38,
+      "sources": [
+        "examples/apps/simple_slider/src/App.vue",
+        "examples/apps/simple_slider/cpp/src/main.cpp",
+        "tests/acceptance/test_app_examples.py"
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "a7b8bb30d4ba7b10ce3a55ccb4e4dfc7c26ec2af",
+        "host_executable_sha256": "82c21db961d2049e6f48312bc4c4afa862a27d464bac1b6ad8e3b9696d89f9ee",
+        "cpp_backend_sha256": "7efbfdf78619d7aec203c84f5827708890e3e0a11a58db61c9949b0ecf1ccc35",
+        "method": "Real Vue app and standalone Host in Chromium, with pointer events and a real SDK attach. Screenshots use explicit holds and explanatory captions."
+      }
+    },
+    {
       "file": "so101-joint-controls.webp",
       "bytes": 56090,
       "sha256": "e65bf5e1230068b680be690345cbc99cc776220180731b0c18953d83f590240c",
