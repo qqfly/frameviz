@@ -319,7 +319,7 @@
     "packages/frameviz-protocol/src/__tests__/validation.test.ts": "8d1acf54ab76dde88f103fbcbc8a89258420a2992a1315d9cc70b90538f67ce0",
     "packages/frameviz-py/LICENSE": "826bcf63b3bace796f789ec57f9891af17ada6e404061825134a805241cf7a29",
     "packages/frameviz-py/NOTICE": "326d6c619248937648f3fe040e5a50e706cff53a03e13cade44a75cb6364aa54",
-    "packages/frameviz-py/README.md": "75687791189bc8649beeb5423cfe10608e5e8352774be6e0b203dc9c9f3c3012",
+    "packages/frameviz-py/README.md": "3cb237fb84069e68e0d0cd17eaca787a9d8d1f898d54de46a97343e3da713f52",
     "packages/frameviz-py/pyproject.toml": "bd5f47dfc5b7798a292399d7c07acb6b71d085ac189b4b5117d374d18f81c24c",
     "packages/frameviz-py/THIRD_PARTY_LICENSES/IXWebSocket-BSD-3-Clause.txt": "d666077b97c6df910d630d9a4c4da869e9e5ecd266162a779a37b94853e9f42e",
     "packages/frameviz-py/THIRD_PARTY_LICENSES/cpp-httplib-MIT.txt": "eb9ecd3f3f96ecb25af8143a51b2035dacfabbd49b5d91abca85df6d5415678f",
