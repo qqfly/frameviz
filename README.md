@@ -8,6 +8,10 @@ The **0.5.0 preview for Apple Silicon** is available on [PyPI](https://pypi.org/
 
 ## Python quick start on macOS and Ubuntu
 
+![Python commands on the left build and update the FrameViz scene on the right](docs/media/python-terminal-and-view.webp)
+
+Open a view with `viz = fv.open()`, then add axes, a point cloud, and a box one command at a time. [Copy the commands from the recording](packages/frameviz-py/README.md#start-in-python-or-ipython).
+
 For the stable release on Apple Silicon and Ubuntu 22.04 or 24.04 x86-64, use Python 3.9 or newer:
 
 ```sh

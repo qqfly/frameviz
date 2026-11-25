@@ -8,6 +8,10 @@
 
 ## 在 macOS 和 Ubuntu 上快速开始
 
+![左侧逐行输入 Python 命令，右侧的 FrameViz 场景随之更新](docs/media/python-terminal-and-view.webp)
+
+用 `viz = fv.open()` 打开空场景，再逐行画出坐标系、点云和方块。[复制动图中的命令](packages/frameviz-py/README.md#start-in-python-or-ipython)。
+
 正式版支持 Apple 芯片 Mac 和 x86-64 Ubuntu 22.04／24.04，使用 Python 3.9 或更新版本。
 
 ```sh
