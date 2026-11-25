@@ -150,6 +150,25 @@
       "capture_notes": "Camera, helper-axis removal, background; debug handle/footer hidden and header used as dataflow caption. Application control logic is unchanged."
     },
     {
+      "file": "python-terminal-and-view.webp",
+      "bytes": 39328,
+      "sha256": "8b04bac7d4eb38c680b6198fadfef3505c6f508e289891ddc210facac4404401",
+      "width": 1040,
+      "height": 535,
+      "sample_fps": null,
+      "duration_seconds": 10.29,
+      "sources": [
+        "packages/frameviz-py/README.md",
+        "packages/frameviz-py/frameviz/viz.py"
+      ],
+      "capture": {
+        "protocol_version": "0.5.0",
+        "checkout_base": "e5caa778f629108c519dae0c71088966e2ef2d54",
+        "host_executable_sha256": "82c21db961d2049e6f48312bc4c4afa862a27d464bac1b6ad8e3b9696d89f9ee",
+        "method": "Live CPython terminal output and the real browser Viewer opened by the SDK. Captured the input and verified each rendered state."
+      }
+    },
+    {
       "file": "vue-cpp-python-attach.webp",
       "bytes": 44420,
       "sha256": "e430d24532854dc9a7fed202e40a1c3bc69ea8f62dc299580434312c3db0d2ab",

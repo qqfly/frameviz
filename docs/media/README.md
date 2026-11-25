@@ -9,6 +9,7 @@ their previous captures.
 | Media | Teaching example |
 | --- | --- |
 | Drawable objects | [Hello World](../../examples/python/01_basic_primitives/hello_world.py) |
+| Python terminal and live View | [PyPI quick start](../../packages/frameviz-py/README.md#start-in-python-or-ipython) |
 | Appearance | [Color and transparency](../../examples/python/01_basic_primitives/use_colors_and_transparency.py), [batch poses](../../examples/python/05_scene/use_batch_transforms.py), [object lifecycle](../../examples/python/05_scene/use_object_lifecycle.py) |
 | Mesh colors and wireframe | [Mesh colors](../../examples/python/01_basic_primitives/use_mesh_color_modes.py), [mesh transparency and wireframe](../../examples/python/01_basic_primitives/use_mesh_transparency.py) |
 | Instance updates | [Instancing](../../examples/python/01_basic_primitives/use_instancing.py) |
@@ -26,6 +27,10 @@ handles visible, and frame the complete subject in the real Viewer. Use a
 stable view and a white background. Capture the before and after states,
 or the pointer motion when it explains the operation. Use synthetic data for
 the basic scenes. Export a short 960×600 WebP and inspect it in a browser.
+
+The terminal clip uses a wider split layout. It shows text echoed by a live
+Python terminal alongside the browser View opened by that session. The
+capture fixes the camera and hides the viewer's origin axes and grid.
 
 In the PyPI clip, a pointer drag sends input through the Vue app to the C++
 backend. A Python client then attaches by View ID and calls `set_transform`

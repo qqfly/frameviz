@@ -2,18 +2,9 @@
 
 FrameViz gives Python and C++ programs an interactive 3D interface. Open a desktop window from IPython to inspect your data, or embed the viewer in your own Vue app. Both use the same scene API and support point picking and pose editing.
 
-![A Vue slider sends a move through a C++ backend. Python attaches to the same view and moves the same box.](https://raw.githubusercontent.com/qqfly/frameviz/main/docs/media/vue-cpp-python-attach.webp)
+![A Python terminal opens a FrameViz view, draws axes, points, and a box, then changes the box color and position.](https://raw.githubusercontent.com/qqfly/frameviz/main/docs/media/python-terminal-and-view.webp)
 
-In this demo, the Vue slider moves a box in a scene created by C++. Python then attaches to the running view with `fv.connect()` and moves the same box again. The embedded viewport shows both updates. [Vue and C++ example](https://github.com/qqfly/frameviz/blob/main/examples/apps/simple_slider/README.md)
-
-## Work with your own geometry
-
-![FrameViz drawables and their Python and C++ APIs](https://raw.githubusercontent.com/qqfly/frameviz/138945679667a8361a3dcac35152da68482049e7/docs/media/drawables-overview.png)
-
-- **Inspect your data in context.** Draw points, lines, meshes, coordinate frames, and labels together. Attach geometry to a sensor or robot link so it follows the parent pose. Open a second view for an independent camera. [Scene tree](https://github.com/qqfly/frameviz/blob/main/examples/python/05_scene/use_scene_tree.py) · [Multiple views](https://github.com/qqfly/frameviz/blob/main/examples/python/02_camera_views/use_multi_view.py)
-- **Make the viewer an input to your program.** Click a point to look up its input array index. Drag a goal pose to recompute and redraw a path with your own code. Add sliders for interactive tuning. [Point picking](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_picking.py) · [Interactive trajectory](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_target_trajectory.py) · [Widgets](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_widget_panel.py)
-
-The [SO-101 example](https://github.com/qqfly/frameviz/blob/main/examples/python/04_robotics/extra/README.md) combines mesh geometry, parent-relative poses, and joint sliders in one scene.
+Watch a live Python session build the scene one command at a time. The commands are in the quick start below.
 
 ## Install
 
@@ -30,15 +21,32 @@ The second command installs the matching runtime once for this version under you
 
 ```python
 import frameviz as fv
-import numpy as np
 
 viz = fv.open()
-sensor = viz.add_axes(length=0.5)
-points = np.array([[0.2, 0, 0.4], [0.4, 0.2, 0.5], [0.3, -0.2, 0.7]])
-viz.add_points(points, parent=sensor, size=12, color="#2563eb")
+frame = viz.add_axes(length=0.8)
+pts = [(i/10, i%4/5, .4) for i in range(14)]
+cloud = viz.add_points(pts, color="#2563eb", size=10)
+box = viz.add_box(position=[1.7, 0, 0.5])
+viz.set_color(box, "#f59e0b")
+viz.set_transform(box, position=[1.7, 0.7, 0.5])
 ```
 
 Run these lines in IPython and keep adding or moving objects. In a standalone script, add `viz.keep_running()` at the end and press Ctrl+C to finish. [Python and C++ example index](https://github.com/qqfly/frameviz/blob/main/examples/INVENTORY.md)
+
+## Work with your own geometry
+
+![FrameViz drawables and their Python and C++ APIs](https://raw.githubusercontent.com/qqfly/frameviz/138945679667a8361a3dcac35152da68482049e7/docs/media/drawables-overview.png)
+
+- **Inspect your data in context.** Draw points, lines, meshes, coordinate frames, and labels together. Attach geometry to a sensor or robot link so it follows the parent pose. Open a second view for an independent camera. [Scene tree](https://github.com/qqfly/frameviz/blob/main/examples/python/05_scene/use_scene_tree.py) · [Multiple views](https://github.com/qqfly/frameviz/blob/main/examples/python/02_camera_views/use_multi_view.py)
+- **Make the viewer an input to your program.** Click a point to look up its input array index. Drag a goal pose to recompute and redraw a path with your own code. Add sliders for interactive tuning. [Point picking](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_picking.py) · [Interactive trajectory](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_target_trajectory.py) · [Widgets](https://github.com/qqfly/frameviz/blob/main/examples/python/03_interaction/use_widget_panel.py)
+
+The [SO-101 example](https://github.com/qqfly/frameviz/blob/main/examples/python/04_robotics/extra/README.md) combines mesh geometry, parent-relative poses, and joint sliders in one scene.
+
+## Embed the viewer in a Vue app
+
+![A Vue slider sends a move through a C++ backend. Python attaches to the same view and moves the same box.](https://raw.githubusercontent.com/qqfly/frameviz/main/docs/media/vue-cpp-python-attach.webp)
+
+The Vue slider moves a box in a scene created by C++. Python then attaches to the running view with `fv.connect()` and moves the same box again. The embedded viewport shows both updates. [Vue and C++ example](https://github.com/qqfly/frameviz/blob/main/examples/apps/simple_slider/README.md)
 
 ## Share a scene
 
