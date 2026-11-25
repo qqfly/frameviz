@@ -4,7 +4,9 @@
 
 Draw and interact with 3D data from **Python or C++**, in a desktop window, browser, or your **Vue** application. FrameViz provides object handles, NumPy/array input, instancing, camera control, picking events, and transform handles. A local Rust Host keeps scene state; a Three.js viewer renders it.
 
-Python SDK on [PyPI](https://pypi.org/project/frameviz/) · Runtime and examples on [GitHub Releases](https://github.com/qqfly/frameviz/releases). Copyright **qqfly**, [MIT](LICENSE). See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for third-party attribution.
+**FrameViz 0.5.0** · [Python SDK on PyPI](https://pypi.org/project/frameviz/0.5.0/) · [Runtime and example downloads](https://github.com/qqfly/frameviz/releases/tag/v0.5.0)
+
+Copyright **qqfly**, [MIT](LICENSE). See [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for third-party attribution.
 
 ## Python quick start on macOS and Ubuntu
 
@@ -12,7 +14,7 @@ Python SDK on [PyPI](https://pypi.org/project/frameviz/) · Runtime and examples
 
 Open a view with `viz = fv.open()`, then add axes, a point cloud, and a box one command at a time. [Copy the commands from the recording](packages/frameviz-py/README.md#start-in-python-or-ipython).
 
-For the stable release on Apple Silicon and Ubuntu 22.04 or 24.04 x86-64, use Python 3.9 or newer:
+Use Python 3.9 or newer on Apple Silicon macOS or Ubuntu 22.04 or 24.04 x86-64.
 
 ```sh
 python3 -m venv .venv
@@ -21,7 +23,9 @@ python3 -m venv .venv
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-Runtime installation is a one-time step per version. FrameViz can then open a desktop window offline. Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). See [Installation](docs/INSTALLATION.md) for the Mac preview, Windows, C++, and source builds.
+`pip install frameviz` installs the Python SDK. `install-host` sets up the matching runtime once per version. After setup, FrameViz can open its desktop window offline. On Ubuntu without a desktop session, `install-host` sets up the standalone Host, and `fv.open()` prints a private browser link.
+
+Press Ctrl+C in the terminal to finish. Try [Hello World](examples/python/01_basic_primitives/hello_world.py) or browse the [example index](examples/README.md). See [Installation](docs/INSTALLATION.md) for Windows, C++, and source builds.
 
 ## What can I draw?
 
