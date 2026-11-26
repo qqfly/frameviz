@@ -4,7 +4,9 @@
 
 用 **Python 或 C++** 绘制并交互操作三维数据，显示在桌面窗口、浏览器或你的 **Vue** 应用里。FrameViz 提供对象句柄、NumPy/数组输入、实例化、相机控制、拾取事件和 Gizmo。Rust Host 在本地维护场景，Three.js Viewer 负责渲染。
 
-Python SDK 见 [PyPI](https://pypi.org/project/frameviz/)，运行时和示例见 [GitHub Releases](https://github.com/qqfly/frameviz/releases)。版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
+**FrameViz 0.5.0 正式版** · [PyPI Python SDK](https://pypi.org/project/frameviz/0.5.0/) · [运行时和示例下载](https://github.com/qqfly/frameviz/releases/tag/v0.5.0)
+
+版权 **qqfly**，采用 [MIT](LICENSE) 许可证。第三方署名与许可见 [NOTICE](NOTICE) 和 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
 ## 在 macOS 和 Ubuntu 上快速开始
 
@@ -12,7 +14,7 @@ Python SDK 见 [PyPI](https://pypi.org/project/frameviz/)，运行时和示例�
 
 用 `viz = fv.open()` 打开空场景，再逐行画出坐标系、点云和方块。[复制动图中的命令](packages/frameviz-py/README.md#start-in-python-or-ipython)。
 
-正式版支持 Apple 芯片 Mac 和 x86-64 Ubuntu 22.04／24.04，使用 Python 3.9 或更新版本。
+在 Apple 芯片 Mac 或 x86-64 Ubuntu 22.04／24.04 上使用 Python 3.9 或更新版本。
 
 ```sh
 python3 -m venv .venv
@@ -21,7 +23,11 @@ python3 -m venv .venv
 .venv/bin/python -c 'import frameviz as fv; viz = fv.open(); viz.add_box(); viz.keep_running()'
 ```
 
-配套运行时每个版本只需安装一次，之后可离线打开窗口。终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Mac 预览版、Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。
+`pip install frameviz` 安装 Python SDK。`install-host` 优先复用同一协议系列的本机运行时（此版本为 `0.5.x`）。需要下载时，它会从 SDK 版本对应的 GitHub Release 获取平台归档，并按 wheel 内的清单核对归档大小、SHA-256、运行时发行版本和协议版本。
+
+安装后可以离线打开桌面窗口。无桌面 Ubuntu 会安装独立 Host，调用 `fv.open()` 后会输出私有浏览器链接。
+
+在终端按 Ctrl+C 结束。接着可以运行 [Hello World](examples/python/01_basic_primitives/hello_world.py)，或查看[示例目录](examples/README.md)。Windows、C++ 和源码构建见[安装指引](docs/INSTALLATION.md)。
 
 ## 可以绘制什么？
 
